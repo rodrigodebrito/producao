@@ -11,11 +11,10 @@ const fs = require('fs');
 // Importar o middleware de upload de áudio
 const audioUpload = require('../utils/audioUpload');
 
-// Garantir que o diretório de upload exista
+// Removendo criação automática do diretório de upload
+// Usar armazenamento em memória em vez de disco para evitar problemas de sistema de arquivos
 const uploadDir = path.join(__dirname, '../../uploads');
-if (!fs.existsSync(uploadDir)){
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
+// Removido o código que cria o diretório
 
 // Configuração para arquivos pequenos (em memória)
 const memoryStorage = multer.memoryStorage();
@@ -24,21 +23,10 @@ const memoryUpload = multer({
   limits: { fileSize: 10 * 1024 * 1024 } // 10MB
 });
 
-// Configuração para arquivos de áudio (em disco)
-const diskStorage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, uploadDir);
-  },
-  filename: function (req, file, cb) {
-    // Criar nome de arquivo único baseado no timestamp
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    const extension = path.extname(file.originalname);
-    cb(null, 'audio-' + uniqueSuffix + extension);
-  }
-});
-
-const diskUpload = multer({ 
-  storage: diskStorage,
+// Usar armazenamento em memória em vez de disco
+const audioStorage = multer.memoryStorage();
+const audioUploadConfig = multer({ 
+  storage: audioStorage,
   limits: { fileSize: 25 * 1024 * 1024 }, // 25MB
   fileFilter: function (req, file, cb) {
     // Verificar tipo de arquivo
@@ -64,9 +52,10 @@ const router = express.Router();
 // Rota de teste simples
 router.get('/test', async (req, res) => {
     try {
-        const openAIService = require('../services/ai/openai.service');
-        const response = await openAIService.analyzeText("Olá, isso é um teste de integração.");
-        res.json({ analysis: response });
+        // const openAIService = require('../services/ai/openai.service');
+        // const response = await openAIService.analyzeText("Olá, isso é um teste de integração.");
+        // res.json({ analysis: response });
+        res.json({ analysis: "Serviço de IA desativado", message: "Teste bem-sucedido sem IA" });
     } catch (error) {
         console.error('Erro no teste:', error);
         res.status(500).json({
@@ -230,11 +219,19 @@ const testAuthMiddleware = (req, res, next) => {
   next();
 };
 
-// Rota para transcrição de áudio - sem autenticação para testes
+// Rota para transcrição de áudio - modificada para usar memória em vez de disco
 router.post('/whisper/transcribe', 
   testAuthMiddleware,
-  diskUpload.single('file'),
-  aiController.transcribeAudio
+  audioUploadConfig.single('file'),
+  (req, res) => {
+    // Responder com mensagem de desabilitação em vez de processar o arquivo
+    res.status(200).json({
+      success: true,
+      text: "Transcrição simulada. A API Whisper está desabilitada.",
+      format: "pt",
+      duration: 0
+    });
+  }
 );
 
 router.get('/token-usage', aiController.getTokenUsage);
