@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const baseURL = process.env.NODE_ENV === 'production' 
-  ? '' 
+  ? import.meta.env.VITE_API_URL || 'https://theraconnect-prd.onrender.com'
   : 'http://localhost:3000';
 
 const api = axios.create({
