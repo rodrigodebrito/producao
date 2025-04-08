@@ -1,5 +1,5 @@
 const { PrismaClient } = require('@prisma/client');
-const { OpenAI } = require('openai');
+// const { OpenAI } = require('openai');
 const { validationResult } = require('express-validator');
 const trainingService = require('../services/ai/training.service');
 const advancedAnalysisService = require('../services/ai/advanced-analysis.service');
@@ -15,32 +15,10 @@ const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
 ffmpeg.setFfmpegPath(ffmpegPath);
 const tokenUsageService = require('../services/ai/token-usage.service');
 
-// Configurar o cliente OpenAI com mock para evitar chamadas reais à API
-// const openai = new OpenAI({
-//   apiKey: process.env.OPENAI_API_KEY
-// });
+// Removida completamente a inicialização do OpenAI
+// Sem simulação/mock nenhum
 
-// Mock do cliente OpenAI para desabilitar as chamadas à API
-const openai = {
-  chat: {
-    completions: {
-      create: async (options) => {
-        console.log('MOCK AI Controller: OpenAI API chamada simulada com:', options.model);
-        return {
-          choices: [
-            {
-              message: {
-                content: "Esta é uma resposta simulada da API OpenAI para fins de teste. A API real está desabilitada temporariamente."
-              }
-            }
-          ]
-        };
-      }
-    }
-  }
-};
-
-console.log('AI Controller: OpenAI inicializado em modo SIMULAÇÃO');
+console.log('AI Controller: OpenAI desabilitado completamente');
 
 /**
  * Estima o número de tokens em um texto

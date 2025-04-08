@@ -79,34 +79,13 @@ router.get('/test', async (req, res) => {
 // Verificar configuração da API OpenAI
 router.get('/openai-check', async (req, res) => {
     try {
-        // Retornar resposta simulada para evitar erros durante testes
+        // Indicar que a API OpenAI está completamente desativada
         return res.json({
-            configured: true,
-            validFormat: true,
-            simulationMode: true,
-            message: 'API OpenAI em modo de simulação para fins de teste'
+            configured: false,
+            validFormat: false,
+            apiDisabled: true,
+            message: 'API OpenAI está completamente desativada'
         });
-        
-        /* Código original comentado
-        const apiKey = process.env.OPENAI_API_KEY;
-        
-        if (!apiKey) {
-            return res.status(500).json({
-                configured: false,
-                message: 'API OpenAI não configurada. A variável de ambiente OPENAI_API_KEY não está definida.'
-            });
-        }
-        
-        // Verificar se a chave começa com o formato correto
-        const isValidFormat = apiKey.startsWith('sk-');
-        
-        res.json({
-            configured: true,
-            validFormat: isValidFormat,
-            keyLength: apiKey.length,
-            maskedKey: `${apiKey.substring(0, 5)}...${apiKey.substring(apiKey.length - 4)}`
-        });
-        */
     } catch (error) {
         console.error('Erro ao verificar API OpenAI:', error);
         res.status(500).json({
