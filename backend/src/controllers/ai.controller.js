@@ -1,5 +1,5 @@
 const { PrismaClient } = require('@prisma/client');
-// const { OpenAI } = require('openai');
+const { OpenAI } = require('openai');
 const { validationResult } = require('express-validator');
 const trainingService = require('../services/ai/training.service');
 const advancedAnalysisService = require('../services/ai/advanced-analysis.service');
@@ -15,10 +15,12 @@ const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
 ffmpeg.setFfmpegPath(ffmpegPath);
 const tokenUsageService = require('../services/ai/token-usage.service');
 
-// Removida completamente a inicialização do OpenAI
-// Sem simulação/mock nenhum
+// Inicializar o cliente OpenAI para uso interno no controlador
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
 
-console.log('AI Controller: OpenAI desabilitado completamente');
+console.log('AI Controller: OpenAI inicializado com sucesso');
 
 /**
  * Estima o número de tokens em um texto

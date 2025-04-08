@@ -7,6 +7,7 @@ const prisma = new PrismaClient();
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const openaiService = require('../services/ai/openai.service');
 
 // Importar o middleware de upload de áudio
 const audioUpload = require('../utils/audioUpload');
@@ -52,10 +53,8 @@ const router = express.Router();
 // Rota de teste simples
 router.get('/test', async (req, res) => {
     try {
-        // const openAIService = require('../services/ai/openai.service');
-        // const response = await openAIService.analyzeText("Olá, isso é um teste de integração.");
-        // res.json({ analysis: response });
-        res.json({ analysis: "Serviço de IA desativado", message: "Teste bem-sucedido sem IA" });
+        const response = await openaiService.analyzeText("Olá, isso é um teste de integração.");
+        res.json({ analysis: response });
     } catch (error) {
         console.error('Erro no teste:', error);
         res.status(500).json({
@@ -68,12 +67,18 @@ router.get('/test', async (req, res) => {
 // Verificar configuração da API OpenAI
 router.get('/openai-check', async (req, res) => {
     try {
-        // Indicar que a API OpenAI está completamente desativada
+        // Verificar se a chave API está configurada
+        const apiKey = process.env.OPENAI_API_KEY;
+        const hasApiKey = !!apiKey;
+        const validFormat = hasApiKey && apiKey.startsWith('sk-') && apiKey.length > 20;
+        
         return res.json({
-            configured: false,
-            validFormat: false,
-            apiDisabled: true,
-            message: 'API OpenAI está completamente desativada'
+            configured: hasApiKey,
+            validFormat: validFormat,
+            apiDisabled: false,
+            message: hasApiKey 
+                ? (validFormat ? 'API OpenAI configurada corretamente' : 'Formato da chave API parece inválido') 
+                : 'Chave API não configurada'
         });
     } catch (error) {
         console.error('Erro ao verificar API OpenAI:', error);
@@ -219,18 +224,44 @@ const testAuthMiddleware = (req, res, next) => {
   next();
 };
 
-// Rota para transcrição de áudio - modificada para usar memória em vez de disco
+// Rota para transcrição de áudio com a API Whisper
 router.post('/whisper/transcribe', 
   testAuthMiddleware,
   audioUploadConfig.single('file'),
-  (req, res) => {
-    // Responder com mensagem de desabilitação em vez de processar o arquivo
-    res.status(200).json({
-      success: true,
-      text: "Transcrição simulada. A API Whisper está desabilitada.",
-      format: "pt",
-      duration: 0
-    });
+  async (req, res) => {
+    try {
+      // Verificar se um arquivo foi enviado
+      if (!req.file) {
+        return res.status(400).json({
+          success: false,
+          error: 'Nenhum arquivo de áudio foi enviado.'
+        });
+      }
+      
+      console.log(`Arquivo recebido: ${req.file.originalname} (${req.file.mimetype}, ${req.file.size} bytes)`);
+      
+      // Processar a transcrição com OpenAI
+      const transcription = await openaiService.callWhisperAPI(req.file.buffer, {
+        format: 'json',
+        language: req.body.language || 'pt'
+      });
+      
+      console.log('Transcrição concluída com sucesso');
+      
+      // Retornar o resultado
+      res.status(200).json({
+        success: true,
+        text: transcription.text,
+        format: req.body.language || 'pt',
+        duration: req.body.duration || 0
+      });
+    } catch (error) {
+      console.error('Erro na transcrição:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message || 'Erro ao processar a transcrição'
+      });
+    }
   }
 );
 
