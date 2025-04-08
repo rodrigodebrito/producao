@@ -64,7 +64,7 @@ io.engine.on('connection_error', (err) => {
 // Middleware
 app.use(cors({
   origin: process.env.NODE_ENV === 'production' 
-    ? ['https://terapiaconect.com', 'https://www.terapiaconect.com'] 
+    ? ['https://terapiaconect.com', 'https://www.terapiaconect.com', 'https://terapia-conect-frontend.vercel.app'] 
     : ['http://localhost:3001', 'http://localhost:5173', '*'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
