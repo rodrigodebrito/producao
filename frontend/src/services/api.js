@@ -1,8 +1,19 @@
 import axios from 'axios';
 import { BASE_API_URL } from '../config';
 
-// Configurações do baseURL usando o arquivo de configuração
-const baseURL = BASE_API_URL;
+// EMERGENCY FIX - Forçar URL do backend correto
+const baseURL = 'https://theraconnect-prd.onrender.com/api';
+
+// Criar uma instância do axios com configuração básica
+console.log('API.JS - Criando instância do axios com baseURL:', baseURL);
+
+// Injetar no window para debug
+if (typeof window !== 'undefined') {
+  window.__API_AXIOS_CONFIG = {
+    baseURL,
+    timestamp: new Date().toISOString()
+  };
+}
 
 // Criar uma instância do axios com configuração básica
 const api = axios.create({
