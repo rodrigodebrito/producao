@@ -12,20 +12,42 @@ const openaiService = require('../services/ai/openai.service');
 // Importar o middleware de upload de áudio
 const audioUpload = require('../utils/audioUpload');
 
-// Removendo criação automática do diretório de upload
-// Usar armazenamento em memória em vez de disco para evitar problemas de sistema de arquivos
+// Criação automática do diretório de upload
 const uploadDir = path.join(__dirname, '../../uploads');
-// Removido o código que cria o diretório
+if (!fs.existsSync(uploadDir)) {
+  console.log(`Criando diretório de uploads: ${uploadDir}`);
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
 
-// Configuração para arquivos pequenos (em memória)
-const memoryStorage = multer.memoryStorage();
+// Configuração para arquivos em disco
+const diskStorage = multer.diskStorage({
+  destination: function(req, file, cb) {
+    cb(null, uploadDir);
+  },
+  filename: function(req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const ext = path.extname(file.originalname);
+    cb(null, file.fieldname + '-' + uniqueSuffix + ext);
+  }
+});
+
 const memoryUpload = multer({ 
-  storage: memoryStorage,
+  storage: diskStorage,
   limits: { fileSize: 10 * 1024 * 1024 } // 10MB
 });
 
-// Usar armazenamento em memória em vez de disco
-const audioStorage = multer.memoryStorage();
+// Configuração para armazenamento de áudio em disco
+const audioStorage = multer.diskStorage({
+  destination: function(req, file, cb) {
+    cb(null, uploadDir);
+  },
+  filename: function(req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const ext = path.extname(file.originalname);
+    cb(null, 'audio-' + uniqueSuffix + ext);
+  }
+});
+
 const audioUploadConfig = multer({ 
   storage: audioStorage,
   limits: { fileSize: 25 * 1024 * 1024 }, // 25MB
@@ -53,7 +75,9 @@ const router = express.Router();
 // Rota de teste simples
 router.get('/test', async (req, res) => {
     try {
+        console.log('AI Routes: Testando OpenAI Service com uma chamada simples');
         const response = await openaiService.analyzeText("Olá, isso é um teste de integração.");
+        console.log('AI Routes: OpenAI Service respondeu com sucesso');
         res.json({ analysis: response });
     } catch (error) {
         console.error('Erro no teste:', error);
@@ -246,25 +270,88 @@ router.post('/whisper/transcribe',
         language: req.body.language || 'pt'
       });
       
-      console.log('Transcrição concluída com sucesso');
-      
-      // Retornar o resultado
-      res.status(200).json({
+      return res.json({
         success: true,
-        text: transcription.text,
-        format: req.body.language || 'pt',
-        duration: req.body.duration || 0
+        text: transcription.text
       });
     } catch (error) {
       console.error('Erro na transcrição:', error);
-      res.status(500).json({
+      return res.status(500).json({
         success: false,
-        error: error.message || 'Erro ao processar a transcrição'
+        error: error.message
       });
     }
   }
 );
 
+// Rota de upload de áudio para transcrição
+router.post('/audio/transcribe', 
+  audioUploadConfig.single('audio'),
+  async (req, res) => {
+    try {
+      // Verificar se o arquivo existe
+      if (!req.file) {
+        return res.status(400).json({
+          success: false,
+          message: 'Nenhum arquivo foi enviado'
+        });
+      }
+      
+      console.log(`Arquivo recebido: ${req.file.originalname}, tamanho: ${req.file.size} bytes`);
+      
+      // Se estiver usando armazenamento em disco, o arquivo estará em req.file.path
+      // Se estiver usando armazenamento em memória, o arquivo estará em req.file.buffer
+      let filePath = req.file.path;
+      let useBuffer = false;
+      
+      // Se estiver usando buffer (memória)
+      if (!filePath && req.file.buffer) {
+        useBuffer = true;
+        console.log('Usando dados do buffer para transcrição');
+      }
+      
+      // Log de informações sobre o arquivo
+      console.log(`Tipo de mídia: ${req.file.mimetype}`);
+      console.log(`Caminho do arquivo: ${filePath || 'Em memória'}`);
+      
+      // Definir idioma da transcrição
+      const language = req.body.language || 'pt';
+      
+      try {
+        let transcription;
+        
+        if (useBuffer) {
+          // Transcrição a partir do buffer em memória
+          transcription = await openaiService.transcribeAudioFromBuffer(req.file.buffer, language);
+        } else {
+          // Transcrição a partir do arquivo em disco
+          transcription = await openaiService.transcribeAudioVideo(filePath, language);
+        }
+        
+        return res.status(200).json({
+          success: true,
+          transcription: transcription
+        });
+      } catch (error) {
+        console.error('Erro na transcrição:', error);
+        return res.status(500).json({
+          success: false,
+          message: 'Erro ao processar transcrição',
+          error: error.message
+        });
+      }
+    } catch (error) {
+      console.error('Erro no endpoint de transcrição:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Erro interno no servidor',
+        error: error.message
+      });
+    }
+  }
+);
+
+// Rota para obter relatório de uso de tokens
 router.get('/token-usage', aiController.getTokenUsage);
 
 module.exports = router; 

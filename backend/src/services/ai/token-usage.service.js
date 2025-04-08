@@ -40,11 +40,11 @@ class TokenUsageService {
    */
   ensureLogDirectory() {
     const logDir = path.dirname(LOG_FILE_PATH);
-    // DESABILITADO: Criação de diretório (apenas para o deploy)
-    // if (!fs.existsSync(logDir)) {
-    //   fs.mkdirSync(logDir, { recursive: true });
-    // }
-    console.log('Diretório de logs:', logDir, '(criação desabilitada)');
+    // Habilitando criação de diretório
+    if (!fs.existsSync(logDir)) {
+      fs.mkdirSync(logDir, { recursive: true });
+    }
+    console.log('Diretório de logs:', logDir, '(criação automática habilitada)');
   }
 
   /**
