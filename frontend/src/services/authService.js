@@ -7,6 +7,7 @@ const authService = {
   login: async (email, password) => {
     try {
       console.log(`authService: Tentando login com ${email}`);
+      console.log('authService: URL base usada:', api.defaults.baseURL);
       
       // Como baseURL já inclui '/api', usar apenas '/auth/login'
       const response = await api.post('/auth/login', { email, password });
