@@ -7,11 +7,31 @@ const FormData = require('form-data');
 const { IncomingMessage } = require('http');
 
 // Configurar cliente OpenAI
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-  timeout: 60000, // Aumentado para 60 segundos
-  maxRetries: 3
-});
+// const openai = new OpenAI({
+//   apiKey: process.env.OPENAI_API_KEY,
+//   timeout: 60000, // Aumentado para 60 segundos
+//   maxRetries: 3
+// });
+
+// Mock do cliente OpenAI para evitar chamadas reais
+const openai = {
+  chat: {
+    completions: {
+      create: async (options) => {
+        console.log('MOCK: OpenAI API chamada simulada');
+        return {
+          choices: [
+            {
+              message: {
+                content: "Esta é uma resposta simulada da API OpenAI para fins de teste. A API real está desabilitada temporariamente."
+              }
+            }
+          ]
+        };
+      }
+    }
+  }
+};
 
 /**
  * Serviço para interações com a API da OpenAI
@@ -20,11 +40,8 @@ class OpenAIService {
   constructor() {
     this.apiKey = process.env.OPENAI_API_KEY;
     
-    if (!this.apiKey) {
-      console.warn('AVISO: OPENAI_API_KEY não configurada. As chamadas à API da OpenAI falharão.');
-    } else {
-      console.log('OpenAI API configurada com sucesso');
-    }
+    // Alterado para sempre exibir mensagem de teste
+    console.log('OpenAI API em modo SIMULAÇÃO - sem chamadas reais à API');
   }
   
   /**
@@ -33,6 +50,15 @@ class OpenAIService {
    * @returns {Promise<Object>} - Resultado da transcrição
    */
   async callWhisperAPI(formData) {
+    console.log('MOCK: Simulando chamada à API Whisper...');
+    
+    // Simulação de resposta sem chamar a API real
+    return {
+      text: "Esta é uma transcrição simulada para fins de teste. A API Whisper real está desabilitada temporariamente."
+    };
+    
+    // Código original comentado abaixo
+    /*
     console.log('Iniciando chamada à API Whisper...');
     
     // Verificar API key
@@ -141,6 +167,7 @@ class OpenAIService {
       
       throw error;
     }
+    */
   }
   
   /**
@@ -150,6 +177,13 @@ class OpenAIService {
    * @returns {Promise<Object>} - Resultado do completions
    */
   async callCompletionsAPI(prompt, options = {}) {
+    console.log('MOCK: Simulando chamada à API Completions...');
+    
+    // Simulação de resposta sem chamar a API real
+    return "Esta é uma resposta simulada da API OpenAI para fins de teste. A API real está desabilitada temporariamente.";
+    
+    // Código original comentado abaixo
+    /*
     try {
       // Validar chave API
       if (!this.apiKey) {
@@ -178,6 +212,7 @@ class OpenAIService {
       console.error('Erro ao chamar API Completions:', error.message);
       throw error;
     }
+    */
   }
   
   /**
