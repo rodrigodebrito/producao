@@ -1,6 +1,9 @@
-const { pipeline } = require('@xenova/transformers');
+// Removendo import com require e usando uma variável que será preenchida depois
+// const { pipeline } = require('@xenova/transformers');
 const prisma = require('../../utils/prisma');
 const logger = require('../../utils/logger');
+
+let pipeline; // Será preenchido após importação dinâmica
 
 class EmbeddingService {
   constructor() {
@@ -8,6 +11,26 @@ class EmbeddingService {
     this.modelName = 'Xenova/all-MiniLM-L6-v2'; // Modelo leve e eficiente para embeddings
     this.embeddingDimension = 384; // Dimensão padrão de embeddings para este modelo
     this.initialized = false;
+    
+    // Iniciar o carregamento do módulo transformers de forma assíncrona
+    this.loadTransformersModule().catch(err => {
+      logger.error('Erro ao carregar o módulo transformers:', err);
+    });
+  }
+
+  /**
+   * Carrega o módulo transformers usando importação dinâmica
+   */
+  async loadTransformersModule() {
+    try {
+      logger.info('EmbeddingService: Carregando módulo transformers via import dinâmico');
+      const transformers = await import('@xenova/transformers');
+      pipeline = transformers.pipeline;
+      logger.info('EmbeddingService: Módulo transformers carregado com sucesso');
+    } catch (error) {
+      logger.error('EmbeddingService: Erro ao carregar módulo transformers', error);
+      throw error;
+    }
   }
 
   /**
@@ -17,6 +40,12 @@ class EmbeddingService {
     if (this.initialized) return;
 
     try {
+      // Garantir que o módulo transformers foi carregado
+      if (!pipeline) {
+        logger.info('EmbeddingService: Aguardando carregamento do módulo transformers...');
+        await this.loadTransformersModule();
+      }
+
       logger.info(`EmbeddingService: Inicializando modelo ${this.modelName}`);
       this.model = await pipeline('feature-extraction', this.modelName);
       this.initialized = true;
