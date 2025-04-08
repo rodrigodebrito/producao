@@ -8,8 +8,7 @@ const FormData = require('form-data');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
-const openaiService = require('../services/openai.service');
-// const OpenAIService = require('../services/ai/openai.service'); // Comentando para evitar conflito
+const openaiService = require('../services/ai/openai.service');
 const ffmpeg = require('fluent-ffmpeg');
 const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
 ffmpeg.setFfmpegPath(ffmpegPath);
@@ -316,7 +315,7 @@ const aiController = {
         .join('\n');
 
       // Gerar insights usando OpenAI
-      const analysis = await openAIService.analyzeText(transcriptText);
+      const analysis = await openaiService.analyzeText(transcriptText);
       
       // Criar o insight
       await prisma.aIInsight.create({
