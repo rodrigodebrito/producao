@@ -1,11 +1,12 @@
 import React, { useRef, useState, useEffect, useMemo, useCallback, useContext } from 'react';
 import { Canvas, useFrame, useLoader, useThree } from '@react-three/fiber';
-import { OrbitControls, Html, useGLTF } from '@react-three/drei';
+import { OrbitControls, Html, useGLTF, PerspectiveCamera, Environment } from '@react-three/drei';
 import * as THREE from 'three';
 import { TextureLoader } from 'three';
 import './ConstellationField.css';
 import { ConstellationProvider, ConstellationContext } from '../../contexts/ConstellationContext';
 import Field from './Field';
+import ControlTransfer from './ControlTransfer';
 
 // Cores para os representantes
 const REPRESENTATIVE_COLORS = [
@@ -218,6 +219,9 @@ const ConstellationView = ({ fieldTexture }) => {
     editColor = '',
     isDraggingAny = false,
     showNames = true,
+    plateRotation = 0,
+    cameraPosition = { x: 0, y: 10, z: 10 },
+    cameraTarget = { x: 0, y: 0, z: 0 },
     setRepresentativeName = () => {},
     setSelectedType = () => {},
     setSelectedColor = () => {},
@@ -258,6 +262,7 @@ const ConstellationView = ({ fieldTexture }) => {
 
   // Referência para o controle de órbita
   const orbitControlsRef = useRef();
+  const [showAddPanel, setShowAddPanel] = useState(false);
 
   // Este useEffect controla a emissão de atualizações de câmera a cada 300ms
   useEffect(() => {
@@ -265,7 +270,7 @@ const ConstellationView = ({ fieldTexture }) => {
     if (!orbitControlsRef.current || !hasControl) return;
 
     // Controla os eventos de mudança na câmera
-    const handleCameraChange = () => {
+    const handleCameraChange = (e) => {
       if (orbitControlsRef.current) {
         // Obter a posição atual da câmera e o alvo
         const camera = orbitControlsRef.current.object;
@@ -544,7 +549,15 @@ const ConstellationView = ({ fieldTexture }) => {
             powerPreference: "high-performance"
           }}
         >
-          <ambientLight intensity={0.5} />
+          <PerspectiveCamera 
+            makeDefault 
+            position={[cameraPosition.x, cameraPosition.y, cameraPosition.z]} 
+            fov={50} 
+            near={0.1} 
+            far={1000}
+          />
+          <Environment preset="studio" />
+          <ambientLight intensity={0.8} />
           <directionalLight
             position={[5, 10, 5]} 
             intensity={0.8}
@@ -666,6 +679,8 @@ const ConstellationView = ({ fieldTexture }) => {
           </div>
         )}
       </div>
+      
+      <ControlTransfer />
     </div>
   );
 };
