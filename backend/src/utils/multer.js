@@ -22,6 +22,22 @@ const profileUploadDir = path.join(uploadDir, 'profiles');
 
 console.log('Diretórios de upload:', uploadDir, profileUploadDir, '(criação desabilitada)');
 
+// Habilitando criação de diretórios
+try {
+  if (!fs.existsSync(uploadDir)) {
+    console.log('Criando diretório de uploads:', uploadDir);
+    fs.mkdirSync(uploadDir, { recursive: true });
+  }
+  if (!fs.existsSync(profileUploadDir)) {
+    console.log('Criando diretório de perfis:', profileUploadDir);
+    fs.mkdirSync(profileUploadDir, { recursive: true });
+  }
+} catch (error) {
+  console.error('Erro ao criar diretórios de upload:', error);
+}
+
+console.log('Diretórios de upload:', uploadDir, profileUploadDir, '(criação automática habilitada)');
+
 // Configuração de armazenamento
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {

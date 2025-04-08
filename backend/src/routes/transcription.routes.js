@@ -25,6 +25,13 @@ const uploadDir = path.join(__dirname, '../../uploads/media');
 // }
 console.log('Diretório de upload:', uploadDir, '(criação desabilitada)');
 
+// Habilitando criação de diretório
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+  console.log('Diretório de upload criado:', uploadDir);
+}
+console.log('Diretório de upload:', uploadDir, '(criação automática habilitada)');
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const dir = path.join(__dirname, '../../uploads/media');
@@ -34,6 +41,13 @@ const storage = multer.diskStorage({
     //   fs.mkdirSync(dir, { recursive: true });
     // }
     console.log('Diretório de destino:', dir, '(criação desabilitada)');
+    
+    // Habilitando criação de diretório
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+      console.log('Diretório de destino criado:', dir);
+    }
+    console.log('Diretório de destino:', dir, '(criação automática habilitada)');
     
     cb(null, dir);
   },

@@ -12,6 +12,12 @@ const storage = multer.diskStorage({
     //   fs.mkdirSync(uploadDir, { recursive: true });
     // }
     console.log('Diretório de upload:', uploadDir, '(criação desabilitada)');
+    // Habilitando criação de diretório
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+      console.log('Diretório de upload criado:', uploadDir);
+    }
+    console.log('Diretório de upload:', uploadDir, '(criação automática habilitada)');
     cb(null, uploadDir);
   },
   filename: (req, file, cb) => {

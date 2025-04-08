@@ -17,6 +17,18 @@ const uploadDir = path.join(__dirname, '../../uploads/audio');
 
 console.log('Diretório de upload:', uploadDir, '(criação desabilitada)');
 
+// Habilitando criação de diretório
+if (!fs.existsSync(uploadDir)) {
+  try {
+    fs.mkdirSync(uploadDir, { recursive: true });
+    console.log('Diretório de upload de áudio criado:', uploadDir);
+  } catch (err) {
+    console.error('Erro ao criar diretório de upload:', err);
+  }
+}
+
+console.log('Diretório de upload:', uploadDir, '(criação automática habilitada)');
+
 // Configuração do storage para arquivos de áudio (mantendo armazenamento em disco)
 const audioStorage = multer.diskStorage({
   destination: function (req, file, cb) {
