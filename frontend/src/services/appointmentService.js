@@ -253,7 +253,7 @@ export const createAppointmentDirect = async (appointmentData) => {
     };
     
     // URL base da API
-    const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+    const baseUrl = import.meta.env.VITE_API_URL || 'https://theraconnect-prd.onrender.com';
     console.log('URL base da API:', baseUrl);
     
     // Usar rotas alternativas para tentar criar o agendamento

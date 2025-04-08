@@ -2,7 +2,7 @@ import axios from 'axios';
 
 // Configurações do baseURL, dependendo do ambiente
 const baseURL = process.env.NODE_ENV === 'production'
-  ? (process.env.REACT_APP_API_URL || '/api')
+  ? (import.meta.env.VITE_API_URL + '/api' || 'https://theraconnect-prd.onrender.com/api')
   : 'http://localhost:3000/api';
 
 // Criar uma instância do axios com configuração básica
