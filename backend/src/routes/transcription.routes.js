@@ -19,19 +19,21 @@ const flexAuthMiddleware = (req, res, next) => {
 // Configurar o multer para upload de arquivos de áudio/vídeo
 const uploadDir = path.join(__dirname, '../../uploads/media');
 
-// Criar diretório se não existir
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
+// DESABILITADO: Criação de diretório (apenas para o deploy)
+// if (!fs.existsSync(uploadDir)) {
+//   fs.mkdirSync(uploadDir, { recursive: true });
+// }
+console.log('Diretório de upload:', uploadDir, '(criação desabilitada)');
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const dir = path.join(__dirname, '../../uploads/media');
     
-    // Verificar se o diretório existe, se não, criar
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
+    // DESABILITADO: Criação de diretório (apenas para o deploy)
+    // if (!fs.existsSync(dir)) {
+    //   fs.mkdirSync(dir, { recursive: true });
+    // }
+    console.log('Diretório de destino:', dir, '(criação desabilitada)');
     
     cb(null, dir);
   },

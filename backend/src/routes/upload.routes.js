@@ -9,9 +9,11 @@ const { v4: uuidv4 } = require('uuid');
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const uploadDir = 'uploads';
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir);
-    }
+    // DESABILITADO: Criação de diretório (apenas para o deploy)
+    // if (!fs.existsSync(uploadDir)) {
+    //   fs.mkdirSync(uploadDir);
+    // }
+    console.log('Diretório de upload:', uploadDir, '(criação desabilitada)');
     cb(null, uploadDir);
   },
   filename: (req, file, cb) => {

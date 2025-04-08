@@ -2,23 +2,25 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
-// Garantir que o diretório de uploads existe
+// Definir diretórios de upload
 const uploadDir = path.join(__dirname, '../../uploads');
 const profileUploadDir = path.join(uploadDir, 'profiles');
 
-// Criar diretórios se não existirem
-try {
-  if (!fs.existsSync(uploadDir)) {
-    console.log('Criando diretório de uploads:', uploadDir);
-    fs.mkdirSync(uploadDir, { recursive: true });
-  }
-  if (!fs.existsSync(profileUploadDir)) {
-    console.log('Criando diretório de perfis:', profileUploadDir);
-    fs.mkdirSync(profileUploadDir, { recursive: true });
-  }
-} catch (error) {
-  console.error('Erro ao criar diretórios de upload:', error);
-}
+// DESABILITADO: Criação de diretórios (apenas para o deploy)
+// try {
+//   if (!fs.existsSync(uploadDir)) {
+//     console.log('Criando diretório de uploads:', uploadDir);
+//     fs.mkdirSync(uploadDir, { recursive: true });
+//   }
+//   if (!fs.existsSync(profileUploadDir)) {
+//     console.log('Criando diretório de perfis:', profileUploadDir);
+//     fs.mkdirSync(profileUploadDir, { recursive: true });
+//   }
+// } catch (error) {
+//   console.error('Erro ao criar diretórios de upload:', error);
+// }
+
+console.log('Diretórios de upload:', uploadDir, profileUploadDir, '(criação desabilitada)');
 
 // Configuração de armazenamento
 const storage = multer.diskStorage({

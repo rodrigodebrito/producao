@@ -2,18 +2,22 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
-// Garantir que o diretório de uploads existe
+// Obter o diretório de uploads
 const uploadDir = path.join(__dirname, '../../uploads/audio');
-if (!fs.existsSync(uploadDir)) {
-  try {
-    fs.mkdirSync(uploadDir, { recursive: true });
-    console.log('Diretório de upload de áudio criado:', uploadDir);
-  } catch (err) {
-    console.error('Erro ao criar diretório de upload:', err);
-  }
-}
 
-// Configuração do storage para arquivos de áudio
+// DESABILITADO: Criação de diretório (apenas para o deploy)
+// if (!fs.existsSync(uploadDir)) {
+//   try {
+//     fs.mkdirSync(uploadDir, { recursive: true });
+//     console.log('Diretório de upload de áudio criado:', uploadDir);
+//   } catch (err) {
+//     console.error('Erro ao criar diretório de upload:', err);
+//   }
+// }
+
+console.log('Diretório de upload:', uploadDir, '(criação desabilitada)');
+
+// Configuração do storage para arquivos de áudio (mantendo armazenamento em disco)
 const audioStorage = multer.diskStorage({
   destination: function (req, file, cb) {
     cb(null, uploadDir);
