@@ -343,169 +343,54 @@ export const createAppointmentSmart = async (appointmentData) => {
     // Obter informações do usuário do localStorage
     const userJson = localStorage.getItem('user');
     if (!userJson) {
-      console.error('createAppointmentSmart: Usuário não encontrado no localStorage');
       throw new Error('Usuário não encontrado no localStorage');
     }
     
     const user = JSON.parse(userJson);
-    console.log('createAppointmentSmart: Criando agendamento para usuário:', user);
+    console.log('Criando agendamento para usuário:', user);
     
     // Detectar se o usuário é terapeuta
     const isTherapist = user.role === 'THERAPIST';
-    console.log('createAppointmentSmart: Usuário é terapeuta?', isTherapist);
     
     // Verificar se o terapeuta está tentando agendar consigo mesmo
     const selfAppointment = isTherapist && (appointmentData.selfBooking === true || !appointmentData.clientId);
-    console.log('createAppointmentSmart: É auto-agendamento?', selfAppointment);
     
     // Garantir que a flag selfBooking esteja definida no objeto de dados
     if (selfAppointment) {
       appointmentData.selfBooking = true;
     }
     
-    console.log(`createAppointmentSmart: Tipo de agendamento: ${isTherapist ? 'Terapeuta' : 'Cliente'}, Auto-agendamento: ${selfAppointment}`);
-    
-    // Verificar se temos o token antes de prosseguir
-    const token = localStorage.getItem('token');
-    console.log('createAppointmentSmart: Token presente?', !!token);
-    
-    // Verificar configuração da API
-    console.log('createAppointmentSmart: URL base da API:', api.defaults.baseURL);
+    console.log(`Tipo de agendamento: ${isTherapist ? 'Terapeuta' : 'Cliente'}, Auto-agendamento: ${selfAppointment}`);
     
     if (selfAppointment) {
       // Adicionar o ID do terapeuta como clientId se não estiver definido
       if (!appointmentData.clientId && user.id) {
-        console.log('createAppointmentSmart: Adicionando ID do terapeuta como clientId para auto-agendamento:', user.id);
+        console.log('Adicionando ID do terapeuta como clientId para auto-agendamento');
         appointmentData.userId = user.id;
       }
       
       // Usar a rota especial para terapeutas agendando para si mesmos
-      console.log('createAppointmentSmart: Usando rota especializada para terapeuta como cliente');
+      console.log('Usando rota especializada para terapeuta como cliente');
       try {
-        console.log('createAppointmentSmart: Chamando createTherapistSelfAppointment');
-        const result = await createTherapistSelfAppointment(appointmentData);
-        console.log('createAppointmentSmart: createTherapistSelfAppointment bem-sucedido:', result);
-        return result;
+        return await createTherapistSelfAppointment(appointmentData);
       } catch (selfAppointmentError) {
-        console.error('createAppointmentSmart: Método especializado falhou:', selfAppointmentError);
-        console.log('createAppointmentSmart: Tentando método direto como fallback');
-        try {
-          const directResult = await createAppointmentDirect({...appointmentData, selfBooking: true});
-          console.log('createAppointmentSmart: createAppointmentDirect bem-sucedido:', directResult);
-          return directResult;
-        } catch (directError) {
-          console.error('createAppointmentSmart: Todos os métodos falharam');
-          console.error('createAppointmentSmart: Erro original:', selfAppointmentError);
-          console.error('createAppointmentSmart: Erro do fallback:', directError);
-          throw directError;
-        }
+        console.error('Método especializado falhou, tentando método direto:', selfAppointmentError);
+        return await createAppointmentDirect({...appointmentData, selfBooking: true});
       }
     } else {
       // Tentar método regular primeiro
       try {
-        console.log('createAppointmentSmart: Tentando método regular de agendamento');
-        const result = await createAppointment(appointmentData);
-        console.log('createAppointmentSmart: createAppointment bem-sucedido:', result);
-        return result;
+        console.log('Tentando método regular de agendamento');
+        return await createAppointment(appointmentData);
       } catch (regularError) {
-        console.error('createAppointmentSmart: Método regular falhou:', regularError);
+        console.error('Método regular falhou, tentando método direto:', regularError);
         
         // Se falhar, tentar o método direto
-        console.log('createAppointmentSmart: Tentando método direto como fallback');
-        try {
-          const directResult = await createAppointmentDirect(appointmentData);
-          console.log('createAppointmentSmart: createAppointmentDirect bem-sucedido:', directResult);
-          return directResult;
-        } catch (directError) {
-          console.error('createAppointmentSmart: Todos os métodos falharam');
-          console.error('createAppointmentSmart: Erro original:', regularError);
-          console.error('createAppointmentSmart: Erro do fallback:', directError);
-          throw directError;
-        }
+        return await createAppointmentDirect(appointmentData);
       }
     }
   } catch (error) {
     console.error('Erro no agendamento inteligente:', error);
     throw error;
-  }
-};
-
-// Função para testar a conexão com o servidor
-export const testServerConnection = async () => {
-  try {
-    console.log('Testando conexão com o servidor...');
-    const response = await api.get('/');
-    console.log('Conexão com o servidor bem-sucedida:', response.data);
-    return { success: true, data: response.data };
-  } catch (error) {
-    console.error('Erro ao testar conexão com o servidor:', error);
-    // Tentar outra rota caso a primeira falhe
-    try {
-      console.log('Tentando rota alternativa...');
-      const altResponse = await api.get('/health');
-      console.log('Conexão alternativa bem-sucedida:', altResponse.data);
-      return { success: true, data: altResponse.data };
-    } catch (altError) {
-      console.error('Todas as tentativas de conexão falharam');
-      return { 
-        success: false, 
-        error: error.message,
-        hasResponse: !!error.response,
-        status: error.response?.status,
-        data: error.response?.data
-      };
-    }
-  }
-};
-
-// Função especial para testar criação de agendamento com fetch nativo (sem Axios)
-export const createAppointmentWithFetch = async (appointmentData) => {
-  try {
-    console.log('Testando criação de agendamento com fetch nativo...');
-    
-    // Obter o token
-    const token = localStorage.getItem('token');
-    if (!token) {
-      throw new Error('Sem token de autenticação');
-    }
-    
-    // Configurar a requisição
-    const apiUrl = `${API_URL}/appointments`;
-    console.log('URL da requisição:', apiUrl);
-    
-    // Enviar a requisição
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify(appointmentData)
-    });
-    
-    // Processar a resposta
-    const text = await response.text();
-    console.log('Resposta bruta:', text);
-    
-    let data;
-    try {
-      data = text ? JSON.parse(text) : {};
-    } catch (e) {
-      console.warn('Não foi possível parsear a resposta como JSON:', e);
-      data = { raw: text };
-    }
-    
-    return {
-      success: response.ok,
-      status: response.status,
-      data,
-      headers: Object.fromEntries([...response.headers])
-    };
-  } catch (error) {
-    console.error('Erro fatal na requisição fetch:', error);
-    return {
-      success: false,
-      error: error.message,
-    };
   }
 }; 

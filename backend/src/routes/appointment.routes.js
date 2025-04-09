@@ -739,4 +739,131 @@ router.post('/bypass', async (req, res) => {
   }
 });
 
+/**
+ * @route POST /appointments/create-therapist-client
+ * @desc Criar perfil de cliente para um terapeuta e em seguida criar o agendamento
+ * @access Privado (apenas terapeutas)
+ */
+router.post('/create-therapist-client', authenticate, authorize(['THERAPIST']), async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const {
+      therapistId,
+      date,
+      time,
+      toolId,
+      mode
+    } = req.body;
+
+    console.log(`[TERAPEUTA-COMO-CLIENTE] Iniciando processo para criar perfil de cliente para terapeuta ${userId}`);
+
+    // 1. Verificar se já existe um perfil de cliente para este terapeuta
+    let clientProfile = await prisma.client.findFirst({
+      where: { userId }
+    });
+
+    // 2. Se não existir, criar um novo perfil de cliente
+    if (!clientProfile) {
+      console.log(`[TERAPEUTA-COMO-CLIENTE] Perfil de cliente não encontrado para usuário ${userId}. Criando novo...`);
+      
+      try {
+        clientProfile = await prisma.client.create({
+          data: {
+            userId,
+            // Adicionar quaisquer outros campos obrigatórios aqui
+          }
+        });
+        console.log(`[TERAPEUTA-COMO-CLIENTE] Novo perfil de cliente criado com ID: ${clientProfile.id}`);
+      } catch (createError) {
+        console.error(`[TERAPEUTA-COMO-CLIENTE] Erro ao criar perfil de cliente:`, createError);
+        return res.status(500).json({ 
+          error: 'Não foi possível criar perfil de cliente para o terapeuta',
+          details: createError.message
+        });
+      }
+    } else {
+      console.log(`[TERAPEUTA-COMO-CLIENTE] Perfil de cliente existente encontrado: ${clientProfile.id}`);
+    }
+
+    // 3. Verificar se o terapeuta existe e obter os dados da ferramenta
+    const therapist = await prisma.therapist.findUnique({
+      where: { id: therapistId },
+      include: {
+        tools: {
+          where: { toolId },
+          include: { tool: true }
+        }
+      }
+    });
+
+    if (!therapist) {
+      return res.status(404).json({ error: 'Terapeuta não encontrado' });
+    }
+
+    // 4. Verificar se o terapeuta oferece a ferramenta selecionada
+    const therapistTool = therapist.tools[0];
+    if (!therapistTool) {
+      return res.status(400).json({ error: 'Ferramenta não disponível para este terapeuta' });
+    }
+
+    // 5. Verificar disponibilidade do horário
+    const existingAppointment = await prisma.appointment.findFirst({
+      where: {
+        therapistId,
+        date,
+        time,
+        NOT: {
+          status: 'CANCELLED'
+        }
+      }
+    });
+
+    if (existingAppointment) {
+      return res.status(400).json({ error: 'Horário já está ocupado' });
+    }
+
+    // 6. Criar o agendamento usando o perfil de cliente do terapeuta
+    console.log(`[TERAPEUTA-COMO-CLIENTE] Criando agendamento:`);
+    console.log(`- therapistId: ${therapistId}`);
+    console.log(`- clientId: ${clientProfile.id}`);
+    console.log(`- date: ${date}`);
+    console.log(`- time: ${time}`);
+    console.log(`- toolId: ${toolId}`);
+    console.log(`- mode: ${mode || 'N/A'}`);
+
+    const appointment = await prisma.appointment.create({
+      data: {
+        therapistId,
+        clientId: clientProfile.id,
+        date,
+        time,
+        toolId,
+        mode,
+        status: 'SCHEDULED',
+        price: therapistTool.price,
+        duration: therapistTool.tool.duration
+      },
+      include: {
+        therapist: {
+          include: {
+            user: true
+          }
+        },
+        client: {
+          include: {
+            user: true
+          }
+        },
+        tool: true
+      }
+    });
+
+    console.log(`[TERAPEUTA-COMO-CLIENTE] Agendamento criado com sucesso. ID: ${appointment.id}`);
+    res.json(appointment);
+  } catch (error) {
+    console.error('[TERAPEUTA-COMO-CLIENTE] Erro:', error);
+    res.status(500).json({ error: 'Erro ao processar o agendamento', details: error.message });
+  }
+});
+
 module.exports = router; 

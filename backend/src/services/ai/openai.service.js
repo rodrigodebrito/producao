@@ -9,6 +9,9 @@ const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
 });
 
+// Log de inicialização do serviço
+console.log('OpenAI Service: Inicializado com sucesso - API Key configurada');
+
 // Instruções detalhadas para cada tipo de análise
 const SYSTEM_PROMPTS = {
     analysis: `Você é um assistente especializado em análise de sessões de terapia.

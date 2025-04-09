@@ -9,8 +9,8 @@ const authService = {
       console.log(`authService: Tentando login com ${email}`);
       console.log('authService: URL base usada:', api.defaults.baseURL);
       
-      // Como baseURL já inclui '/api', usar apenas '/auth'
-      const response = await api.post('/auth', { email, password });
+      // Como baseURL já inclui '/api', usar apenas '/auth/login'
+      const response = await api.post('/auth/login', { email, password });
       
       console.log('authService: Resposta do login:', response.data);
       

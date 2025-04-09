@@ -1,70 +1,91 @@
 import axios from 'axios';
-// Remove the circular import
-// import { getToken } from './authService';
-import { API_URL } from '../config';
+import { BASE_API_URL } from '../config';
 
-// Log para depuração
-console.log('Configurando API com URL base:', API_URL);
+// Usar a URL da configuração que detecta automaticamente o ambiente
+const baseURL = BASE_API_URL;
 
+// Criar uma instância do axios com configuração básica
+console.log('API.JS - Criando instância do axios com baseURL:', baseURL);
+
+// Injetar no window para debug
+if (typeof window !== 'undefined') {
+  window.__API_AXIOS_CONFIG = {
+    baseURL,
+    timestamp: new Date().toISOString()
+  };
+}
+
+// Criar uma instância do axios com configuração básica
 const api = axios.create({
-  baseURL: API_URL,
+  baseURL,
   headers: {
     'Content-Type': 'application/json',
   },
 });
 
-// Add request interceptor to include auth token
+// Interceptor para adicionar token de autorização em todas requisições
 api.interceptors.request.use(
   (config) => {
-    // Get token directly from localStorage instead of authService
-    const token = localStorage.getItem('token');
+    const fullUrl = `${config.baseURL}${config.url}`;
+    console.log(`Enviando requisição para: ${fullUrl}`);
     
-    // Log detalhado para cada requisição
-    console.log(`🚀 REQUISIÇÃO ENVIADA: ${config.method.toUpperCase()} ${config.baseURL}${config.url}`);
-    console.log('📝 Dados:', config.data ? JSON.parse(JSON.stringify(config.data)) : 'Sem dados');
-    console.log('🔑 Token presente:', token ? 'Sim' : 'Não');
-    console.log('📋 Headers:', config.headers);
-    
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-      console.log('✅ Token adicionado ao cabeçalho de autorização');
-    } else {
-      console.warn('❌ Sem token disponível para esta requisição');
+    // Verificar e corrigir duplo /api/ no URL
+    if (config.url.startsWith('/api/') && config.baseURL.endsWith('/api')) {
+      // Remove o /api/ duplicado no início da URL
+      config.url = config.url.substring(4);
+      console.log(`URL corrigida para evitar duplicação: ${config.baseURL}${config.url}`);
     }
     
+    const token = localStorage.getItem('token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
     return config;
   },
   (error) => {
-    console.error('❌ Erro no interceptor de requisição:', error);
     return Promise.reject(error);
   }
 );
 
-// Adicionar interceptor de resposta para log de erros
+// Interceptor para tratamento de erros nas respostas
 api.interceptors.response.use(
   (response) => {
-    // Log de sucesso
-    console.log(`✅ RESPOSTA RECEBIDA: ${response.status} ${response.config.method.toUpperCase()} ${response.config.url}`);
-    console.log('📊 Dados recebidos:', response.data);
     return response;
   },
-  (error) => {
-    // Logar detalhes do erro para depuração
-    if (error.response) {
-      // A requisição foi feita e o servidor respondeu com um status diferente de 2xx
-      console.error(`❌ ERRO DE RESPOSTA: ${error.response.status} ${error.config?.method?.toUpperCase()} ${error.config?.url}`);
-      console.error('📋 Dados do erro:', error.response.data);
-      console.error('📋 Headers da resposta:', error.response.headers);
-    } else if (error.request) {
-      // A requisição foi feita mas não recebeu resposta
-      console.error('❌ ERRO SEM RESPOSTA - A requisição foi enviada, mas o servidor não respondeu:');
-      console.error('📋 Requisição:', error.request);
-      console.error('📋 URL:', error.config?.url);
-      console.error('📋 Método:', error.config?.method);
-      console.error('📋 Dados enviados:', error.config?.data);
-    } else {
-      // Algo aconteceu na configuração da requisição que causou o erro
-      console.error('❌ ERRO DE CONFIGURAÇÃO:', error.message);
+  async (error) => {
+    // Verificar se o erro é de autenticação (401)
+    if (error.response && error.response.status === 401) {
+      // Remover token inválido
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      
+      // Verificar se estamos em uma rota administrativa
+      const isAdminRoute = window.location.pathname.startsWith('/admin');
+      
+      // Redirecionar para a página de login apropriada
+      if (isAdminRoute) {
+        window.location.href = '/admin/login';
+      } else {
+        window.location.href = '/login';
+      }
+    }
+    
+    // Verificar se é erro 404 ou 500 (para API específicas que não são críticas)
+    if (error.response && (error.response.status === 404 || error.response.status === 500)) {
+      // Verificar se a URL da API está em uma lista de bypass (APIs opcionais)
+      const bypassAPIs = ['/api/suggestions', '/api/analyze', '/api/report'];
+      const requestUrl = error.config.url;
+      
+      if (bypassAPIs.some(api => requestUrl.includes(api))) {
+        console.log(`Erro 404/500, verificando se é uma API que tem bypass: ${requestUrl}`);
+        // Retornar um erro amigável que pode ser tratado pelo cliente
+        return Promise.resolve({
+          data: {
+            error: 'service_unavailable',
+            message: 'Serviço temporariamente indisponível'
+          }
+        });
+      }
     }
     
     return Promise.reject(error);

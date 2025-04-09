@@ -6,9 +6,6 @@ import {
   createAppointment,
   createAppointmentAlternative,
   createAppointmentDirect,
-  createAppointmentSmart,
-  createAppointmentWithFetch,
-  testServerConnection,
   getAvailableTimeSlots, 
   getTherapistAvailability, 
   getClientByUserId 
@@ -509,9 +506,6 @@ const AppointmentScheduling = () => {
       return;
     }
 
-    console.log('Iniciando agendamento com usuário:', user);
-    console.log('Token presente:', !!localStorage.getItem('token'));
-
     try {
       setLoading(true);
       const selectedToolData = therapist.tools.find(t => t.id === selectedTool);
@@ -529,32 +523,8 @@ const AppointmentScheduling = () => {
         therapistName: therapist.name
       };
 
-      console.log('Iniciando processo de agendamento com dados:', appointmentData);
-      
-      // Testar conexão primeiro
-      const connectionTest = await testServerConnection();
-      console.log('Teste de conexão com o servidor:', connectionTest);
-      
-      let appointmentResult;
-      
-      try {
-        // Usar a função inteligente que tenta diferentes abordagens
-        appointmentResult = await createAppointmentSmart(appointmentData);
-      } catch (smartError) {
-        console.error('Falha em createAppointmentSmart:', smartError);
-        
-        // Se não funcionou com Axios, testar com fetch nativo
-        console.log('Tentando método com fetch nativo como último recurso...');
-        const fetchResult = await createAppointmentWithFetch(appointmentData);
-        
-        if (fetchResult && fetchResult.success) {
-          console.log('Sucesso com fetch nativo:', fetchResult);
-          appointmentResult = fetchResult.data;
-        } else {
-          console.error('Falha também com fetch nativo:', fetchResult);
-          throw new Error('Todos os métodos de agendamento falharam');
-        }
-      }
+      // Criar o agendamento
+      const appointmentResult = await createAppointment(appointmentData);
       
       // Criar a sessão
       if (appointmentResult && appointmentResult.id) {
