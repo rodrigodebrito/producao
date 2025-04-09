@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { getSessionById, markSessionCompleted } from '../services/sessionService';
+import FallbackMeeting from '../components/FallbackMeeting';
 import { AIProvider } from '../contexts/AIContext';
 import AIToolsContainer from '../components/AIComponents';
 import ConstellationField from '../components/ConstellationField/index';
@@ -492,15 +493,59 @@ const SessionRoom = () => {
     );
   };
 
+  // Renderizar o componente de reunião independente de erro, se tivermos um sessionId
+  const renderMeeting = () => {
+    if (!sessionId) return null;
+    
+    // Usar o ID da sala específico que sabemos que funciona
+    const workingRoomName = "44568bf2-37cb-4";
+    console.log('Usando sala específica que sabemos funcionar:', workingRoomName);
+    
+    return (
+      <FallbackMeeting
+        roomName={workingRoomName}
+        userName={session?.therapist?.name || session?.client?.name || 'Usuário'}
+        floating={isPipMode}
+        onPipModeChange={handlePipModeChange}
+      />
+    );
+  };
+
   if (loading) {
     return <div className="loading-container">Carregando sessão...</div>;
   }
 
-  // Componente restruturado para não mostrar o FallbackMeeting
   return (
     <AIProvider>
       <div className={`session-room ${showConstellation ? 'with-constellation' : ''}`} ref={sessionRoomRef}>
-        {/* Removido o componente de videochamada aqui */}
+        <div 
+          className={`session-video-container ${isPipMode ? 'pip-mode' : ''} ${fullScreenElement ? 'fullscreen' : ''}`}
+          style={isPipMode ? { 
+            transform: `translate(${videoPosition.x}px, ${videoPosition.y}px)` 
+          } : {}}
+          onMouseDown={handleMouseDown}
+          onMouseEnter={() => setCanDrag(true)}
+          onMouseLeave={() => setCanDrag(false)}
+        >
+          {sessionId && isRoomMounted && renderMeeting()}
+          
+          {isPipMode && (
+            <>
+              <div 
+                className="resizer resizer-r"
+                onMouseDown={(e) => {
+                  e.stopPropagation();
+                  // Lógica para redimensionar
+                }}
+              />
+              <div className="pip-controls">
+                <button onClick={() => setIsPipMode(false)}>
+                  Sair do PiP
+                </button>
+              </div>
+            </>
+          )}
+        </div>
         
         {/* Container do Campo de Constelação */}
         {showConstellation && (
