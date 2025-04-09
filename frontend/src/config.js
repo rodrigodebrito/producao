@@ -1,7 +1,7 @@
 // Configuração global da aplicação
 
 // Determinar o ambiente atual
-const isDevelopment = 
+export const isDevelopment = 
   window.location.hostname === 'localhost' || 
   window.location.hostname === '127.0.0.1';
 

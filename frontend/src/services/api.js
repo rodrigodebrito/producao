@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { BASE_API_URL } from '../config';
+import { BASE_API_URL, isDevelopment } from '../config';
 
 // Usar a URL da configuração que detecta automaticamente o ambiente
 const baseURL = BASE_API_URL;
@@ -26,20 +26,44 @@ const api = axios.create({
 // Interceptor para adicionar token de autorização em todas requisições
 api.interceptors.request.use(
   (config) => {
-    const fullUrl = `${config.baseURL}${config.url}`;
-    console.log(`Enviando requisição para: ${fullUrl}`);
+    // Armazenar a URL original para debug
+    const originalUrl = `${config.baseURL}${config.url}`;
     
-    // Verificar e corrigir duplo /api/ no URL
+    // Corrigir casos de duplicação de '/api'
     if (config.url.startsWith('/api/') && config.baseURL.endsWith('/api')) {
       // Remove o /api/ duplicado no início da URL
       config.url = config.url.substring(4);
-      console.log(`URL corrigida para evitar duplicação: ${config.baseURL}${config.url}`);
+      console.log(`API.JS - Corrigindo URL duplicada: ${originalUrl} -> ${config.baseURL}${config.url}`);
     }
     
+    // Corrigir casos onde a URL absoluta tem '/api/api/'
+    if (config.baseURL.includes('/api') && config.url.includes('/api/')) {
+      const apiPattern = /\/api\//g;
+      let matchCount = (config.url.match(apiPattern) || []).length;
+      
+      if (matchCount > 1) {
+        // Remover ocorrências extras de /api/
+        config.url = config.url.replace(/\/api\/api\//g, '/api/');
+        console.log(`API.JS - Removendo múltiplos '/api/' da URL: ${originalUrl} -> ${config.baseURL}${config.url}`);
+      }
+    }
+    
+    // Verificar se a URL usa 'http://localhost' explicitamente em produção
+    if (!isDevelopment && config.url.includes('localhost')) {
+      // Substituir referências a localhost pelo URL de produção
+      config.url = config.url.replace(/https?:\/\/localhost:3000/g, 'https://theraconnect-prd.onrender.com');
+      console.log(`API.JS - Substituindo localhost em ambiente de produção: ${config.baseURL}${config.url}`);
+    }
+    
+    // Log da URL final
+    console.log(`Enviando requisição para: ${config.baseURL}${config.url}`);
+    
+    // Adicionar token de autenticação
     const token = localStorage.getItem('token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    
     return config;
   },
   (error) => {
