@@ -175,8 +175,14 @@ const aiController = {
         return res.status(400).json({ errors: errors.array() });
       }
 
-      const { sessionId, speaker, content } = req.body;
+      // Aceitar tanto 'content' quanto 'transcript' para compatibilidade
+      const { sessionId, speaker } = req.body;
+      // CORREÇÃO: Aceitar ambos 'transcript' e 'content' para compatibilidade
+      const content = req.body.content || req.body.transcript || '';
       const timestamp = req.body.timestamp || new Date();
+      
+      // Log para debug
+      console.log(`AI Controller: Recebida transcrição para sessionId=${sessionId}, speaker=${speaker}, tamanho=${content.length} caracteres`);
 
       // Verificar se a sessão existe
       const session = await prisma.session.findUnique({

@@ -234,36 +234,200 @@ if (typeof aiController.checkOpenAI === 'function') {
 }
 
 /**
- * @route POST /api/ai/analyze-session
+ * @route POST /ai/analyze-session
  * @desc Analisar uma sessão terapêutica
- * @access Private
+ * @access Privado
  */
-router.post('/analyze-session', 
-  authenticate,
-  [
-    body('sessionId').not().isEmpty().withMessage('ID da sessão é obrigatório'),
-    body('useAdvancedAnalysis').optional().isBoolean()
-  ],
-  aiController.analyzeSession
-);
+router.post('/analyze-session', authenticate, async (req, res) => {
+  try {
+    const { sessionId, useAdvancedAnalysis } = req.body;
+    // CORREÇÃO: Aceitar tanto 'transcript' quanto 'content'
+    const transcript = req.body.transcript || req.body.content || '';
+    
+    // Log para debug
+    console.log(`AI Routes: Analisando sessão ${sessionId}, tamanho do texto: ${transcript.length} caracteres`);
+    
+    // Validar dados obrigatórios
+    if (!sessionId && !transcript) {
+      return res.status(400).json({ 
+        status: 'error', 
+        message: 'sessionId ou transcript/content são obrigatórios' 
+      });
+    }
+    
+    console.log(`Analisando sessão ${sessionId}`);
+    
+    // Importar o serviço OpenAI
+    const openaiService = require('../services/ai/openai.service');
+    
+    // Se transcript não foi fornecido, buscar do banco de dados
+    let finalTranscript = transcript;
+    if (!finalTranscript && sessionId) {
+      const transcriptions = await prisma.transcription.findMany({
+        where: { sessionId },
+        orderBy: { createdAt: 'asc' }
+      });
+      
+      if (transcriptions.length > 0) {
+        finalTranscript = transcriptions.map(t => t.content).join('\n\n');
+      }
+    }
+    
+    // Se não houver transcrição, retornar erro
+    if (!finalTranscript) {
+      return res.status(400).json({ 
+        status: 'error', 
+        message: 'Não há transcrição disponível para análise' 
+      });
+    }
+    
+    // Analisar a transcrição
+    const analysis = await openaiService.analyzeText(finalTranscript);
+    
+    return res.json({ 
+      status: 'success', 
+      message: 'Análise realizada com sucesso',
+      type: 'analysis',
+      analysis
+    });
+  } catch (error) {
+    console.error('Erro ao analisar sessão:', error);
+    return res.status(500).json({ 
+      status: 'error', 
+      message: 'Erro ao analisar sessão',
+      error: error.message
+    });
+  }
+});
 
 /**
- * @route POST /api/ai/analyze-session/advanced
- * @desc Analisar uma sessão com análise avançada (sempre usa análise avançada)
- * @access Private
+ * @route POST /ai/suggest
+ * @desc Gerar sugestões para terapeuta baseado na transcrição
+ * @access Privado
  */
-router.post('/analyze-session/advanced', 
-  authenticate,
-  [
-    body('sessionId').not().isEmpty().withMessage('ID da sessão é obrigatório'),
-    body('transcript').optional().isString()
-  ],
-  (req, res) => {
-    // Forçar o uso da análise avançada
-    req.body.useAdvancedAnalysis = true;
-    return aiController.analyzeSession(req, res);
+router.post('/suggest', authenticate, async (req, res) => {
+  try {
+    const { sessionId } = req.body;
+    // CORREÇÃO: Aceitar tanto 'transcript' quanto 'content'
+    const transcript = req.body.transcript || req.body.content || '';
+    
+    // Log para debug
+    console.log(`AI Routes: Gerando sugestões para sessão ${sessionId}, tamanho do texto: ${transcript.length} caracteres`);
+    
+    // Validar dados obrigatórios
+    if (!sessionId && !transcript) {
+      return res.status(400).json({ 
+        status: 'error', 
+        message: 'sessionId ou transcript/content são obrigatórios' 
+      });
+    }
+    
+    console.log(`Gerando sugestões para sessão ${sessionId}`);
+    
+    // Importar o serviço OpenAI
+    const openaiService = require('../services/ai/openai.service');
+    
+    // Se transcript não foi fornecido, buscar do banco de dados
+    let finalTranscript = transcript;
+    if (!finalTranscript && sessionId) {
+      const transcriptions = await prisma.transcription.findMany({
+        where: { sessionId },
+        orderBy: { createdAt: 'asc' }
+      });
+      
+      if (transcriptions.length > 0) {
+        finalTranscript = transcriptions.map(t => t.content).join('\n\n');
+      }
+    }
+    
+    // Se não houver transcrição, retornar erro
+    if (!finalTranscript) {
+      return res.status(400).json({ 
+        status: 'error', 
+        message: 'Não há transcrição disponível para sugestões' 
+      });
+    }
+    
+    // Gerar sugestões
+    const suggestions = await openaiService.generateSuggestions(finalTranscript);
+    
+    return res.json({ 
+      status: 'success', 
+      message: 'Sugestões geradas com sucesso',
+      type: 'suggestions',
+      suggestions: suggestions.split('\n').filter(line => line.trim())
+    });
+  } catch (error) {
+    console.error('Erro ao gerar sugestões:', error);
+    return res.status(500).json({ 
+      status: 'error', 
+      message: 'Erro ao gerar sugestões',
+      error: error.message
+    });
   }
-);
+});
+
+/**
+ * @route POST /ai/report
+ * @desc Gerar relatório de sessão
+ * @access Privado
+ */
+router.post('/report', authenticate, async (req, res) => {
+  try {
+    const { sessionId, transcript } = req.body;
+    
+    // Validar dados obrigatórios
+    if (!sessionId && !transcript) {
+      return res.status(400).json({ 
+        status: 'error', 
+        message: 'sessionId ou transcript são obrigatórios' 
+      });
+    }
+    
+    console.log(`Gerando relatório para sessão ${sessionId}`);
+    
+    // Importar o serviço OpenAI
+    const openaiService = require('../services/ai/openai.service');
+    
+    // Se transcript não foi fornecido, buscar do banco de dados
+    let finalTranscript = transcript;
+    if (!finalTranscript && sessionId) {
+      const transcriptions = await prisma.transcription.findMany({
+        where: { sessionId },
+        orderBy: { createdAt: 'asc' }
+      });
+      
+      if (transcriptions.length > 0) {
+        finalTranscript = transcriptions.map(t => t.content).join('\n\n');
+      }
+    }
+    
+    // Se não houver transcrição, retornar erro
+    if (!finalTranscript) {
+      return res.status(400).json({ 
+        status: 'error', 
+        message: 'Não há transcrição disponível para gerar relatório' 
+      });
+    }
+    
+    // Gerar relatório
+    const report = await openaiService.generateReport(finalTranscript);
+    
+    return res.json({ 
+      status: 'success', 
+      message: 'Relatório gerado com sucesso',
+      type: 'report',
+      report
+    });
+  } catch (error) {
+    console.error('Erro ao gerar relatório:', error);
+    return res.status(500).json({ 
+      status: 'error', 
+      message: 'Erro ao gerar relatório',
+      error: error.message
+    });
+  }
+});
 
 // Middleware de teste que sempre adiciona um usuário fictício
 const testAuthMiddleware = (req, res, next) => {
@@ -461,13 +625,22 @@ router.get('/openai-check', authenticate, async (req, res) => {
  */
 router.post('/transcript', authenticate, async (req, res) => {
   try {
-    const { sessionId, transcript, emotions } = req.body;
+    const { sessionId, emotions } = req.body;
+    
+    // CORREÇÃO: Aceitar tanto 'transcript' quanto 'content' para compatibilidade
+    const transcript = req.body.transcript || req.body.content || '';
+    
+    // Log detalhado para debug
+    console.log(`AI Routes: Recebida requisição para salvar transcrição: sessionId=${sessionId}, tamanho=${transcript.length} caracteres`);
+    console.log(`AI Routes: Campos recebidos:`, 
+      Object.keys(req.body).map(k => `${k}=${typeof req.body[k] === 'string' ? req.body[k].substring(0, 30) + '...' : typeof req.body[k]}`).join(', ')
+    );
     
     // Validar dados obrigatórios
     if (!sessionId || !transcript) {
       return res.status(400).json({ 
         status: 'error', 
-        message: 'sessionId e transcript são obrigatórios' 
+        message: 'sessionId e transcript/content são obrigatórios' 
       });
     }
     
@@ -505,192 +678,6 @@ router.post('/transcript', authenticate, async (req, res) => {
     return res.status(500).json({ 
       status: 'error', 
       message: 'Erro ao salvar transcrição',
-      error: error.message
-    });
-  }
-});
-
-/**
- * @route POST /ai/analyze-session
- * @desc Analisar uma sessão terapêutica
- * @access Privado
- */
-router.post('/analyze-session', authenticate, async (req, res) => {
-  try {
-    const { sessionId, transcript, useAdvancedAnalysis } = req.body;
-    
-    // Validar dados obrigatórios
-    if (!sessionId && !transcript) {
-      return res.status(400).json({ 
-        status: 'error', 
-        message: 'sessionId ou transcript são obrigatórios' 
-      });
-    }
-    
-    console.log(`Analisando sessão ${sessionId}`);
-    
-    // Importar o serviço OpenAI
-    const openaiService = require('../services/ai/openai.service');
-    
-    // Se transcript não foi fornecido, buscar do banco de dados
-    let finalTranscript = transcript;
-    if (!finalTranscript && sessionId) {
-      const transcriptions = await prisma.transcription.findMany({
-        where: { sessionId },
-        orderBy: { createdAt: 'asc' }
-      });
-      
-      if (transcriptions.length > 0) {
-        finalTranscript = transcriptions.map(t => t.content).join('\n\n');
-      }
-    }
-    
-    // Se não houver transcrição, retornar erro
-    if (!finalTranscript) {
-      return res.status(400).json({ 
-        status: 'error', 
-        message: 'Não há transcrição disponível para análise' 
-      });
-    }
-    
-    // Analisar a transcrição
-    const analysis = await openaiService.analyzeText(finalTranscript);
-    
-    return res.json({ 
-      status: 'success', 
-      message: 'Análise realizada com sucesso',
-      type: 'analysis',
-      analysis
-    });
-  } catch (error) {
-    console.error('Erro ao analisar sessão:', error);
-    return res.status(500).json({ 
-      status: 'error', 
-      message: 'Erro ao analisar sessão',
-      error: error.message
-    });
-  }
-});
-
-/**
- * @route POST /ai/suggest
- * @desc Gerar sugestões para terapeuta baseado na transcrição
- * @access Privado
- */
-router.post('/suggest', authenticate, async (req, res) => {
-  try {
-    const { sessionId, transcript } = req.body;
-    
-    // Validar dados obrigatórios
-    if (!sessionId && !transcript) {
-      return res.status(400).json({ 
-        status: 'error', 
-        message: 'sessionId ou transcript são obrigatórios' 
-      });
-    }
-    
-    console.log(`Gerando sugestões para sessão ${sessionId}`);
-    
-    // Importar o serviço OpenAI
-    const openaiService = require('../services/ai/openai.service');
-    
-    // Se transcript não foi fornecido, buscar do banco de dados
-    let finalTranscript = transcript;
-    if (!finalTranscript && sessionId) {
-      const transcriptions = await prisma.transcription.findMany({
-        where: { sessionId },
-        orderBy: { createdAt: 'asc' }
-      });
-      
-      if (transcriptions.length > 0) {
-        finalTranscript = transcriptions.map(t => t.content).join('\n\n');
-      }
-    }
-    
-    // Se não houver transcrição, retornar erro
-    if (!finalTranscript) {
-      return res.status(400).json({ 
-        status: 'error', 
-        message: 'Não há transcrição disponível para sugestões' 
-      });
-    }
-    
-    // Gerar sugestões
-    const suggestions = await openaiService.generateSuggestions(finalTranscript);
-    
-    return res.json({ 
-      status: 'success', 
-      message: 'Sugestões geradas com sucesso',
-      type: 'suggestions',
-      suggestions: suggestions.split('\n').filter(line => line.trim())
-    });
-  } catch (error) {
-    console.error('Erro ao gerar sugestões:', error);
-    return res.status(500).json({ 
-      status: 'error', 
-      message: 'Erro ao gerar sugestões',
-      error: error.message
-    });
-  }
-});
-
-/**
- * @route POST /ai/report
- * @desc Gerar relatório de sessão
- * @access Privado
- */
-router.post('/report', authenticate, async (req, res) => {
-  try {
-    const { sessionId, transcript } = req.body;
-    
-    // Validar dados obrigatórios
-    if (!sessionId && !transcript) {
-      return res.status(400).json({ 
-        status: 'error', 
-        message: 'sessionId ou transcript são obrigatórios' 
-      });
-    }
-    
-    console.log(`Gerando relatório para sessão ${sessionId}`);
-    
-    // Importar o serviço OpenAI
-    const openaiService = require('../services/ai/openai.service');
-    
-    // Se transcript não foi fornecido, buscar do banco de dados
-    let finalTranscript = transcript;
-    if (!finalTranscript && sessionId) {
-      const transcriptions = await prisma.transcription.findMany({
-        where: { sessionId },
-        orderBy: { createdAt: 'asc' }
-      });
-      
-      if (transcriptions.length > 0) {
-        finalTranscript = transcriptions.map(t => t.content).join('\n\n');
-      }
-    }
-    
-    // Se não houver transcrição, retornar erro
-    if (!finalTranscript) {
-      return res.status(400).json({ 
-        status: 'error', 
-        message: 'Não há transcrição disponível para gerar relatório' 
-      });
-    }
-    
-    // Gerar relatório
-    const report = await openaiService.generateReport(finalTranscript);
-    
-    return res.json({ 
-      status: 'success', 
-      message: 'Relatório gerado com sucesso',
-      type: 'report',
-      report
-    });
-  } catch (error) {
-    console.error('Erro ao gerar relatório:', error);
-    return res.status(500).json({ 
-      status: 'error', 
-      message: 'Erro ao gerar relatório',
       error: error.message
     });
   }
