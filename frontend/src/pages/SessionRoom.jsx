@@ -224,8 +224,11 @@ const SessionRoom = () => {
 
   // Função para alternar visibilidade das ferramentas de IA
   const toggleAITools = useCallback(() => {
-    setShowAITools(prev => !prev);
-    console.log('Alternando visibilidade das ferramentas de IA');
+    setShowAITools(prev => {
+      const newState = !prev;
+      console.log(`Alternando visibilidade das ferramentas de IA: ${newState ? 'Mostrando' : 'Ocultando'}`);
+      return newState;
+    });
   }, []);
 
   // Adicionar listener para comandos de constelação via socket
@@ -553,7 +556,9 @@ const SessionRoom = () => {
         
         {/* Ferramentas de IA */}
         {showAITools && (
-          <AIToolsContainer />
+          <div className="ai-tools-container">
+            <AIToolsContainer />
+          </div>
         )}
       </div>
     </AIProvider>
