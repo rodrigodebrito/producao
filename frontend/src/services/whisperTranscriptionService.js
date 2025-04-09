@@ -3,6 +3,8 @@
  * Serviço para gravar áudio, converter formatos e enviar para a API Whisper
  * Com detecção automática de silêncio e envio de chunks
  */
+import { WHISPER_URL, API_URL } from '../config';
+
 class WhisperTranscriptionService {
   constructor() {
     this.mediaRecorder = null;
@@ -10,10 +12,9 @@ class WhisperTranscriptionService {
     this.audioStream = null;
     this.isRecording = false;
     
-    // IMPORTANTE: Definir endpoints absolutos para garantir que acessamos a porta correta
-    // Esta é uma correção de emergência para um problema persistente com o proxy
-    this.apiEndpoint = 'http://localhost:3000/api/ai/whisper/transcribe'; 
-    this.transcriptEndpoint = 'http://localhost:3000/api/ai/transcript'; 
+    // Usar a URL configurada na configuração global para garantir consistência
+    this.apiEndpoint = WHISPER_URL;
+    this.transcriptEndpoint = `${API_URL}/ai/transcript`;
     
     this.transcriptionInProgress = false;
     this.useCredentials = false; // Por padrão, NÃO enviar credenciais para testes
