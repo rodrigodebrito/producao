@@ -553,11 +553,7 @@ const SessionRoom = () => {
         
         {/* Ferramentas de IA */}
         {showAITools && (
-          <div id="direct-ai-buttons" className="ai-toolbar-container" ref={aiContainerRef}>
-            <div className="ai-toolbar-wrapper">
-              <AIToolsContainer />
-            </div>
-          </div>
+          <AIToolsContainer />
         )}
       </div>
     </AIProvider>
