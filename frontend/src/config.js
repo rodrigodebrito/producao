@@ -10,6 +10,11 @@ export const API_URL = isDevelopment
   ? 'http://localhost:3000/api'
   : 'https://theraconnect-prd.onrender.com/api';
 
+// URL base do servidor Socket.IO
+export const SOCKET_URL = isDevelopment 
+  ? 'http://localhost:3000'
+  : 'https://theraconnect-prd.onrender.com';
+
 export const FRONTEND_URL = isDevelopment
   ? 'http://localhost:3001'
   : 'https://terapia-conect-frontend.vercel.app';
@@ -19,11 +24,13 @@ export const BASE_API_URL = API_URL;
 
 // Debug global para mostrar qual URL está sendo usada
 console.log(`CONFIG.JS - URL da API configurada: ${BASE_API_URL} (${isDevelopment ? 'desenvolvimento' : 'produção'})`);
+console.log(`CONFIG.JS - URL do Socket.IO configurada: ${SOCKET_URL} (${isDevelopment ? 'desenvolvimento' : 'produção'})`);
 
 // Injetar URL global na janela para debug
 if (typeof window !== 'undefined') {
   window.__API_CONFIG = {
     url: BASE_API_URL,
+    socketUrl: SOCKET_URL,
     environment: isDevelopment ? 'development' : 'production',
     timestamp: new Date().toISOString()
   };
@@ -32,6 +39,7 @@ if (typeof window !== 'undefined') {
 // Exportar configuração para uso em toda a aplicação
 export default {
   apiUrl: BASE_API_URL,
+  socketUrl: SOCKET_URL,
   frontendUrl: FRONTEND_URL,
   isDevelopment
 };

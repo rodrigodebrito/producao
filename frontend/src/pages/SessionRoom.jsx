@@ -7,6 +7,7 @@ import { AIProvider } from '../contexts/AIContext';
 import AIToolsContainer from '../components/AIComponents';
 import ConstellationField from '../components/ConstellationField/index';
 import io from 'socket.io-client';
+import { SOCKET_URL } from '../config';
 import '../styles/SessionRoom.css';
 
 const SessionRoom = () => {
@@ -77,14 +78,8 @@ const SessionRoom = () => {
         return;
       }
       
-      // Determinar o endereço do servidor com base no ambiente atual
-      const isDevelopment = window.location.hostname === 'localhost' || 
-                            window.location.hostname === '127.0.0.1';
-      
-      // Usar o mesmo host da aplicação para produção ou localhost para desenvolvimento
-      const socketURL = isDevelopment 
-        ? 'http://localhost:3000'
-        : window.location.origin;
+      // Usar a URL do socket da configuração global
+      const socketURL = SOCKET_URL;
       
       console.log(`🔌 Socket.IO: Iniciando conexão com ${socketURL}`);
       console.log(`🔌 Socket.IO: Configuração`, {
