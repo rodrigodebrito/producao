@@ -955,11 +955,12 @@ class HybridAIService {
         throw new Error('Token de autenticação não encontrado ou inválido');
       }
       
-      // Formatar os dados
+      // CORREÇÃO CRÍTICA: O backend espera um campo "transcript" em vez de "content"
+      // Formatar os dados no formato esperado pelo backend
       const data = {
         sessionId: this.sessionId,
         speaker: this.userRole || 'paciente', // Default para paciente se não especificado
-        content: transcript,
+        transcript: transcript, // ALTERADO: usar "transcript" como o backend espera
         timestamp: new Date().toISOString(),
       };
       
@@ -969,6 +970,7 @@ class HybridAIService {
       }
       
       console.log(`HybridAI: Enviando transcrição para o servidor (${transcript.length} caracteres)`);
+      console.log('HybridAI: Payload de dados:', data);
       
       // Enviar os dados via POST
       const response = await fetch(endpoint, {
