@@ -112,37 +112,64 @@ const FallbackMeeting = ({
   const [isVideoEnabled, setIsVideoEnabled] = useState(videoEnabled);
   
   // Função para obter a URL da sala
-  const getRoomUrl = useCallback(() => {
-    // Usar o roomName exatamente como está, sem modificações
-    console.log('Usando roomName original:', roomName);
-    
-    // Construir URL base do Daily.co
-    const dailyUrl = 'https://teraconect.daily.co';
-    
-    // Usar o roomName sem modificação
-    const url = `${dailyUrl}/${roomName}`;
-    
-    // Construir parâmetros da URL simplificados
-    const params = new URLSearchParams();
-    
-    // Adicionar nome do usuário se disponível
-    if (userName) {
-      params.append('name', userName);
+  const getRoomUrl = useCallback(async () => {
+    try {
+      console.log('Verificando/criando sala:', roomName);
+      
+      // Verificar se a sala existe ou criar uma nova através do backend
+      const response = await axios.get(`/api/meetings/validate-room/${roomName}`);
+      
+      if (response.data && response.data.url) {
+        console.log('Sala validada com sucesso:', response.data.url);
+        
+        // A URL já vem completa do backend, apenas adicionar parâmetros
+        const baseUrl = response.data.url;
+        
+        // Construir parâmetros da URL
+        const params = new URLSearchParams();
+        
+        // Adicionar nome do usuário se disponível
+        if (userName) {
+          params.append('name', userName);
+        }
+        
+        // Configurações básicas
+        params.append('showLeaveButton', 'true');
+        params.append('showFullscreenButton', 'true');
+        
+        // Áudio e vídeo
+        params.append('startAudioOff', !audioEnabled);
+        params.append('startVideoOff', !videoEnabled);
+        
+        // Construir URL final
+        const finalUrl = `${baseUrl}?${params.toString()}`;
+        console.log('URL final da sala:', finalUrl);
+        
+        return finalUrl;
+      } else {
+        throw new Error('Não foi possível obter a URL da sala');
+      }
+    } catch (err) {
+      console.error('Erro ao validar sala no backend:', err);
+      
+      // Fallback para URL direta em caso de erro
+      console.log('Usando fallback para sala:', roomName);
+      const dailyUrl = 'https://teraconect.daily.co';
+      const url = `${dailyUrl}/${roomName}`;
+      
+      // Construir parâmetros da URL
+      const params = new URLSearchParams();
+      if (userName) params.append('name', userName);
+      params.append('showLeaveButton', 'true');
+      params.append('showFullscreenButton', 'true');
+      params.append('startAudioOff', !audioEnabled);
+      params.append('startVideoOff', !videoEnabled);
+      
+      const finalUrl = `${url}?${params.toString()}`;
+      console.log('URL final da sala (fallback):', finalUrl);
+      
+      return finalUrl;
     }
-    
-    // Configurações básicas
-    params.append('showLeaveButton', 'true');
-    params.append('showFullscreenButton', 'true');
-    
-    // Áudio e vídeo
-    params.append('startAudioOff', !audioEnabled);
-    params.append('startVideoOff', !videoEnabled);
-    
-    // Construir URL final
-    const finalUrl = `${url}?${params.toString()}`;
-    console.log('URL final da sala:', finalUrl);
-    
-    return finalUrl;
   }, [roomName, userName, audioEnabled, videoEnabled]);
 
   // Carregar dados da sessão e inicializar a chamada
@@ -152,7 +179,7 @@ const FallbackMeeting = ({
         setIsLoading(true);
         
         // Obter URL da sala diretamente sem verificações
-        const roomUrl = getRoomUrl();
+        const roomUrl = await getRoomUrl();
         
         // Configurar detalhes da sessão
         setSessionDetails({
