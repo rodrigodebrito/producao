@@ -201,26 +201,41 @@ router.post('/', authenticate, async (req, res) => {
       } 
       // Se for THERAPIST agendando para si mesmo como cliente
       else if (authenticatedUserRole === 'THERAPIST') {
+        console.log(`Terapeuta (${authenticatedUserId}) tentando agendar como cliente. Verificando perfil de cliente existente...`);
+        
         // Verificar se o terapeuta também tem um perfil de cliente
         const therapistAsClient = await prismaClient.client.findFirst({
           where: { userId: authenticatedUserId }
         });
         
         if (therapistAsClient) {
+          console.log(`Encontrado perfil de cliente para o terapeuta: ${therapistAsClient.id}`);
           finalClientId = therapistAsClient.id;
         } else {
+          console.log(`Nenhum perfil de cliente encontrado para o terapeuta. Tentando criar um novo...`);
+          
           // Se o terapeuta não tem perfil de cliente, criar um
           const user = await prismaClient.user.findUnique({
             where: { id: authenticatedUserId }
           });
           
           if (user) {
-            const newClient = await prismaClient.client.create({
-              data: {
-                userId: authenticatedUserId
-              }
-            });
-            finalClientId = newClient.id;
+            console.log(`Usuário encontrado (${user.id}, ${user.name || user.email}). Criando novo perfil de cliente...`);
+            try {
+              const newClient = await prismaClient.client.create({
+                data: {
+                  userId: authenticatedUserId
+                }
+              });
+              console.log(`Novo perfil de cliente criado com sucesso. ID: ${newClient.id}`);
+              finalClientId = newClient.id;
+            } catch (createError) {
+              console.error(`ERRO ao criar perfil de cliente: ${createError.message}`);
+              console.error(createError);
+              return res.status(500).json({ error: 'Não foi possível criar um perfil de cliente para o terapeuta' });
+            }
+          } else {
+            console.log(`Usuário não encontrado com ID: ${authenticatedUserId}`);
           }
         }
       }
@@ -271,6 +286,26 @@ router.post('/', authenticate, async (req, res) => {
       return res.status(400).json({ error: 'Horário já está ocupado' });
     }
 
+    // Verificar explicitamente se o cliente existe antes de criar o agendamento
+    const clientExists = await prismaClient.client.findUnique({
+      where: { id: finalClientId }
+    });
+    
+    if (!clientExists) {
+      console.error(`ERRO: Cliente com ID ${finalClientId} não existe no banco de dados!`);
+      return res.status(404).json({ error: `Cliente com ID ${finalClientId} não existe` });
+    }
+    
+    console.log(`Criando agendamento com os seguintes dados:`);
+    console.log(`- therapistId: ${therapistId}`);
+    console.log(`- clientId: ${finalClientId}`);
+    console.log(`- date: ${date}`);
+    console.log(`- time: ${time}`);
+    console.log(`- toolId: ${toolId}`);
+    console.log(`- mode: ${mode || 'N/A'}`);
+    console.log(`- price: ${therapistTool.price}`);
+    console.log(`- duration: ${therapistTool.tool.duration}`);
+    
     // Criar o agendamento
     const appointment = await prismaClient.appointment.create({
       data: {
