@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useAI } from '../contexts/AIContext';
 import { toast } from 'react-toastify';
 import './AIResultsPanel.css';
@@ -10,6 +10,96 @@ const AIResultsPanel = () => {
   const [resultData, setResultData] = useState(null);
   const [pinnedMode, setPinnedMode] = useState(false);
   const [removeButtonFn, setRemoveButtonFn] = useState(null);
+
+  // Funções para download e impressão de relatórios
+  const downloadReport = useCallback(() => {
+    try {
+      console.log('Iniciando download do relatório');
+      
+      if (!resultData || (!resultData.report && !resultData.data?.report)) {
+        toast.error('Relatório não disponível para download');
+        return;
+      }
+      
+      // Obter o texto do relatório
+      const reportText = resultData.report || resultData.data?.report || '';
+      
+      // Método direto de download
+      const element = document.createElement('a');
+      element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(reportText));
+      element.setAttribute('download', 'relatorio-sessao.txt');
+      element.style.display = 'none';
+      
+      // Adicionar ao DOM e forçar o clique
+      document.body.appendChild(element);
+      element.click();
+      
+      // Limpar
+      document.body.removeChild(element);
+      
+      toast.success('Relatório baixado com sucesso!');
+    } catch (error) {
+      console.error('Erro ao baixar relatório:', error);
+      toast.error('Erro ao baixar o relatório. Tente novamente.');
+    }
+  }, [resultData]);
+  
+  const printReport = useCallback(() => {
+    try {
+      console.log('Preparando relatório para impressão');
+      
+      if (!resultData || (!resultData.report && !resultData.data?.report)) {
+        toast.error('Relatório não disponível para impressão');
+        return;
+      }
+      
+      // Obter o texto do relatório
+      const reportText = resultData.report || resultData.data?.report || '';
+      
+      // Abrir nova janela para impressão
+      const printWindow = window.open('', '_blank');
+      if (!printWindow) {
+        toast.error('Não foi possível abrir janela de impressão. Verifique se os pop-ups estão permitidos.');
+        return;
+      }
+      
+      printWindow.document.write(`
+        <html>
+          <head>
+            <title>Relatório da Sessão</title>
+            <style>
+              body { font-family: Arial, sans-serif; line-height: 1.6; padding: 20px; }
+              h1 { color: #2c3e50; }
+              h3 { color: #3498db; margin-top: 20px; }
+              p { margin-bottom: 10px; }
+              @media print {
+                body { padding: 0; margin: 1cm; }
+                button { display: none; }
+              }
+            </style>
+          </head>
+          <body>
+            <h1>Relatório da Sessão</h1>
+            ${reportText.split('\n').map(p => 
+              p.trim() ? (
+                p.startsWith('#') || p.startsWith('##') ? 
+                  `<h3>${p.replace(/^#+\s+/, '')}</h3>` : 
+                  `<p>${p}</p>`
+              ) : '<br>'
+            ).join('')}
+            <hr>
+            <p style="color: #7f8c8d; font-size: 0.8em;">Gerado por TerapiaConect</p>
+            <button onclick="window.print()" style="margin-top: 20px; padding: 10px 15px; background: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer;">Imprimir Relatório</button>
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
+      toast.success('Preparado para impressão!');
+    } catch (error) {
+      console.error('Erro ao preparar relatório para impressão:', error);
+      toast.error('Erro ao gerar visualização para impressão.');
+    }
+  }, [resultData]);
 
   // Função para injetar CSS de alta prioridade para sobrepor todos os elementos
   const injectHighPriorityCSS = () => {
@@ -23,8 +113,11 @@ const AIResultsPanel = () => {
     style.innerHTML = `
       #ai-results-overlay-panel {
         position: fixed !important;
-        z-index: 9999999999 !important;
+        z-index: 99999999999 !important; /* Z-index aumentado */
         pointer-events: auto !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        display: flex !important;
       }
       #ai-results-overlay-panel * {
         pointer-events: auto !important;
@@ -55,6 +148,20 @@ const AIResultsPanel = () => {
       .hangup-button {
         visibility: hidden !important;
         pointer-events: none !important;
+      }
+      
+      /* Estilos adicionais para garantir visibilidade */
+      .ai-results-panel {
+        opacity: 1 !important;
+        visibility: visible !important;
+        display: block !important;
+      }
+      
+      /* Garantir que a overlay tenha cor de fundo para ser visível */
+      .ai-results-overlay {
+        background-color: rgba(0, 0, 0, 0.7) !important;
+        opacity: 1 !important;
+        visibility: visible !important;
       }
     `;
     document.head.appendChild(style);
@@ -94,11 +201,46 @@ const AIResultsPanel = () => {
   useEffect(() => {
     if (lastResult && !isProcessing) {
       console.log('AIResultsPanel: Received result data:', lastResult);
+      console.log('AIResultsPanel: Setting visibility to TRUE');
+      
+      // Verificar se é uma resposta do ChatGPT
+      const isChatGPTResponse = lastResult.source === 'chatgpt' || 
+                               (lastResult.data && lastResult.data.source === 'chatgpt') ||
+                               (lastResult.type && ['analysis', 'suggestions', 'report'].includes(lastResult.type));
+      
+      if (isChatGPTResponse) {
+        console.log('AIResultsPanel: Detected ChatGPT response, ensuring visibility');
+      }
+      
       setResultData(lastResult);
       setVisible(true);
       
       // Injetar CSS de alta prioridade
       injectHighPriorityCSS();
+      
+      // IMPORTANTE: Adicionar temporizador para verificar visibilidade após renderização
+      setTimeout(() => {
+        const panel = document.getElementById('ai-results-overlay-panel');
+        if (panel) {
+          console.log('AIResultsPanel: Status de visibilidade do painel:', {
+            display: window.getComputedStyle(panel).display,
+            visibility: window.getComputedStyle(panel).visibility,
+            opacity: window.getComputedStyle(panel).opacity,
+            zIndex: window.getComputedStyle(panel).zIndex
+          });
+          
+          // Forçar painel a ser visível em caso de problemas
+          panel.style.display = 'flex';
+          panel.style.visibility = 'visible';
+          panel.style.opacity = '1';
+          panel.style.zIndex = '99999999999';
+        } else {
+          console.warn('AIResultsPanel: Painel não encontrado no DOM!');
+          
+          // Tentar forçar nova renderização
+          setResultData({...lastResult, timestamp: Date.now()});
+        }
+      }, 300);
       
       // SOLUÇÃO FINAL: Botões flutuantes usando React Portal
       if (lastResult.type === 'report') {
@@ -669,6 +811,44 @@ const AIResultsPanel = () => {
     }
   }, [lastResult, isProcessing]);
 
+  // Novo useEffect para lidar com eventos específicos do ChatGPT
+  useEffect(() => {
+    // Função para lidar com evento de resultado do ChatGPT
+    const handleChatGPTResult = (event) => {
+      console.log('AIResultsPanel: Received ChatGPT result event', event.detail);
+      
+      if (event.detail && event.detail.result) {
+        // Forçar visibilidade e atualização do painel
+        setResultData(event.detail.result);
+        setVisible(true);
+        
+        // Injetar CSS de alta prioridade
+        injectHighPriorityCSS();
+        
+        // Notificar usuário
+        toast.success('Resposta do ChatGPT recebida');
+      }
+    };
+    
+    // Registrar ouvintes para diversos formatos de evento para maior compatibilidade
+    window.addEventListener('chatgpt-result', handleChatGPTResult);
+    window.addEventListener('ai-result', handleChatGPTResult);
+    window.addEventListener('report-generated', handleChatGPTResult);
+    document.addEventListener('chatgpt-result', handleChatGPTResult);
+    document.addEventListener('ai-result', handleChatGPTResult);
+    document.addEventListener('report-generated', handleChatGPTResult);
+    
+    return () => {
+      // Limpar ouvintes ao desmontar
+      window.removeEventListener('chatgpt-result', handleChatGPTResult);
+      window.removeEventListener('ai-result', handleChatGPTResult);
+      window.removeEventListener('report-generated', handleChatGPTResult);
+      document.removeEventListener('chatgpt-result', handleChatGPTResult);
+      document.removeEventListener('ai-result', handleChatGPTResult);
+      document.removeEventListener('report-generated', handleChatGPTResult);
+    };
+  }, []);
+
   // Adicionar um listener para eventos de teclado para fechar com ESC
   useEffect(() => {
     const handleKeyDown = (event) => {
@@ -892,77 +1072,64 @@ const AIResultsPanel = () => {
     }
   }, [visible, pinnedMode]);
 
-  const handleClose = () => {
+  // Função para fechar o painel de resultados
+  const handleClose = useCallback(() => {
+    console.log('AIResultsPanel: Fechando painel de resultados');
+    
+    // Fechar o painel
     setVisible(false);
     
-    // Remover elementos injetados
-    // Remover estilo injetado ao fechar o painel
+    // Limpar CSS injetado
     const oldStyle = document.getElementById('ai-results-priority-styles');
     if (oldStyle) oldStyle.remove();
     
-    // Remover o portal e seus elementos
-    const portal = document.getElementById('ai-results-portal');
-    if (portal) portal.remove();
-    
-    // Remover os botões de backup
-    const backupButtons = document.getElementById('backup-report-buttons');
-    if (backupButtons) backupButtons.remove();
-    
-    // Remover os botões flutuantes
+    // Remover botões flutuantes se existirem
     const floatingButtons = document.getElementById('floating-report-buttons');
     if (floatingButtons) floatingButtons.remove();
     
-    // Remover os botões de ação direta
-    const directActions = document.getElementById('direct-report-actions');
-    if (directActions) directActions.remove();
+    const backupButtons = document.getElementById('backup-report-buttons');
+    if (backupButtons) backupButtons.remove();
     
-    // Remover os botões de download
-    if (removeButtonFn) {
-      removeButtonFn();
-      setRemoveButtonFn(null);
+    // Se tiver função de remover botão, executá-la
+    if (typeof removeButtonFn === 'function') {
+      try {
+        removeButtonFn();
+      } catch (e) {
+        console.error('Erro ao remover botão:', e);
+      }
     }
     
-    // Remover estilos do portal
-    const portalStyles = document.querySelectorAll('style');
-    portalStyles.forEach(style => {
-      if (style.innerHTML && style.innerHTML.includes('#ai-results-portal')) {
-        style.remove();
-      }
-    });
+    // Restaurar estilo do body
+    document.body.style.overflow = '';
     
-    // Restaurar interatividade de elementos
-    const jitsiElements = document.querySelectorAll('#jitsiConferenceFrame0, #new-toolbox, .filmstrip, .subject, .watermark, .tOQNJSLwCYnxUY3bW0zj');
-    jitsiElements.forEach(el => {
-      if (el) el.style.pointerEvents = 'auto';
-    });
-    
-    // Restaurar botões do jitsi
-    const possibleButtonSelectors = [
-      'button[aria-label="Sair da sessão"]',
-      'button[aria-label="Sair da Sessão"]',
-      'button[aria-label="Leave"]',
-      'button[aria-label="Hang up"]',
-      'button[data-testid="hangup-button"]',
-      '.toolbox-button.hangup',
-      '.toolbox-button-wth-dialog.hangup',
-      'button.red',
-      'button.hangup'
-    ];
-    
-    possibleButtonSelectors.forEach(selector => {
-      const buttons = document.querySelectorAll(selector);
-      buttons.forEach(btn => {
-        if (btn) {
-          btn.style.visibility = 'visible';
-          btn.style.pointerEvents = 'auto';
-          btn.style.zIndex = 'auto';
-        }
+    // Restaurar controles de vídeo escondidos
+    setTimeout(() => {
+      const possibleButtonSelectors = [
+        'button[aria-label="Sair da sessão"]',
+        'button[aria-label="Sair da Sessão"]',
+        'button[aria-label="Leave"]',
+        'button[aria-label="Hang up"]',
+        'button[data-testid="hangup-button"]',
+        '.toolbox-button.hangup',
+        '.toolbox-button-wth-dialog.hangup',
+        'button.red',
+        'button.hangup'
+      ];
+      
+      possibleButtonSelectors.forEach(selector => {
+        const buttons = document.querySelectorAll(selector);
+        buttons.forEach(btn => {
+          if (btn) {
+            btn.style.visibility = '';
+            btn.style.pointerEvents = '';
+            btn.style.zIndex = '';
+          }
+        });
       });
-    });
+    }, 200);
     
-    // Limpar o estado do componente
-    console.log('Painel fechado e recursos liberados');
-  };
+    toast.info('Painel de resultados fechado', { autoClose: 2000 });
+  }, [removeButtonFn]);
   
   const togglePinMode = () => {
     setPinnedMode(!pinnedMode);
@@ -1182,294 +1349,115 @@ const AIResultsPanel = () => {
   };
   
   return (
-    <div 
-      id="ai-results-overlay-panel" 
-      className={`ai-results-overlay ${pinnedMode ? 'pinned-mode' : ''}`} 
-      onClick={(e) => e.stopPropagation()}
-      style={{
-        position: 'fixed',
-        zIndex: 9999999999
-      }}
-    >
-      <div 
-        className="ai-results-panel" 
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          position: 'relative',
-          zIndex: 9999999999
-        }}
-      >
-        <div className="ai-results-header">
-          <h3>{getTitle()}</h3>
-          <div className="header-actions">
-            <button 
-              className="pin-button" 
-              onClick={(e) => {
-                // Impedir propagação do evento
-                e.stopPropagation();
-                e.preventDefault();
-                togglePinMode();
-              }}
-              title={pinnedMode ? "Desafixar painel" : "Fixar painel"}
-            >
-              {pinnedMode ? '📌' : '📍'}
-            </button>
-            <button 
-              className="close-button" 
-              onClick={(e) => {
-                // Impedir propagação do evento
-                e.stopPropagation();
-                e.preventDefault();
-                handleClose();
-              }}
-              title="Fechar"
-            >
-              ×
-            </button>
-          </div>
-        </div>
-        
-        <div className="ai-results-content" onClick={(e) => e.stopPropagation()}>
-          {resultData.error ? (
-            <div className="ai-results-error">
-              <p>{resultData.error}</p>
-              {resultData.message && <p>{resultData.message}</p>}
+    <>
+      {visible && resultData && (
+        <div 
+          id="ai-results-overlay-panel"
+          className={`ai-results-overlay ${pinnedMode ? 'pinned' : ''}`}
+          style={{
+            display: 'flex',
+            visibility: 'visible',
+            opacity: 1,
+            zIndex: 99999999999
+          }}
+        >
+          <div className="ai-results-panel">
+            <div className="ai-results-header">
+              <h2>{getTitle()}</h2>
+              <div className="ai-results-controls">
+                <button 
+                  className="pin-button"
+                  onClick={togglePinMode}
+                  title={pinnedMode ? "Desafixar painel" : "Fixar painel"}
+                >
+                  📌
+                </button>
+                <button 
+                  className="close-button"
+                  onClick={handleClose}
+                  title="Fechar"
+                >
+                  ✖
+                </button>
+              </div>
+            </div>
+            <div className="ai-results-content">
+              {resultData.type === 'analysis' && (
+                <div className="ai-analysis-result">
+                  {resultData.analysis ? (
+                    <p>{resultData.analysis}</p>
+                  ) : resultData.content ? (
+                    <p>{resultData.content}</p>
+                  ) : (
+                    <p>Nenhuma análise disponível.</p>
+                  )}
+                </div>
+              )}
               
-              {/* Mostrar sugestões mesmo se houver erro */}
-              {resultData.suggestions && (
-                <div className="ai-results-section mt-3">
-                  <h4>Sugestões Gerais</h4>
-                  <ul>
-                    {getSuggestions().map((item, i) => (
-                      <li key={i}>{item}</li>
-                    ))}
-                  </ul>
+              {resultData.type === 'suggestions' && (
+                <div className="ai-suggestions-result">
+                  {resultData.suggestions && resultData.suggestions.length > 0 ? (
+                    <ul>
+                      {getSuggestions().map((suggestion, index) => (
+                        <li key={index}>{suggestion}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p>Nenhuma sugestão disponível.</p>
+                  )}
+                </div>
+              )}
+              
+              {resultData.type === 'report' && (
+                <div className="ai-report-result">
+                  {resultData.report ? (
+                    <div className="report-text">
+                      {resultData.report.split('\n').map((paragraph, index) => (
+                        paragraph.trim() ? (
+                          paragraph.startsWith('#') ? (
+                            <h3 key={index}>{paragraph.replace(/^#+\s+/, '')}</h3>
+                          ) : (
+                            <p key={index}>{paragraph}</p>
+                          )
+                        ) : (
+                          <br key={index} />
+                        )
+                      ))}
+                      
+                      <div className="report-actions">
+                        <button 
+                          className="report-action-btn"
+                          onClick={downloadReport}
+                        >
+                          ⬇️ Baixar Relatório
+                        </button>
+                        <button 
+                          className="report-action-btn"
+                          onClick={printReport}
+                        >
+                          🖨️ Imprimir Relatório
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p>Relatório não disponível.</p>
+                  )}
+                </div>
+              )}
+              
+              {resultData.error && (
+                <div className="ai-error-result">
+                  <p className="error-message">{resultData.error}</p>
+                  {resultData.message && (
+                    <p className="error-details">{resultData.message}</p>
+                  )}
                 </div>
               )}
             </div>
-          ) : (
-            <>
-              {resultData.content && (
-                <div className="ai-results-section">
-                  <p>{resultData.content}</p>
-                </div>
-              )}
-              
-              {resultData.analysis && (
-                <div className="ai-results-section">
-                  <h4>Análise</h4>
-                  <p>{resultData.analysis}</p>
-                </div>
-              )}
-              
-              {resultData.data && resultData.data.referencedMaterials && resultData.data.referencedMaterials.length > 0 && (
-                <div className="ai-results-section">
-                  <h4>Materiais de Referência</h4>
-                  <div className="referenced-materials">
-                    {resultData.data.referencedMaterials.map((material, index) => (
-                      <div key={index} className="material-item">
-                        <h5>{material.title}</h5>
-                        <p className="material-insights">{material.insights}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              
-              {resultData.suggestions && (
-                <div className="ai-results-section">
-                  <h4>Sugestões</h4>
-                  <ul>
-                    {getSuggestions().map((item, i) => (
-                      <li key={i}>{item}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              
-              {resultData.data && resultData.data.referencedMaterials && resultData.data.referencedMaterials.length > 0 && (
-                <div className="ai-results-section">
-                  <h4>Materiais de Referência</h4>
-                  <div className="referenced-materials">
-                    {resultData.data.referencedMaterials.map((material, index) => (
-                      <div key={index} className="material-item">
-                        <h5>{material.title}</h5>
-                        <p className="material-insights">{material.insights}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              
-              {resultData.insights && (
-                <div className="ai-results-section">
-                  <h4>Insights</h4>
-                  <p>{resultData.insights}</p>
-                </div>
-              )}
-              
-              {/* Adicionando seção específica para Relatórios */}
-              {resultData.type === 'report' && (resultData.report || resultData.data?.report) && (
-                <div className="ai-results-section" onClick={(e) => {
-                  e.stopPropagation();
-                  e.preventDefault();
-                }}>
-                  <h4 className="report-title">📝 Relatório da Sessão</h4>
-                  <div className="report-content" onClick={(e) => {
-                    e.stopPropagation();
-                    e.preventDefault();
-                  }}>
-                    {/* Aplicando formatação especial para o relatório */}
-                    <div className="report-text" onClick={(e) => {
-                      e.stopPropagation();
-                      e.preventDefault();
-                    }}>
-                      {resultData.report ? (
-                        resultData.report.split('\n').map((paragraph, idx) => (
-                          paragraph.trim() ? (
-                            paragraph.startsWith('#') || paragraph.startsWith('##') ? (
-                              <h5 key={idx}>{paragraph.replace(/^#+\s+/, '')}</h5>
-                            ) : (
-                              <p key={idx}>{paragraph}</p>
-                            )
-                          ) : <br key={idx} />
-                        ))
-                      ) : (
-                        resultData.data?.report.split('\n').map((paragraph, idx) => (
-                          paragraph.trim() ? (
-                            paragraph.startsWith('#') || paragraph.startsWith('##') ? (
-                              <h5 key={idx}>{paragraph.replace(/^#+\s+/, '')}</h5>
-                            ) : (
-                              <p key={idx}>{paragraph}</p>
-                            )
-                          ) : <br key={idx} />
-                        ))
-                      )}
-                    </div>
-                    <div className="report-instructions">
-                      <p>Utilize os botões abaixo para baixar ou imprimir este relatório:</p>
-                    </div>
-                    <div className="report-actions">
-                      <button 
-                        className="report-action-btn" 
-                        onClick={(e) => {
-                          // Impedir propagação do evento
-                          e.stopPropagation();
-                          e.preventDefault();
-                          
-                          try {
-                            console.log('Iniciando download direto do relatório do componente');
-                            
-                            // Obter o texto do relatório
-                            const reportText = resultData.report || resultData.data?.report || '';
-                            
-                            // Método direto de download
-                            const element = document.createElement('a');
-                            element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(reportText));
-                            element.setAttribute('download', 'relatorio-sessao.txt');
-                            element.style.display = 'none';
-                            
-                            // Adicionar ao DOM e forçar o clique
-                            document.body.appendChild(element);
-                            element.click();
-                            
-                            // Limpar
-                            document.body.removeChild(element);
-                            
-                            toast.success('Relatório baixado com sucesso!');
-                          } catch (error) {
-                            console.error('Erro ao baixar relatório:', error);
-                            toast.error('Erro ao baixar o relatório. Tente novamente.');
-                          }
-                        }}
-                      >
-                        <span className="download-icon" style={{ marginRight: '8px' }}>⬇️</span>
-                        Baixar Relatório
-                      </button>
-                      <button 
-                        className="report-action-btn" 
-                        onClick={(e) => {
-                          // Impedir propagação do evento
-                          e.stopPropagation();
-                          e.preventDefault();
-                          
-                          const reportText = resultData.report || resultData.data?.report || '';
-                          const printWindow = window.open('', '_blank');
-                          printWindow.document.write(`
-                            <html>
-                              <head>
-                                <title>Relatório da Sessão</title>
-                                <style>
-                                  body { font-family: Arial, sans-serif; line-height: 1.6; padding: 20px; }
-                                  h1 { color: #2c3e50; }
-                                  h3 { color: #3498db; margin-top: 20px; }
-                                  p { margin-bottom: 10px; }
-                                  @media print {
-                                    body { padding: 0; margin: 1cm; }
-                                    button { display: none; }
-                                  }
-                                </style>
-                              </head>
-                              <body>
-                                <h1>Relatório da Sessão</h1>
-                                ${reportText.split('\n').map(p => 
-                                  p.trim() ? (
-                                    p.startsWith('#') || p.startsWith('##') ? 
-                                      `<h3>${p.replace(/^#+\s+/, '')}</h3>` : 
-                                      `<p>${p}</p>`
-                                  ) : '<br>'
-                                ).join('')}
-                                <hr>
-                                <p style="color: #7f8c8d; font-size: 0.8em;">Gerado por TerapiaConect</p>
-                                <button onclick="window.print()" style="margin-top: 20px; padding: 10px 15px; background: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer;">Imprimir Relatório</button>
-                              </body>
-                            </html>
-                          `);
-                          printWindow.document.close();
-                          toast.success('Preparado para impressão!');
-                        }}
-                      >
-                        <span className="print-icon" style={{ marginRight: '8px' }}>🖨️</span>
-                        Imprimir
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-              
-              {/* Exibir seção padrão se não houver nenhum conteúdo */}
-              {!resultData.content && !resultData.analysis && 
-               !resultData.suggestions && !resultData.insights && 
-               !resultData.report && !resultData.data?.report && (
-                <div className="ai-results-section">
-                  <p>Não foi possível gerar conteúdo específico para esta sessão.</p>
-                  <p>Sugestões gerais:</p>
-                  <ul>
-                    <li>Mantenha uma comunicação clara e empática</li>
-                    <li>Observe as reações e sinais não-verbais do paciente</li>
-                    <li>Faça perguntas abertas para explorar sentimentos</li>
-                  </ul>
-                </div>
-              )}
-            </>
-          )}
+          </div>
         </div>
-        
-        <div className="ai-results-footer">
-          <button 
-            className="ai-results-button" 
-            onClick={(e) => {
-              // Impedir propagação do evento
-              e.stopPropagation();
-              e.preventDefault();
-              handleClose();
-            }}
-          >
-            Fechar
-          </button>
-        </div>
-      </div>
-    </div>
+      )}
+    </>
   );
 };
 
