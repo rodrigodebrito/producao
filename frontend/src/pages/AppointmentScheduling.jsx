@@ -506,6 +506,9 @@ const AppointmentScheduling = () => {
       return;
     }
 
+    console.log('Iniciando agendamento com usuário:', user);
+    console.log('Token presente:', !!localStorage.getItem('token'));
+
     try {
       setLoading(true);
       const selectedToolData = therapist.tools.find(t => t.id === selectedTool);
@@ -523,8 +526,10 @@ const AppointmentScheduling = () => {
         therapistName: therapist.name
       };
 
-      // Criar o agendamento
-      const appointmentResult = await createAppointment(appointmentData);
+      console.log('Iniciando processo de agendamento com dados:', appointmentData);
+      
+      // Usar a função inteligente que tenta diferentes abordagens
+      const appointmentResult = await createAppointmentSmart(appointmentData);
       
       // Criar a sessão
       if (appointmentResult && appointmentResult.id) {
