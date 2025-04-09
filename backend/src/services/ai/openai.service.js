@@ -252,19 +252,19 @@ const openAIService = {
             
             logger.info(`Configurando opções de transcrição: idioma=${language}, formato=${format}`);
             
-            // Criar um arquivo temporário na memória para o buffer
-            // A biblioteca OpenAI espera um objeto com nome e dados do tipo File ou Blob
-            const audioFile = new File(
-                [audioBuffer], 
-                "audio.mp3", 
-                { type: "audio/mpeg" }
-            );
+            // Criar um objeto temporário para o arquivo usando o método correto da OpenAI
+            // Em vez de usar File que é uma API do navegador, usamos Buffer diretamente
+            const fileObject = {
+                buffer: audioBuffer,
+                name: 'audio.wav', // Nome do arquivo
+                type: 'audio/wav'   // MIME type
+            };
             
             logger.info('Enviando áudio para a API Whisper...');
             
-            // Configurar a chamada para a API Whisper usando a biblioteca oficial
+            // Configurar a chamada para a API Whisper usando a biblioteca oficial da OpenAI
             const transcriptionOptions = {
-                file: audioFile,
+                file: fileObject,
                 model: 'whisper-1',
                 response_format: format
             };
@@ -274,7 +274,7 @@ const openAIService = {
                 transcriptionOptions.language = language;
             }
             
-            // Fazer a chamada API
+            // Fazer a chamada API usando o SDK da OpenAI
             const response = await openai.audio.transcriptions.create(transcriptionOptions);
             
             logger.info('Transcrição concluída com sucesso');
