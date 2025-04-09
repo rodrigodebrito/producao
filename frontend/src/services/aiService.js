@@ -95,12 +95,51 @@ const aiService = {
       
       console.log('AI Service: Enviando payload para análise:', payload);
       
-      // Usar o endpoint correto com base no tipo de análise
-      const endpoint = useAdvancedAnalysis 
-        ? aiService.routes.analyzeSessionAdvanced
-        : aiService.routes.analyzeSession;
+      // Criar lista de endpoins a tentar com base no tipo de análise
+      const baseEndpoints = [
+        useAdvancedAnalysis ? aiService.routes.analyzeSessionAdvanced : aiService.routes.analyzeSession,
+        useAdvancedAnalysis ? '/analyze-session/advanced' : '/analyze-session',
+        useAdvancedAnalysis ? '/ai/analyze-session/advanced' : '/ai/analyze-session',
+        useAdvancedAnalysis ? '/api/analyze-session/advanced' : '/api/analyze-session',
+        useAdvancedAnalysis ? '/api/ai/analyze-session/advanced' : '/api/ai/analyze-session',
+      ];
       
-      const response = await api.post(endpoint, payload);
+      // Adicionar mais endpoints específicos se estiver no modo avançado
+      if (useAdvancedAnalysis) {
+        baseEndpoints.push('/advanced-analysis');
+        baseEndpoints.push('/ai/advanced-analysis');
+        baseEndpoints.push('/api/ai/advanced-analysis');
+      }
+      
+      let response = null;
+      let lastError = null;
+      
+      // Tentar cada rota até que uma funcione
+      for (const route of baseEndpoints) {
+        try {
+          console.log(`AI Service: Tentando rota ${route} para análise...`);
+          response = await api.post(route, payload);
+          console.log(`AI Service: Sucesso com a rota ${route}`);
+          
+          // Se chegou aqui, a rota funcionou
+          // Atualizar a rota no objeto para futuras chamadas
+          if (useAdvancedAnalysis) {
+            aiService.routes.analyzeSessionAdvanced = route;
+          } else {
+            aiService.routes.analyzeSession = route;
+          }
+          break;
+        } catch (error) {
+          console.warn(`AI Service: Falha na rota ${route}:`, error.message);
+          lastError = error;
+          continue;
+        }
+      }
+      
+      // Se todas as rotas falharam, lançar o último erro
+      if (!response) {
+        throw lastError || new Error('Todas as rotas falharam');
+      }
       
       console.log('AI Service: Resposta da análise recebida:', response.data);
       
@@ -161,7 +200,40 @@ const aiService = {
         console.warn('AI Service: Erro ao verificar API OpenAI:', openaiError);
       }
       
-      const response = await api.post(aiService.routes.suggest, payload);
+      // Lista de possíveis rotas a tentar
+      const routesToTry = [
+        aiService.routes.suggest,         // Rota primária
+        '/suggest',                       // Rota sem prefixo
+        '/ai/suggest',                    // Rota com prefixo simplificado
+        '/api/suggest',                   // Prefixo api, sem ai
+        '/api/ai/suggest',                // Prefixo completo
+      ];
+      
+      let response = null;
+      let lastError = null;
+      
+      // Tentar cada rota até que uma funcione
+      for (const route of routesToTry) {
+        try {
+          console.log(`AI Service: Tentando rota ${route} para sugestões...`);
+          response = await api.post(route, payload);
+          console.log(`AI Service: Sucesso com a rota ${route}`);
+          
+          // Se chegou aqui, a rota funcionou
+          // Atualizar a rota no objeto para futuras chamadas
+          aiService.routes.suggest = route;
+          break;
+        } catch (error) {
+          console.warn(`AI Service: Falha na rota ${route}:`, error.message);
+          lastError = error;
+          continue;
+        }
+      }
+      
+      // Se todas as rotas falharam, lançar o último erro
+      if (!response) {
+        throw lastError || new Error('Todas as rotas falharam');
+      }
       
       console.log('AI Service: Resposta recebida:', response.data);
       
@@ -233,12 +305,46 @@ const aiService = {
         : { sessionId };
       console.log(`aiService: Enviando payload para API:`, payload);
       
-      // Fazer chamada à API usando a rota definida no objeto routes
-      const response = await api.post(aiService.routes.report, payload);
+      // Lista de possíveis rotas a tentar
+      const routesToTry = [
+        aiService.routes.report,         // Rota primária
+        '/report',                       // Rota sem prefixo
+        '/ai/report',                    // Rota com prefixo simplificado
+        '/api/report',                   // Prefixo api, sem ai
+        '/api/ai/report',                // Prefixo completo
+      ];
+      
+      let response = null;
+      let lastError = null;
+      
+      // Tentar cada rota até que uma funcione
+      for (const route of routesToTry) {
+        try {
+          console.log(`aiService: Tentando rota ${route} para relatório...`);
+          response = await api.post(route, payload);
+          console.log(`aiService: Sucesso com a rota ${route}`);
+          
+          // Se chegou aqui, a rota funcionou
+          // Atualizar a rota no objeto para futuras chamadas
+          aiService.routes.report = route;
+          break;
+        } catch (error) {
+          console.warn(`aiService: Falha na rota ${route}:`, error.message);
+          lastError = error;
+          continue;
+        }
+      }
+      
+      // Se todas as rotas falharam, lançar o último erro
+      if (!response) {
+        throw lastError || new Error('Todas as rotas falharam');
+      }
       
       // Verificar e logar a resposta
       console.log(`aiService: Resposta da API:`, response);
-      if (!response || !response.data) {
+      
+      // Verificar se a resposta contém dados válidos
+      if (!response.data || (Object.keys(response.data).length === 0)) {
         console.error('aiService: Resposta vazia ou inválida da API');
         return { error: 'Resposta vazia ou inválida da API' };
       }
