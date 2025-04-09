@@ -111,12 +111,23 @@ export const AIProvider = ({ children }) => {
         console.log('[AIContext] Resultado da análise:', result);
       } catch (error) {
         console.error('[AIContext] Erro no serviço de análise:', error);
+        
+        // Verificar se é um erro de API da OpenAI
+        const isOpenAIError = error.message?.includes('OpenAI') || 
+                             error.message?.includes('API key') || 
+                             (error.error && error.error.includes('API key'));
+        
+        // Criar um resultado de erro mais amigável e específico
         result = {
           type: 'analysis',
-          error: 'Falha no serviço de análise',
-          message: error.message,
+          error: isOpenAIError ? 'Serviço de IA temporariamente indisponível' : 'Falha no serviço de análise',
+          message: isOpenAIError 
+            ? 'A API da OpenAI está temporariamente indisponível. O administrador já foi notificado.' 
+            : error.message,
           analysis: 'Não foi possível analisar a sessão atual devido a um erro técnico.',
-          content: 'O serviço de IA está temporariamente indisponível.'
+          content: isOpenAIError 
+            ? 'O serviço de IA está temporariamente em manutenção. A transcrição continua funcionando normalmente e todas as informações estão sendo salvas.' 
+            : 'O serviço de IA está temporariamente indisponível.'
         };
       }
       

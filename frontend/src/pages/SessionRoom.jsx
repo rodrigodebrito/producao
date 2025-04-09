@@ -222,14 +222,11 @@ const SessionRoom = () => {
     }
   }, [sessionId, socket]);
 
-  // Função para alternar visibilidade das ferramentas de IA
+  // Função para alternar a exibição das ferramentas de IA
   const toggleAITools = useCallback(() => {
-    setShowAITools(prev => {
-      const newState = !prev;
-      console.log(`Alternando visibilidade das ferramentas de IA: ${newState ? 'Mostrando' : 'Ocultando'}`);
-      return newState;
-    });
-  }, []);
+    console.log('Alternando visualização das ferramentas de IA:', !showAITools);
+    setShowAITools(prevState => !prevState);
+  }, [showAITools]);
 
   // Adicionar listener para comandos de constelação via socket
   useEffect(() => {
