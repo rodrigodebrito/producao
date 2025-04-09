@@ -305,40 +305,28 @@ export const createTherapistSelfAppointment = async (appointmentData) => {
       mode: appointmentData.mode || 'ONLINE'
     };
     
-    // URL base da API
-    const baseUrl = import.meta.env.VITE_API_URL || 'https://theraconnect-prd.onrender.com';
-    console.log('URL base da API:', baseUrl);
+    // Adicionar a flag para indicar que é um auto-agendamento
+    formattedData.selfBooking = true;
     
-    // Usar a nova rota especializada para terapeutas como clientes
-    const url = `${baseUrl}/api/appointments/create-therapist-client`;
+    console.log('Usando rota especializada para terapeuta como cliente');
     
-    console.log('Usando rota especializada para terapeuta como cliente:', url);
-    
-    // Fazer a requisição
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify(formattedData)
-    });
-    
-    if (response.ok) {
-      const data = await response.json();
-      console.log('Agendamento de terapeuta como cliente criado com sucesso:', data);
-      return data;
-    } else {
-      // Se falhar, tentar extrair a mensagem de erro detalhada
-      let errorData;
-      try {
-        errorData = await response.json();
-      } catch (e) {
-        errorData = { error: `${response.status}: ${response.statusText}` };
-      }
+    // Usar o objeto api configurado com a rota especializada
+    try {
+      const response = await api.post('/appointments/create-therapist-client', formattedData);
+      console.log('Agendamento de terapeuta como cliente criado com sucesso:', response.data);
+      return response.data;
+    } catch (error) {
+      // Se a rota especializada falhar, tentar a rota alternativa
+      console.warn('Rota especializada falhou, tentando rota direta:', error.message);
       
-      console.error('Erro na resposta da API:', errorData);
-      throw new Error(errorData.error || 'Erro ao criar agendamento');
+      try {
+        const altResponse = await api.post('/appointments/therapist-as-client', formattedData);
+        console.log('Agendamento criado com rota alternativa:', altResponse.data);
+        return altResponse.data;
+      } catch (altError) {
+        console.error('Todas as rotas falharam:', altError.message);
+        throw new Error('Não foi possível criar o agendamento de terapeuta como cliente');
+      }
     }
   } catch (error) {
     console.error('Erro ao criar agendamento para terapeuta como cliente:', error);
@@ -365,14 +353,30 @@ export const createAppointmentSmart = async (appointmentData) => {
     const isTherapist = user.role === 'THERAPIST';
     
     // Verificar se o terapeuta está tentando agendar consigo mesmo
-    const selfAppointment = isTherapist && (!appointmentData.clientId || appointmentData.selfBooking);
+    const selfAppointment = isTherapist && (appointmentData.selfBooking === true || !appointmentData.clientId);
+    
+    // Garantir que a flag selfBooking esteja definida no objeto de dados
+    if (selfAppointment) {
+      appointmentData.selfBooking = true;
+    }
     
     console.log(`Tipo de agendamento: ${isTherapist ? 'Terapeuta' : 'Cliente'}, Auto-agendamento: ${selfAppointment}`);
     
     if (selfAppointment) {
+      // Adicionar o ID do terapeuta como clientId se não estiver definido
+      if (!appointmentData.clientId && user.id) {
+        console.log('Adicionando ID do terapeuta como clientId para auto-agendamento');
+        appointmentData.userId = user.id;
+      }
+      
       // Usar a rota especial para terapeutas agendando para si mesmos
       console.log('Usando rota especializada para terapeuta como cliente');
-      return await createTherapistSelfAppointment(appointmentData);
+      try {
+        return await createTherapistSelfAppointment(appointmentData);
+      } catch (selfAppointmentError) {
+        console.error('Método especializado falhou, tentando método direto:', selfAppointmentError);
+        return await createAppointmentDirect({...appointmentData, selfBooking: true});
+      }
     } else {
       // Tentar método regular primeiro
       try {
