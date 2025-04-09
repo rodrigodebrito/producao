@@ -1511,85 +1511,71 @@ Ocorreu um erro inesperado durante a geração do relatório.
     window.latestTranscript = transcript;
   }
 
-  // Método para processar resultado final do reconhecimento de voz
-  _handleFinalSpeechResult(transcript) {
-    // Verificações mais rigorosas
-    if (!transcript || typeof transcript !== 'string' || transcript.trim().length === 0) {
-      console.warn('HybridAI: Texto final inválido ou vazio, ignorando');
-      return;
-    }
-    
-    // Normalizar o texto
-    const normalizedTranscript = transcript.trim();
-    
-    // Verificar duplicação e corrigir se necessário
-    const isDuplicated = this._checkForDuplication(normalizedTranscript);
-    if (isDuplicated) {
-      const correctedText = this._removeDuplication(normalizedTranscript);
-      console.log('HybridAI: Duplicação corrigida no texto final:', correctedText);
-      
-      // Verificar se a correção não resultou em texto vazio
-      if (!correctedText || correctedText.trim().length === 0) {
-        console.warn('HybridAI: Após correção de duplicação, o texto ficou vazio');
+  /**
+   * Processa o resultado final do reconhecimento de voz
+   * @param {string} transcript - Texto transcrito final
+   * @param {boolean} isExternalTranscription - Se a transcrição vem de uma fonte externa como Whisper
+   * @private
+   */
+  async _handleFinalSpeechResult(transcript, isExternalTranscription = false) {
+    try {
+      // Verificar duplicação apenas em transcrições internas (não externas)
+      if (!isExternalTranscription && this._checkForDuplication(transcript)) {
+        console.warn('HybridAI: Duplicação detectada, ignorando:', transcript.substring(0, 20) + '...');
         return;
       }
       
-      // Atualizar o transcript com o texto corrigido
-      transcript = correctedText;
-    } else {
-      transcript = normalizedTranscript;
-    }
-    
-    // Se estávamos em modo de espera/pausa, notificar retomada
-    if (this.waitingForSpeech || this.pausedByInactivity) {
-      console.log('HybridAI: Voz detectada durante modo de espera, retomando reconhecimento normal');
+      // Validar o texto recebido
+      if (!transcript || transcript.trim().length === 0) {
+        console.warn('HybridAI: Texto final vazio, ignorando');
+        return;
+      }
       
-      // Disparar evento de retomada para atualizar a UI
-      window.dispatchEvent(new CustomEvent('recognition-resumed', {
-        detail: { timestamp: Date.now(), text: transcript }
+      // Processar e anonimizar se necessário
+      let processedText = transcript;
+      if (this.useAnonymization) {
+        processedText = this.anonymizeText(processedText);
+      }
+      
+      // Extrair emoções do texto (se estiver usando ML local)
+      const emotions = await this.processEmotions(processedText);
+      
+      // Atualizar o texto completo da sessão
+      this._saveTranscription(processedText);
+      
+      // Disparar evento para a interface
+      window.dispatchEvent(new CustomEvent('transcription-final', {
+        detail: { 
+          text: processedText,
+          emotions,
+          timestamp: new Date().toISOString(),
+          isInterim: false,
+          sessionId: this.sessionId,
+          isExternal: isExternalTranscription,
+          source: isExternalTranscription ? 'whisper' : 'webspeech'
+        }
       }));
       
-      // Limpar estado de espera
-      this.waitingForSpeech = false;
-      this.pausedByInactivity = false;
-    }
-    
-    // Atualizar o texto completo da transcrição
-    if (this.transcript) {
-      this.transcript += ' ' + transcript;
-    } else {
-      this.transcript = transcript;
-    }
-    
-    // Limpar o texto intermediário
-    this.interimTranscript = '';
-    this.currentTranscript = '';
-    
-    // Processar texto em background
-    this._processBackgroundTasks(transcript);
-    
-    // Tentar salvar a transcrição se tivermos um sessionId
-    this._saveTranscription(transcript);
-    
-    // Emitir evento com o texto final
-    window.dispatchEvent(new CustomEvent('transcript-updated', {
-      detail: {
-        finalText: transcript,
-        fullText: this.transcript,
-        isPartial: false
+      if (!isExternalTranscription) {
+        // Despachar texto para TTS (se habilitado)
+        window.dispatchEvent(new CustomEvent('tts-text', {
+          detail: { text: processedText }
+        }));
       }
-    }));
-    
-    // Disparar evento específico para o texto final
-    window.dispatchEvent(new CustomEvent('transcript', {
-      detail: {
-        transcript: transcript,
-        final: true
+      
+      // Realizar tarefas de IA em segundo plano baseadas na transcrição
+      this._processBackgroundTasks(processedText);
+      
+      // Enviar para o servidor (evitar duplicação para whisper)
+      if (!isExternalTranscription) {
+        await this.sendTranscriptionToServer(processedText, emotions);
       }
-    }));
-    
-    // Armazenar para debug
-    window.latestTranscript = transcript;
+      
+      // Resetar o texto interino
+      this.interimTranscript = '';
+    } catch (error) {
+      console.error('HybridAI: Erro ao processar texto final:', error);
+    }
   }
 
   // Método para verificar duplicações de palavras
@@ -1809,6 +1795,52 @@ Ocorreu um erro inesperado durante a geração do relatório.
     if (this.inactivityTimeout) {
       clearTimeout(this.inactivityTimeout);
       this.inactivityTimeout = null;
+    }
+  }
+
+  /**
+   * Processa uma transcrição externa recebida do Whisper ou outro serviço
+   * @param {string} transcript - A transcrição recebida do serviço externo
+   * @param {string} fullText - O texto completo da sessão (acumulado)
+   * @param {string} sessionId - ID da sessão
+   * @returns {Promise<void>}
+   */
+  async processExternalTranscription(transcript, fullText, sessionId = null) {
+    try {
+      console.log('HybridAI: Processando transcrição externa do Whisper');
+      console.log(`HybridAI: Texto recebido (${transcript.length} caracteres)`);
+      
+      // Atualizar o sessionId se fornecido
+      if (sessionId && !this.sessionId) {
+        this.sessionId = sessionId;
+        console.log(`HybridAI: SessionId atualizado: ${sessionId}`);
+      }
+      
+      // Atualizar texto completo
+      this.fullSessionText = fullText || transcript;
+      
+      // Verificar texto por segurança
+      if (!transcript || transcript.length < 3) {
+        console.warn('HybridAI: Transcrição externa vazia ou muito curta, ignorando');
+        return;
+      }
+      
+      // Processar a transcrição como se fosse final (a transcrição do Whisper já é final)
+      await this._handleFinalSpeechResult(transcript, true);
+      
+      // Disparar evento customizado para interface
+      window.dispatchEvent(new CustomEvent('external-transcription-processed', {
+        detail: { 
+          transcript, 
+          source: 'whisper',
+          sessionId: this.sessionId,
+          timestamp: new Date().toISOString()
+        }
+      }));
+      
+      console.log('HybridAI: Transcrição externa processada com sucesso');
+    } catch (error) {
+      console.error('HybridAI: Erro ao processar transcrição externa:', error);
     }
   }
 }
