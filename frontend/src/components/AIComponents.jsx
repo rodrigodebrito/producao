@@ -16,18 +16,45 @@ import ReactDOM from 'react-dom';
 
 // Componente de seletor de modo de transcrição
 export const TranscriptionSelector = ({ mode, onChange }) => {
+  const handleChange = (e) => {
+    const newMode = e.target.value;
+    console.log(`TranscriptionSelector: Selecionando modo ${newMode}`);
+    
+    // Adicionar um pequeno atraso para que o usuário veja a seleção antes do feedback
+    setTimeout(() => {
+      onChange(newMode);
+    }, 100);
+  };
+  
+  // Opções disponíveis e seus rótulos
+  const options = [
+    { value: 'auto', label: 'Auto' },
+    { value: 'whisper', label: 'Whisper (Alta precisão)' },
+    { value: 'webspeech', label: 'Browser (Tempo real)' }
+  ];
+  
   return (
     <div className="transcription-mode-selector">
-      <label>Modo de transcrição: </label>
+      <label className="transcription-mode-label">Modo de transcrição: </label>
       <select
         value={mode}
-        onChange={(e) => onChange(e.target.value)}
-        className="transcription-mode-select"
+        onChange={handleChange}
+        className={`transcription-mode-select transcription-mode-${mode}`}
       >
-        <option value="auto">Auto</option>
-        <option value="whisper">Whisper (Alta precisão)</option>
-        <option value="webspeech">Browser (Tempo real)</option>
+        {options.map(option => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
       </select>
+      
+      <div className="transcription-mode-indicator">
+        Modo atual: <span className={`mode-${mode}`}>
+          {mode === 'auto' ? 'Auto' : 
+           mode === 'whisper' ? 'Whisper (Alta precisão)' : 
+           'Browser (Tempo real)'}
+        </span>
+      </div>
     </div>
   );
 };
@@ -37,14 +64,39 @@ export const MicButton = ({ transcriptionMode = 'auto' }) => {
   const [isRecording, setIsRecording] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [reconnectAttempts, setReconnectAttempts] = useState(0);
+  const [currentMode, setCurrentMode] = useState(transcriptionMode);
   const recordingTimerRef = useRef(null);
   const reconnectTimerRef = useRef(null);
+  
+  // Atualizar o modo quando a prop mudar
+  useEffect(() => {
+    if (currentMode !== transcriptionMode) {
+      console.log(`MicButton: Modo de transcrição alterado de ${currentMode} para ${transcriptionMode}`);
+      setCurrentMode(transcriptionMode);
+      
+      // Se estiver gravando, reiniciar para aplicar o novo modo
+      if (isRecording) {
+        console.log('Reiniciando gravação para aplicar novo modo de transcrição');
+        // Parar brevemente e reiniciar
+        if (window.hybridAIService) {
+          window.hybridAIService.stopRecording();
+        }
+        
+        if (window.whisperService) {
+          window.whisperService.stopRecording();
+        }
+        
+        // Pequeno delay e reinicia com o novo modo
+        setTimeout(() => restartRecording(), 500);
+      }
+    }
+  }, [transcriptionMode, currentMode, isRecording]);
   
   // Definir a função restartRecording
   const restartRecording = useCallback(() => {
     try {
       console.log('Reiniciando gravação de voz...');
-      console.log(`Modo de transcrição selecionado: ${transcriptionMode}`);
+      console.log(`Modo de transcrição selecionado: ${currentMode}`);
       
       // Parar qualquer instância ativa
       if (window.hybridAIService) {
@@ -59,7 +111,7 @@ export const MicButton = ({ transcriptionMode = 'auto' }) => {
       clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = setTimeout(() => {
         // Decidir qual serviço usar baseado no modo selecionado
-        if (transcriptionMode === 'whisper') {
+        if (currentMode === 'whisper') {
           if (window.whisperService) {
             console.log('Iniciando APENAS o serviço Whisper');
             window.whisperService.startRecording();
@@ -67,7 +119,7 @@ export const MicButton = ({ transcriptionMode = 'auto' }) => {
             setIsPaused(false);
             toast.info('Reconhecimento Whisper iniciado');
           }
-        } else if (transcriptionMode === 'webspeech') {
+        } else if (currentMode === 'webspeech') {
           if (window.hybridAIService) {
             console.log('Iniciando APENAS o serviço Web Speech API');
             window.hybridAIService.startRecording();
@@ -75,7 +127,7 @@ export const MicButton = ({ transcriptionMode = 'auto' }) => {
             setIsPaused(false);
             toast.info('Reconhecimento Web Speech iniciado');
           }
-        } else if (transcriptionMode === 'auto') {
+        } else if (currentMode === 'auto') {
           // No modo auto, inicia ambos
           console.log('Modo AUTO: Iniciando ambos os serviços de transcrição');
           let started = false;
@@ -105,7 +157,7 @@ export const MicButton = ({ transcriptionMode = 'auto' }) => {
       setIsRecording(false);
       setIsPaused(false);
     }
-  }, [transcriptionMode]);
+  }, [currentMode]);
   
   // Inicializar os serviços de transcrição
   useEffect(() => {
@@ -158,7 +210,7 @@ export const MicButton = ({ transcriptionMode = 'auto' }) => {
       console.error('Erro ao alternar microfone:', error);
       toast.error('Erro ao controlar reconhecimento de voz');
     }
-  }, [isRecording, transcriptionMode, restartRecording]);
+  }, [isRecording, restartRecording]);
   
   // Renderização do ícone do microfone
   const renderIcon = () => {
@@ -172,7 +224,7 @@ export const MicButton = ({ transcriptionMode = 'auto' }) => {
     <button 
       onClick={toggleMicrophone}
       className={`mic-button ${isRecording ? 'recording' : ''}`}
-      title={isRecording ? 'Parar gravação' : 'Iniciar gravação'}
+      title={isRecording ? `Parar gravação (${currentMode})` : `Iniciar gravação (${currentMode})`}
     >
       {renderIcon()}
     </button>
@@ -409,6 +461,7 @@ export const resetTranscriptionServices = () => {
 export const AIToolsContainer = () => {
   const [transcriptionMode, setTranscriptionMode] = useState('auto');
   const containerRef = useRef(null);
+  const previousModeRef = useRef('auto');
   
   // Obter funções de IA do contexto para que possam ser passadas aos botões
   const { analyze, suggest, report } = useAI();
@@ -476,9 +529,48 @@ export const AIToolsContainer = () => {
     });
   }, [report]);
 
+  // Função específica para mudar o modo de transcrição
+  const handleTranscriptionModeChange = useCallback((newMode) => {
+    console.log(`Alterando modo de transcrição de ${transcriptionMode} para ${newMode}`);
+    setTranscriptionMode(newMode);
+    previousModeRef.current = newMode;
+    
+    // Salvar na localStorage para manter a configuração entre sessões
+    try {
+      localStorage.setItem('transcription-mode', newMode);
+      console.log(`Modo de transcrição '${newMode}' salvo na localStorage`);
+    } catch (e) {
+      console.error('Erro ao salvar modo de transcrição:', e);
+    }
+    
+    toast.info(`Modo de transcrição alterado para: ${newMode === 'auto' ? 'Auto' : 
+                newMode === 'whisper' ? 'Whisper (Alta precisão)' : 
+                'Browser (Tempo real)'}`);
+  }, [transcriptionMode]);
+
+  // Carregar configuração salva na inicialização
+  useEffect(() => {
+    try {
+      const savedMode = localStorage.getItem('transcription-mode');
+      if (savedMode && ['auto', 'whisper', 'webspeech'].includes(savedMode)) {
+        console.log(`Carregando modo de transcrição salvo: ${savedMode}`);
+        setTranscriptionMode(savedMode);
+        previousModeRef.current = savedMode;
+      }
+    } catch (e) {
+      console.error('Erro ao carregar modo de transcrição:', e);
+    }
+  }, []);
+
   // Renderizar os componentes no portal
   useEffect(() => {
     if (containerRef.current) {
+      // Verificar se o modo mudou para evitar re-renderizações desnecessárias
+      if (previousModeRef.current !== transcriptionMode) {
+        previousModeRef.current = transcriptionMode;
+        console.log(`Modo atualizado para: ${transcriptionMode}`);
+      }
+      
       // Injetamos diretamente os componentes simples e os handlers definidos acima
       ReactDOM.render(
         <div className="ai-simple-toolbar">
@@ -519,13 +611,13 @@ export const AIToolsContainer = () => {
           
           <TranscriptionSelector 
             mode={transcriptionMode} 
-            onChange={setTranscriptionMode} 
+            onChange={handleTranscriptionModeChange} 
           />
         </div>,
         containerRef.current
       );
     }
-  }, [transcriptionMode, handleAnalyze, handleSuggest, handleReport]);
+  }, [transcriptionMode, handleAnalyze, handleSuggest, handleReport, handleTranscriptionModeChange]);
 
   // Este componente não renderiza nada no seu local original
   return null;
