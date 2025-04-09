@@ -56,7 +56,7 @@ const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
     origin: process.env.NODE_ENV === 'production' 
-      ? ['https://terapiaconect.com', 'https://www.terapiaconect.com'] 
+      ? ['https://terapiaconect.com', 'https://www.terapiaconect.com', 'https://terapia-conect-frontend.vercel.app'] 
       : ['http://localhost:3001', 'http://localhost:5173', '*'],
     methods: ['GET', 'POST', 'OPTIONS'],
     credentials: true,
