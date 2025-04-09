@@ -81,6 +81,129 @@ export const AIProvider = ({ children }) => {
     return false;
   };
   
+  // Função genérica para buscar transcrições
+  const fetchTranscriptions = async (sessionId) => {
+    try {
+      console.log('[AIContext] Buscando transcrições para a sessão:', sessionId);
+      
+      // Obter token de autenticação
+      const authToken = localStorage.getItem('authToken') || 
+                        sessionStorage.getItem('authToken') || 
+                        localStorage.getItem('token') || 
+                        sessionStorage.getItem('token');
+      
+      if (!authToken) {
+        console.warn('[AIContext] Token de autenticação não encontrado');
+        return null;
+      }
+      
+      // CORREÇÃO: Tentar diferentes endpoints para buscar transcrições
+      // NOTA: Alguns servidores podem usar rotas diferentes
+      const apiUrl = 'https://theraconnect-prd.onrender.com/api';
+      
+      // Lista de possíveis endpoints para testar
+      const endpointsToTry = [
+        `${apiUrl}/transcriptions/session/${sessionId}`,
+        `${apiUrl}/ai/transcriptions/session/${sessionId}`,
+        `${apiUrl}/transcript/${sessionId}`,
+        `${apiUrl}/ai/transcript/${sessionId}`,
+        `${apiUrl}/ai/transcript-history/${sessionId}`
+      ];
+      
+      // Tentar cada endpoint até que um funcione
+      let transcriptData = null;
+      let successfulEndpoint = null;
+      
+      for (const endpoint of endpointsToTry) {
+        try {
+          console.log(`[AIContext] Tentando endpoint: ${endpoint}`);
+          
+          const response = await fetch(endpoint, {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${authToken}`,
+              'Content-Type': 'application/json'
+            }
+          });
+          
+          if (response.ok) {
+            const responseData = await response.json();
+            console.log('[AIContext] Resposta obtida com sucesso:', responseData);
+            
+            // Verificar se a resposta contém dados de transcrição
+            if (responseData.data || responseData.transcripts || responseData.transcriptions) {
+              transcriptData = responseData;
+              successfulEndpoint = endpoint;
+              break;
+            }
+          } else {
+            console.warn(`[AIContext] Erro no endpoint ${endpoint}: ${response.status}`);
+          }
+        } catch (endpointError) {
+          console.warn(`[AIContext] Erro ao tentar endpoint ${endpoint}:`, endpointError);
+          // Continuar tentando outros endpoints
+        }
+      }
+      
+      if (!transcriptData) {
+        console.warn('[AIContext] Nenhum endpoint retornou dados de transcrição');
+        return null;
+      }
+      
+      console.log(`[AIContext] Dados de transcrição obtidos do endpoint: ${successfulEndpoint}`);
+      
+      // Extrair os dados da transcrição (diferentes endpoints podem ter formatos diferentes)
+      const transcriptItems = transcriptData.data || 
+                              transcriptData.transcripts || 
+                              transcriptData.transcriptions || 
+                              [];
+      
+      if (transcriptItems.length > 0) {
+        // Combinar as transcrições em um único texto
+        const combinedText = transcriptItems
+          .map(t => `${t.speaker || 'Usuário'}: ${t.content || t.text || t.transcript}`)
+          .join('\n');
+        
+        console.log(`[AIContext] Texto combinado das transcrições: ${combinedText.length} caracteres`);
+        return combinedText;
+      }
+      
+      return null;
+    } catch (fetchError) {
+      console.error('[AIContext] Erro ao buscar transcrições do backend:', fetchError);
+      return null;
+    }
+  };
+  
+  // Nova função auxiliar para extrair sessionId da URL
+  const extractSessionIdFromUrl = () => {
+    try {
+      const url = window.location.href;
+      
+      // Tentar extrair de padrões comuns
+      // 1. Pattern /session/{id}
+      const sessionMatch = url.match(/\/session\/([a-zA-Z0-9_-]+)/);
+      if (sessionMatch && sessionMatch[1]) {
+        return sessionMatch[1];
+      }
+      
+      // 2. Pattern de UUID
+      const uuidMatch = url.match(/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/i);
+      if (uuidMatch && uuidMatch[0]) {
+        return uuidMatch[0];
+      }
+      
+      // 3. Storage
+      return localStorage.getItem('currentSessionId') || 
+            sessionStorage.getItem('currentSessionId') ||
+            localStorage.getItem('sessionId') ||
+            sessionStorage.getItem('sessionId');
+    } catch (e) {
+      console.error('Erro ao extrair sessionId da URL:', e);
+      return null;
+    }
+  };
+  
   // Função de análise
   const analyze = async (sessionId, text = transcript) => {
     try {
@@ -96,43 +219,11 @@ export const AIProvider = ({ children }) => {
       // NOVO: Se o texto estiver vazio, buscar as transcrições do backend
       let effectiveText = text;
       if (!effectiveText || effectiveText.trim().length === 0) {
-        try {
-          console.log('[AIContext] Texto vazio, buscando transcrições do backend para a sessão:', effectiveSessionId);
-          
-          // Obter token de autenticação
-          const authToken = localStorage.getItem('authToken') || 
-                           sessionStorage.getItem('authToken') || 
-                           localStorage.getItem('token') || 
-                           sessionStorage.getItem('token');
-          
-          // Buscar as transcrições diretamente usando o endpoint
-          const response = await fetch(`/api/ai/transcriptions/session/${effectiveSessionId}`, {
-            method: 'GET',
-            headers: {
-              'Authorization': `Bearer ${authToken}`
-            }
-          });
-          
-          if (response.ok) {
-            const transcriptData = await response.json();
-            console.log('[AIContext] Transcrições obtidas com sucesso do backend:', transcriptData);
-            
-            if (transcriptData.data && transcriptData.data.length > 0) {
-              // Combinar as transcrições em um único texto
-              effectiveText = transcriptData.data
-                .map(t => `${t.speaker}: ${t.content}`)
-                .join('\n');
-              
-              console.log(`[AIContext] Texto combinado das transcrições: ${effectiveText.length} caracteres`);
-              
-              // Atualizar o estado do transcript
-              setTranscript(effectiveText);
-            }
-          } else {
-            console.warn('[AIContext] Erro ao buscar transcrições:', response.status);
-          }
-        } catch (fetchError) {
-          console.error('[AIContext] Erro ao buscar transcrições do backend:', fetchError);
+        const fetchedText = await fetchTranscriptions(effectiveSessionId);
+        if (fetchedText) {
+          effectiveText = fetchedText;
+          // Atualizar o estado do transcript
+          setTranscript(effectiveText);
         }
       }
       
@@ -232,35 +323,6 @@ export const AIProvider = ({ children }) => {
     }
   };
   
-  // Nova função auxiliar para extrair sessionId da URL
-  const extractSessionIdFromUrl = () => {
-    try {
-      const url = window.location.href;
-      
-      // Tentar extrair de padrões comuns
-      // 1. Pattern /session/{id}
-      const sessionMatch = url.match(/\/session\/([a-zA-Z0-9_-]+)/);
-      if (sessionMatch && sessionMatch[1]) {
-        return sessionMatch[1];
-      }
-      
-      // 2. Pattern de UUID
-      const uuidMatch = url.match(/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/i);
-      if (uuidMatch && uuidMatch[0]) {
-        return uuidMatch[0];
-      }
-      
-      // 3. Storage
-      return localStorage.getItem('currentSessionId') || 
-             sessionStorage.getItem('currentSessionId') ||
-             localStorage.getItem('sessionId') ||
-             sessionStorage.getItem('sessionId');
-    } catch (e) {
-      console.error('Erro ao extrair sessionId da URL:', e);
-      return null;
-    }
-  };
-  
   // Função para gerar sugestões
   const suggest = async (sessionId, text = transcript) => {
     try {
@@ -276,43 +338,11 @@ export const AIProvider = ({ children }) => {
       // NOVO: Se o texto estiver vazio, buscar as transcrições do backend
       let effectiveText = text;
       if (!effectiveText || effectiveText.trim().length === 0) {
-        try {
-          console.log('[AIContext] Texto vazio, buscando transcrições do backend para a sessão:', effectiveSessionId);
-          
-          // Obter token de autenticação
-          const authToken = localStorage.getItem('authToken') || 
-                           sessionStorage.getItem('authToken') || 
-                           localStorage.getItem('token') || 
-                           sessionStorage.getItem('token');
-          
-          // Buscar as transcrições diretamente usando o endpoint
-          const response = await fetch(`/api/ai/transcriptions/session/${effectiveSessionId}`, {
-            method: 'GET',
-            headers: {
-              'Authorization': `Bearer ${authToken}`
-            }
-          });
-          
-          if (response.ok) {
-            const transcriptData = await response.json();
-            console.log('[AIContext] Transcrições obtidas com sucesso do backend:', transcriptData);
-            
-            if (transcriptData.data && transcriptData.data.length > 0) {
-              // Combinar as transcrições em um único texto
-              effectiveText = transcriptData.data
-                .map(t => `${t.speaker}: ${t.content}`)
-                .join('\n');
-              
-              console.log(`[AIContext] Texto combinado das transcrições: ${effectiveText.length} caracteres`);
-              
-              // Atualizar o estado do transcript
-              setTranscript(effectiveText);
-            }
-          } else {
-            console.warn('[AIContext] Erro ao buscar transcrições:', response.status);
-          }
-        } catch (fetchError) {
-          console.error('[AIContext] Erro ao buscar transcrições do backend:', fetchError);
+        const fetchedText = await fetchTranscriptions(effectiveSessionId);
+        if (fetchedText) {
+          effectiveText = fetchedText;
+          // Atualizar o estado do transcript
+          setTranscript(effectiveText);
         }
       }
       
@@ -430,43 +460,11 @@ export const AIProvider = ({ children }) => {
       // NOVO: Se o texto estiver vazio, buscar as transcrições do backend
       let effectiveText = text;
       if (!effectiveText || effectiveText.trim().length === 0) {
-        try {
-          console.log('[AIContext] Texto vazio, buscando transcrições do backend para a sessão:', effectiveSessionId);
-          
-          // Obter token de autenticação
-          const authToken = localStorage.getItem('authToken') || 
-                           sessionStorage.getItem('authToken') || 
-                           localStorage.getItem('token') || 
-                           sessionStorage.getItem('token');
-          
-          // Buscar as transcrições diretamente usando o endpoint
-          const response = await fetch(`/api/ai/transcriptions/session/${effectiveSessionId}`, {
-            method: 'GET',
-            headers: {
-              'Authorization': `Bearer ${authToken}`
-            }
-          });
-          
-          if (response.ok) {
-            const transcriptData = await response.json();
-            console.log('[AIContext] Transcrições obtidas com sucesso do backend:', transcriptData);
-            
-            if (transcriptData.data && transcriptData.data.length > 0) {
-              // Combinar as transcrições em um único texto
-              effectiveText = transcriptData.data
-                .map(t => `${t.speaker}: ${t.content}`)
-                .join('\n');
-              
-              console.log(`[AIContext] Texto combinado das transcrições: ${effectiveText.length} caracteres`);
-              
-              // Atualizar o estado do transcript
-              setTranscript(effectiveText);
-            }
-          } else {
-            console.warn('[AIContext] Erro ao buscar transcrições:', response.status);
-          }
-        } catch (fetchError) {
-          console.error('[AIContext] Erro ao buscar transcrições do backend:', fetchError);
+        const fetchedText = await fetchTranscriptions(effectiveSessionId);
+        if (fetchedText) {
+          effectiveText = fetchedText;
+          // Atualizar o estado do transcript
+          setTranscript(effectiveText);
         }
       }
       
