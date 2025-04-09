@@ -1290,49 +1290,6 @@ Ocorreu um erro inesperado durante a geração do relatório.
     return this.autoRestart;
   }
   
-  // Método para processar resultado intermediário do reconhecimento de voz
-  _handleInterimSpeechResult(transcript) {
-    // Evitar que o mesmo texto seja processado múltiplas vezes
-    if (this.interimTranscript === transcript) return;
-    
-    // Verificar se não é uma duplicação (ex: "Rodrigo Rodrigo")
-    const isDuplicated = this._checkForDuplication(transcript);
-    if (isDuplicated) {
-      // Remover a duplicação
-      transcript = this._removeDuplication(transcript);
-      console.log('HybridAI: Texto duplicado detectado e corrigido:', transcript);
-    }
-    
-    // Se estávamos em modo de espera/pausa, notificar retomada
-    if (this.waitingForSpeech || this.pausedByInactivity) {
-      console.log('HybridAI: Voz detectada durante modo de espera, retomando reconhecimento normal');
-      
-      // Disparar evento de retomada para atualizar a UI
-      window.dispatchEvent(new CustomEvent('recognition-resumed', {
-        detail: { timestamp: Date.now(), text: transcript }
-      }));
-      
-      // Limpar estado de espera
-      this.waitingForSpeech = false;
-      this.pausedByInactivity = false;
-    }
-    
-    this.interimTranscript = transcript;
-    this.currentTranscript = transcript;
-    
-    // Emitir evento com o texto intermediário
-    window.dispatchEvent(new CustomEvent('transcript-updated', {
-      detail: {
-        interimText: transcript,
-        fullText: this.transcript ? (this.transcript + ' ' + transcript) : transcript,
-        isPartial: true
-      }
-    }));
-    
-    // Armazenar último texto para referência global (para debug)
-    window.latestTranscript = transcript;
-  }
-
   /**
    * Processa o resultado final do reconhecimento de voz
    * @param {string} transcript - Texto transcrito final
@@ -1352,6 +1309,14 @@ Ocorreu um erro inesperado durante a geração do relatório.
         console.warn('HybridAI: Texto final vazio, ignorando');
         return;
       }
+      
+      // DESTACAR TRANSCRIÇÃO NO CONSOLE PARA MELHOR VISUALIZAÇÃO
+      console.log('\n%c TRANSCRIÇÃO CAPTURADA: %c' + transcript + '\n', 
+        'background: #4CAF50; color: white; font-weight: bold; padding: 5px;', 
+        'background: #f1f1f1; color: #333; padding: 5px; font-weight: normal; border-left: 4px solid #4CAF50');
+      
+      // Mostrar no elemento visual temporário na tela
+      this._showTranscriptionOnScreen(transcript, isExternalTranscription);
       
       // Processar e anonimizar se necessário
       let processedText = transcript;
@@ -1398,6 +1363,134 @@ Ocorreu um erro inesperado durante a geração do relatório.
     } catch (error) {
       console.error('HybridAI: Erro ao processar texto final:', error);
     }
+  }
+
+  /**
+   * Manipula resultados intermediários/parciais de reconhecimento
+   * @param {string} transcript - Texto parcial
+   * @private 
+   */
+  _handleInterimSpeechResult(transcript) {
+    // Validar transcricão
+    if (!transcript || transcript.trim().length === 0) return;
+    
+    // Atualizar texto intermediário
+    this.interimTranscript = transcript;
+    
+    // Mostrar no console com formatação diferente (cinza para intermediário)
+    console.log('%c TRANSCRIÇÃO (parcial): %c' + transcript, 
+      'background: #9E9E9E; color: white; font-weight: bold; padding: 3px;', 
+      'color: #666; font-style: italic;');
+    
+    // Mostrar na tela
+    this._showTranscriptionOnScreen(transcript, false, true);
+    
+    // Disparar evento para a interface
+    window.dispatchEvent(new CustomEvent('transcription-interim', {
+      detail: { 
+        text: transcript,
+        timestamp: new Date().toISOString(),
+        isInterim: true,
+        sessionId: this.sessionId
+      }
+    }));
+  }
+  
+  /**
+   * Exibe a transcrição na tela de forma temporária (para debug)
+   * @param {string} text - Texto a ser exibido 
+   * @param {boolean} isExternal - Se veio de fonte externa
+   * @param {boolean} isInterim - Se é uma transcrição parcial/intermediária
+   * @private
+   */
+  _showTranscriptionOnScreen(text, isExternal = false, isInterim = false) {
+    // Verificar se o elemento já existe ou criar um novo
+    let transcriptionDisplay = document.getElementById('debug-transcription-display');
+    
+    if (!transcriptionDisplay) {
+      // Criar o elemento de exibição
+      transcriptionDisplay = document.createElement('div');
+      transcriptionDisplay.id = 'debug-transcription-display';
+      
+      // Estilizar o elemento
+      Object.assign(transcriptionDisplay.style, {
+        position: 'fixed',
+        bottom: '20px',
+        left: '20px',
+        right: '20px',
+        padding: '15px',
+        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+        color: 'white',
+        zIndex: '9999',
+        borderRadius: '8px',
+        fontFamily: 'Arial, sans-serif',
+        maxHeight: '200px',
+        overflowY: 'auto',
+        fontSize: '14px',
+        boxShadow: '0 4px 8px rgba(0, 0, 0, 0.3)',
+        transition: 'all 0.3s ease'
+      });
+      
+      // Título e estrutura
+      transcriptionDisplay.innerHTML = `
+        <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+          <div style="font-weight: bold; color: #4CAF50;">Transcrições de Voz (Debug)</div>
+          <div>
+            <button id="debug-transcription-clear" style="background: #f44336; color: white; border: none; padding: 3px 8px; border-radius: 4px; cursor: pointer; margin-left: 10px;">Limpar</button>
+            <button id="debug-transcription-close" style="background: #555; color: white; border: none; padding: 3px 8px; border-radius: 4px; cursor: pointer; margin-left: 5px;">X</button>
+          </div>
+        </div>
+        <div id="debug-transcription-content"></div>
+      `;
+      
+      // Adicionar ao body
+      document.body.appendChild(transcriptionDisplay);
+      
+      // Adicionar event listeners
+      document.getElementById('debug-transcription-clear').addEventListener('click', () => {
+        document.getElementById('debug-transcription-content').innerHTML = '';
+      });
+      
+      document.getElementById('debug-transcription-close').addEventListener('click', () => {
+        document.body.removeChild(transcriptionDisplay);
+      });
+    }
+    
+    // Obter o contêiner de conteúdo
+    const contentContainer = document.getElementById('debug-transcription-content');
+    
+    // Criar novo item de transcrição
+    const transcriptionItem = document.createElement('div');
+    transcriptionItem.style.marginBottom = '8px';
+    transcriptionItem.style.borderLeft = isExternal 
+      ? '3px solid #2196F3' // Azul para Whisper
+      : '3px solid #4CAF50'; // Verde para WebSpeech
+    transcriptionItem.style.paddingLeft = '10px';
+    transcriptionItem.style.opacity = isInterim ? '0.7' : '1';
+    transcriptionItem.style.fontStyle = isInterim ? 'italic' : 'normal';
+    
+    // Fonte e timestamp
+    const source = isExternal ? 'Whisper' : 'WebSpeech';
+    const time = new Date().toLocaleTimeString();
+    
+    // Montar o HTML
+    transcriptionItem.innerHTML = `
+      <div style="color: ${isExternal ? '#2196F3' : '#4CAF50'}; font-size: 11px; margin-bottom: 2px;">
+        ${source} ${isInterim ? '(parcial)' : ''} - ${time}
+      </div>
+      <div>${text}</div>
+    `;
+    
+    // Adicionar ao contêiner
+    contentContainer.appendChild(transcriptionItem);
+    
+    // Limitar o número máximo de itens (manter os 10 mais recentes)
+    while (contentContainer.children.length > 10) {
+      contentContainer.removeChild(contentContainer.children[0]);
+    }
+    
+    // Rolar para o final
+    contentContainer.scrollTop = contentContainer.scrollHeight;
   }
 
   // Método para verificar duplicações de palavras
