@@ -116,8 +116,15 @@ const FallbackMeeting = ({
     try {
       console.log('Verificando/criando sala:', roomName);
       
+      // Importar as configurações
+      const { SOCKET_URL } = await import('../config');
+      
+      // Usar URL completa do backend para evitar CORS e problemas de rota
+      const apiUrl = `${SOCKET_URL}/api/meetings/validate-room/${roomName}`;
+      console.log('Chamando API com URL completa:', apiUrl);
+      
       // Verificar se a sala existe ou criar uma nova através do backend
-      const response = await axios.get(`/api/meetings/validate-room/${roomName}`);
+      const response = await axios.get(apiUrl);
       
       console.log('Resposta da API de validação:', response.data);
       

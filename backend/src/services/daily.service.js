@@ -42,34 +42,57 @@ class DailyService {
    */
   async validateAndGetRoom(roomName) {
     try {
+      console.log(`Solicitação para validar sala com nome original: ${roomName}`);
+      
+      // Garantir que sempre teremos um nome válido para a sala
+      if (!roomName) {
+        roomName = `room-${Date.now().toString().slice(-6)}`;
+        console.log(`Nome não fornecido, gerando nome automático: ${roomName}`);
+      }
+      
       // Remover prefixo 'tc-' se existir
-      let cleanRoomName = roomName;
       if (roomName.startsWith('tc-')) {
-        cleanRoomName = roomName.substring(3);
-        console.log('Prefixo tc- removido, usando nome limpo:', cleanRoomName);
+        roomName = roomName.substring(3);
+        console.log('Prefixo tc- removido, usando nome limpo:', roomName);
       }
       
-      // Limitar o tamanho do nome da sala (Daily.co tem limite de caracteres)
-      // Se for um UUID, usar apenas os primeiros 8 caracteres
-      if (cleanRoomName && cleanRoomName.length > 16) {
-        const shortRoomName = cleanRoomName.substring(0, 16);
-        console.log('Nome de sala muito longo, truncando para:', shortRoomName);
-        cleanRoomName = shortRoomName;
+      // IMPORTANTE: Sempre simplificar o nome da sala para evitar problemas de compatibilidade
+      // Pegar apenas os primeiros 8 caracteres do ID original para garantir compatibilidade
+      let simpleRoomName;
+      if (roomName.includes('-')) {
+        // Se for um UUID, extrair a primeira parte
+        simpleRoomName = roomName.split('-')[0];
+        console.log(`Nome parece ser UUID, extraindo primeira parte: ${simpleRoomName}`);
+      } else if (roomName.length > 10) {
+        // Se for muito longo, truncar
+        simpleRoomName = roomName.substring(0, 8);
+        console.log(`Nome muito longo, truncando para: ${simpleRoomName}`);
+      } else {
+        // Manter o nome se for curto o suficiente
+        simpleRoomName = roomName;
       }
       
-      // Verificar se a sala já existe
+      // Adicionar prefixo para evitar colisões
+      const finalRoomName = `tc-${simpleRoomName}`;
+      console.log(`Nome final para sala Daily.co: ${finalRoomName}`);
+      
+      // Verificar se a sala já existe com o nome simplificado
       try {
-        const response = await this.client.get(`/rooms/${cleanRoomName}`);
-        console.log('Sala existente encontrada:', cleanRoomName);
+        const response = await this.client.get(`/rooms/${finalRoomName}`);
+        console.log('Sala existente encontrada:', finalRoomName);
         return {
-          url: `https://${DAILY_DOMAIN}/${cleanRoomName}`,
-          name: cleanRoomName
+          url: `https://${DAILY_DOMAIN}/${finalRoomName}`,
+          name: finalRoomName,
+          originalName: roomName
         };
       } catch (error) {
         // Se a sala não existe (404) ou outro erro, criamos uma nova
         if (error.response && error.response.status === 404) {
-          console.log('Sala não existe, criando nova:', cleanRoomName);
-          return await this.createRoom(cleanRoomName);
+          console.log('Sala não existe, criando nova com nome:', finalRoomName);
+          const result = await this.createRoom(finalRoomName);
+          // Adicionar o nome original para referência
+          result.originalName = roomName;
+          return result;
         } else {
           console.error('Erro ao verificar sala:', error.message);
           throw error;
@@ -77,7 +100,8 @@ class DailyService {
       }
     } catch (error) {
       console.error('Erro em validateAndGetRoom:', error);
-      throw new Error(`Falha ao validar/criar sala: ${error.message}`);
+      // Tentar um fallback como último recurso
+      return this.createFallbackRoom(roomName);
     }
   }
   
@@ -89,23 +113,15 @@ class DailyService {
    */
   async createRoom(roomName, expiryHours = 24) {
     try {
-      // Remover prefixo 'tc-' se existir
-      let cleanRoomName = roomName;
-      if (roomName && roomName.startsWith('tc-')) {
-        cleanRoomName = roomName.substring(3);
-        console.log('Prefixo tc- removido para criação, usando nome limpo:', cleanRoomName);
+      // Validar que temos um nome para a sala
+      if (!roomName) {
+        // Gerar um nome curto e simples baseado em timestamp para garantir compatibilidade
+        const timestamp = Date.now().toString().slice(-6); // Últimos 6 dígitos do timestamp
+        roomName = `tc-${timestamp}`;
+        console.log(`Nome não fornecido, gerando nome simplificado: ${roomName}`);
       }
       
-      // Gerar um nome curto e simples baseado em timestamp para garantir compatibilidade
-      // Evitar usar UUIDs ou IDs complexos que podem causar problemas
-      const timestamp = Date.now().toString().slice(-6); // Últimos 6 dígitos do timestamp
-      const roomPrefix = 'room';
-      
-      // Nome final da sala (ex: room123456)
-      const finalRoomName = `${roomPrefix}${timestamp}`;
-      
-      console.log('Nome original muito longo ou complexo, usando nome simples:', finalRoomName);
-      console.log('Criando sala Daily.co com nome final:', finalRoomName);
+      console.log(`Solicitação para criar sala: ${roomName}`);
       
       // Configurar propriedades da sala
       const properties = {
@@ -122,18 +138,19 @@ class DailyService {
         }
       };
       
+      // Criar sala na API do Daily
       const response = await this.client.post('/rooms', {
-        name: finalRoomName,
+        name: roomName,
         ...properties
       });
       
       const createdRoom = response.data;
-      console.log('Sala Daily.co criada com sucesso:', finalRoomName, 'URL:', `https://${DAILY_DOMAIN}/${finalRoomName}`);
+      console.log('Sala Daily.co criada com sucesso:', roomName, 'URL:', `https://${DAILY_DOMAIN}/${roomName}`);
       
       // Retornar os detalhes da sala criada
       return {
-        url: `https://${DAILY_DOMAIN}/${finalRoomName}`,
-        name: finalRoomName // Nome simples, sem prefixo e sem caracteres problemáticos
+        url: `https://${DAILY_DOMAIN}/${roomName}`,
+        name: roomName
       };
     } catch (error) {
       console.error('Erro ao criar sala Daily.co:', error.response ? error.response.data : error.message);
@@ -218,6 +235,62 @@ class DailyService {
       
       console.error('Erro ao verificar status da sala Daily.co:', error.response ? error.response.data : error.message);
       throw new Error(`Falha ao verificar status da sala: ${error.message}`);
+    }
+  }
+  
+  /**
+   * Método de fallback para criar uma sala com nome simplificado baseado em timestamp
+   * @param {string} originalName - Nome original da sala (para referência)
+   * @returns {Promise<Object>} - Detalhes da sala criada
+   */
+  async createFallbackRoom(originalName) {
+    try {
+      console.log('Tentando criar sala de fallback após falha...');
+      
+      // Gerar um nome simples baseado em timestamp que sabemos que vai funcionar
+      const timestamp = Date.now().toString().slice(-6); // Últimos 6 dígitos do timestamp
+      const fallbackName = `tc-${timestamp}`;
+      
+      console.log(`Criando sala de fallback com nome: ${fallbackName}`);
+      
+      // Configurar propriedades da sala
+      const properties = {
+        privacy: 'public',
+        properties: {
+          exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60), // 24 horas
+          enable_chat: true,
+          enable_screenshare: true,
+          start_video_off: false,
+          start_audio_off: false
+        }
+      };
+      
+      const response = await this.client.post('/rooms', {
+        name: fallbackName,
+        ...properties
+      });
+      
+      console.log('Sala de fallback criada com sucesso:', fallbackName);
+      
+      // Retornar os detalhes da sala criada
+      return {
+        url: `https://${DAILY_DOMAIN}/${fallbackName}`,
+        name: fallbackName,
+        originalName: originalName,
+        isFallback: true
+      };
+    } catch (error) {
+      console.error('Erro crítico ao criar sala de fallback:', error);
+      
+      // Como último recurso, retornar uma URL que o cliente pode tentar usar
+      // mesmo sem garantia de que a sala existe
+      return {
+        url: `https://${DAILY_DOMAIN}/fallback-room`,
+        name: 'fallback-room',
+        originalName: originalName,
+        isFallback: true,
+        isError: true
+      };
     }
   }
 }
