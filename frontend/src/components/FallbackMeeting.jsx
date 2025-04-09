@@ -119,45 +119,63 @@ const FallbackMeeting = ({
       // Verificar se a sala existe ou criar uma nova através do backend
       const response = await axios.get(`/api/meetings/validate-room/${roomName}`);
       
+      console.log('Resposta da API de validação:', response.data);
+      
+      let baseUrl = null;
+      
+      // Verificar diferentes formatos possíveis de resposta
       if (response.data && response.data.url) {
-        console.log('Sala validada com sucesso:', response.data.url);
-        
-        // A URL já vem completa do backend, apenas adicionar parâmetros
-        const baseUrl = response.data.url;
-        
-        // Construir parâmetros da URL
-        const params = new URLSearchParams();
-        
-        // Adicionar nome do usuário se disponível
-        if (userName) {
-          params.append('name', userName);
-        }
-        
-        // Configurações básicas
-        params.append('showLeaveButton', 'true');
-        params.append('showFullscreenButton', 'true');
-        
-        // Áudio e vídeo
-        params.append('startAudioOff', !audioEnabled);
-        params.append('startVideoOff', !videoEnabled);
-        
-        // Construir URL final
-        const finalUrl = `${baseUrl}?${params.toString()}`;
-        console.log('URL final da sala:', finalUrl);
-        
-        return finalUrl;
+        // Formato direto
+        baseUrl = response.data.url;
+      } else if (response.data && response.data.data && response.data.data.url) {
+        // Formato aninhado
+        baseUrl = response.data.data.url;
       } else {
-        throw new Error('Não foi possível obter a URL da sala');
+        throw new Error('Formato de resposta desconhecido');
       }
+      
+      console.log('URL da sala validada:', baseUrl);
+      
+      // Construir parâmetros da URL
+      const params = new URLSearchParams();
+      
+      // Adicionar nome do usuário se disponível
+      if (userName) {
+        params.append('name', userName);
+      }
+      
+      // Configurações básicas
+      params.append('showLeaveButton', 'true');
+      params.append('showFullscreenButton', 'true');
+      
+      // Áudio e vídeo
+      params.append('startAudioOff', !audioEnabled);
+      params.append('startVideoOff', !videoEnabled);
+      
+      // Construir URL final
+      const finalUrl = `${baseUrl}?${params.toString()}`;
+      console.log('URL final da sala:', finalUrl);
+      
+      return finalUrl;
     } catch (err) {
       console.error('Erro ao validar sala no backend:', err);
       
-      // Fallback para URL direta em caso de erro
-      console.log('Usando fallback para sala:', roomName);
-      const dailyUrl = 'https://teraconect.daily.co';
-      const url = `${dailyUrl}/${roomName}`;
+      // Tentar extrair mais informações do erro
+      console.log('Detalhes do erro:', err.response?.data || err.message);
       
-      // Construir parâmetros da URL
+      // Fallback extremo: Criar URL direta para o Daily.co
+      // Recomendável usar apenas os primeiros caracteres do ID para evitar problemas
+      const simplifiedId = roomName.includes('-') ? 
+        roomName.split('-')[0] : 
+        roomName.substring(0, 8);
+        
+      console.log(`Usando ID simplificado para fallback: ${simplifiedId}`);
+      
+      // Construir URL de fallback
+      const dailyUrl = 'https://teraconect.daily.co';
+      const fallbackUrl = `${dailyUrl}/tc-${simplifiedId}`;
+      
+      // Construir parâmetros
       const params = new URLSearchParams();
       if (userName) params.append('name', userName);
       params.append('showLeaveButton', 'true');
@@ -165,8 +183,8 @@ const FallbackMeeting = ({
       params.append('startAudioOff', !audioEnabled);
       params.append('startVideoOff', !videoEnabled);
       
-      const finalUrl = `${url}?${params.toString()}`;
-      console.log('URL final da sala (fallback):', finalUrl);
+      const finalUrl = `${fallbackUrl}?${params.toString()}`;
+      console.log('URL final da sala (fallback extremo):', finalUrl);
       
       return finalUrl;
     }
