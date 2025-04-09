@@ -11,45 +11,75 @@ import config from '../environments';
  */
 class HybridAIService {
   constructor() {
-    try {
-    console.log('HybridAI: Inicializando serviço...');
+    // Verificar se estamos no ambiente do navegador
+    const isBrowser = typeof window !== 'undefined';
+    this.isBrowser = isBrowser;
     
-      // Inicializar variáveis internas
+    // Se não estivermos no navegador, retornar sem inicializar
+    if (!isBrowser) {
+      console.warn('HybridAI: Iniciado fora do navegador, funcionalidade limitada');
+      return;
+    }
+    
+    // Inicialização básica dos atributos
+    this.isInitialized = false;
+    this.isListening = false;
+    this.isPaused = false;
+    this.isProcessingSpeech = false;
+    this.stopRequested = false;
+    
+    // Configuração de reinício automático
+    this.autoRestart = true;
+    this.hasRecognitionSupport = false;
+    
+    // URLs
+    this.apiUrl = '';
+    
+    // Estado de transcrição
     this.transcript = '';
     this.interimTranscript = '';
-      this.emotions = {};
-      this.errorCount = 0;
-      this.isRecording = false;
-      this.isProcessingSpeech = false;
-      this.currentTranscript = '';
-      this.transcriptionHistory = [];
-      this.fullSessionText = '';
-      this.sessionId = null;
-      this.isListening = false;
-      this.autoRestart = true;
-      this.stopRequested = false;
-      this.hasRecognitionSupport = false;
-      this.restartTimeout = null;
-      
-      // Configuração de endpoints
-      this.apiUrl = config.apiUrl;
-      this.baseUrl = config.baseUrl;
-      console.log(`HybridAI: API URL configurada: ${this.apiUrl}`);
-      
-      // Callbacks
-      this.onSpeechResult = null;
-      this.onEmotionDetected = null;
-      
-      // Verificar suporte do navegador ao iniciar
-      this.hasRecognitionSupport = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
-      
-      // Inicializar o serviço automaticamente
-      this.initService();
-      
-      console.log('HybridAI: Serviço inicializado, suporte a reconhecimento:', this.hasRecognitionSupport);
-    } catch (error) {
-      console.error('HybridAI: Erro ao inicializar serviço:', error);
-    }
+    this.lastFinalTranscript = '';
+    this.sessionId = null;
+    this.emotions = {
+      joy: 0,
+      sadness: 0,
+      anger: 0,
+      fear: 0,
+      surprise: 0,
+      disgust: 0,
+      neutral: 0
+    };
+    
+    // Configurações de reconhecimento
+    this.language = 'pt-BR';
+    this.continuousRecognition = true;
+    this.interimResults = true;
+    this.maxAlternatives = 1;
+    
+    // Anonimização
+    this.useAnonymization = false;
+    this.sensitiveWords = [
+      'cpf', 'rg', 'identidade', 'cartão', 'senha', 'número', 'endereço',
+      'telefone', 'celular', 'conta', 'banco', 'email', 'e-mail'
+    ];
+    
+    // Controle de inatividade
+    this.pauseAfterInactivity = true;
+    this.inactivityThreshold = 5000; // 5 segundos
+    this.lastSpeechTimestamp = Date.now();
+    this.inactivityTimeout = null;
+    this.pausedByInactivity = false;
+    
+    // Inicialização sob demanda
+    this.setupPromise = null;
+    
+    // Opções de estilo para o usuário
+    this.userRole = 'paciente'; // paciente ou terapeuta
+    
+    // Iniciar o setup
+    this.initService().catch(e => {
+      console.error('HybridAI: Erro durante inicialização:', e);
+    });
   }
 
   async initService() {
@@ -59,36 +89,24 @@ class HybridAIService {
       // Verificar ambiente
       const isDevelopment = window.location.hostname === 'localhost' || window.location.hostname.includes('127.0.0.1');
       
-      // Definir URL da API com base no ambiente
-      if (!this.apiUrl) {
-        // Tentar importar configuração global
-        try {
-          // Importar de módulo separado
-          const { API_URL } = await import('../config');
-          this.apiUrl = API_URL;
-          console.log(`HybridAI: API URL importada de configuração global: ${this.apiUrl}`);
-        } catch (e) {
-          console.warn('HybridAI: Erro ao importar configuração:', e);
-          
-          // Configuração de fallback: URL absoluta para evitar CORS
-          if (isDevelopment) {
-            this.apiUrl = 'http://localhost:3000/api';
-          } else {
-            // Usar URL do backend em produção (hardcoded como última opção)
-            this.apiUrl = 'https://theraconnect-prd.onrender.com/api';
-          }
-          
-          console.log(`HybridAI: Usando API URL de fallback: ${this.apiUrl}`);
-        }
-      }
-      
-      // SOLUÇÃO: Verificar e corrigir a URL se for incorreta
-      if (this.apiUrl.includes('terapia-conect-frontend.vercel.app')) {
-        console.warn('HybridAI: Corrigindo URL da API que apontava incorretamente para o frontend');
+      // SOLUÇÃO DIRETA: Forçar a URL correta do backend, independentemente de erros
+      if (isDevelopment) {
+        this.apiUrl = 'http://localhost:3000/api';
+      } else {
+        // Usar URL do backend em produção (forçada)
         this.apiUrl = 'https://theraconnect-prd.onrender.com/api';
       }
       
-      console.log(`HybridAI: API URL configurada: ${this.apiUrl}`);
+      console.log(`HybridAI: API URL forçada para o valor correto: ${this.apiUrl}`);
+      
+      // Injetar na window para diagnóstico
+      if (typeof window !== 'undefined') {
+        window.__HYBRID_API = {
+          url: this.apiUrl,
+          environment: isDevelopment ? 'development' : 'production',
+          timestamp: new Date().toISOString()
+        };
+      }
       
       // Verificar sessionId (extrair da URL se não tiver)
       if (!this.sessionId) {
@@ -923,24 +941,11 @@ class HybridAIService {
     try {
       console.log('HybridAI: Preparando para enviar transcrição ao servidor');
       
-      // Verificar se temos uma URL de API configurada
-      if (!this.apiUrl) {
-        console.error('HybridAI: URL da API não configurada');
-        throw new Error('URL da API não configurada');
-      }
+      // SOLUÇÃO DIRETA: Forçar o uso da URL do backend correta, ignorando this.apiUrl
+      // Isso resolve o problema onde a configuração incorreta persiste após a inicialização
+      const endpoint = 'https://theraconnect-prd.onrender.com/api/ai/transcript';
       
-      // Verificar se a URL da API é válida e corrigir se necessário
-      // CORREÇÃO: Garantir que estamos usando o backend correto, não o frontend
-      let endpoint = `${this.apiUrl}/ai/transcript`;
-      
-      // Verificar se a URL está apontando para o frontend por engano
-      if (endpoint.includes('terapia-conect-frontend.vercel.app')) {
-        console.warn('HybridAI: Corrigindo URL da API que apontava incorretamente para o frontend');
-        // Usar URL do backend em produção
-        endpoint = 'https://theraconnect-prd.onrender.com/api/ai/transcript';
-      }
-
-      console.log(`HybridAI: Endpoint para salvar transcrição: ${endpoint}`);
+      console.log(`HybridAI: Usando endpoint fixo para transcrição: ${endpoint}`);
       
       // Obter token de autenticação
       const authToken = this.getAuthToken();
@@ -975,7 +980,7 @@ class HybridAIService {
         body: JSON.stringify(data)
       });
       
-      // CORREÇÃO: Verificar o status e tratar resposta adequadamente para evitar leitura dupla
+      // Verificar o status e tratar resposta adequadamente para evitar leitura dupla
       if (!response.ok) {
         let errorMessage;
         try {
@@ -1681,81 +1686,19 @@ Ocorreu um erro inesperado durante a geração do relatório.
         this.sessionId = this.extractSessionId();
       }
       
-      // Verificar se estamos na página de sessão válida
-      const isSessionPage = window.location.pathname.includes('/session/');
-      const pageSessionId = isSessionPage ? window.location.pathname.split('/session/')[1] : null;
-      
-      // Se estamos na página de sessão mas com ID temporário, usar o ID da URL
-      if (isSessionPage && pageSessionId && this.sessionId.startsWith('temp_')) {
-        console.log('HybridAI: Substituindo ID temporário pelo ID da URL:', pageSessionId);
-        this.sessionId = pageSessionId;
-        
-        // Salvar no localStorage para uso futuro
-        try {
-          localStorage.setItem('currentSessionId', pageSessionId);
-        } catch (e) {
-          console.warn('HybridAI: Não foi possível salvar sessionId no localStorage:', e);
-        }
-      }
-      
-      // Verificação menos restritiva - permitir IDs temporários em produção
-      // Se for um ID temporário, verificar no localStorage
-      if (this.sessionId.startsWith('temp_')) {
-        // Tentar encontrar um sessionId no localStorage
-        const savedId = localStorage.getItem('currentSessionId');
-        if (savedId && !savedId.startsWith('temp_')) {
-          console.log('HybridAI: Usando sessionId do localStorage em vez do temporário:', savedId);
-          this.sessionId = savedId;
-        } else {
-          // Verificar se estamos em produção
-          const isProduction = !window.location.hostname.includes('localhost') && 
-                             !window.location.hostname.includes('127.0.0.1');
-          
-          if (isProduction) {
-            console.log('HybridAI: IMPORTANTE - Em produção com ID temporário, verificando outras opções...');
-            
-            // Tentar extrair UUID da URL (mais agressivamente)
-            const url = window.location.href;
-            const uuidMatch = url.match(/[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}/i) || 
-                             url.match(/[a-f0-9-]{10,}/);
-            
-            if (uuidMatch && uuidMatch[0]) {
-              console.log('HybridAI: Encontrado possível UUID na URL:', uuidMatch[0]);
-              this.sessionId = uuidMatch[0];
-              
-              // Salvar para uso futuro
-              try {
-                localStorage.setItem('currentSessionId', this.sessionId);
-              } catch (e) {}
-            }
-          }
-        }
-      }
-      
-      // Verificação final
-      const invalidSessionId = 
-        !this.sessionId || 
-        this.sessionId.length < 5 || 
-        this.sessionId.startsWith('fallback_') || 
-        this.sessionId.startsWith('session_') || 
-        this.sessionId.startsWith('error_');
-      
-      if (invalidSessionId) {
-        console.warn('HybridAI: ID da sessão inválido ou genérico, transcrição não será salva', this.sessionId);
-        window.dispatchEvent(new CustomEvent('hybridai-error', {
-          detail: { 
-            message: 'Não foi possível identificar a sessão atual. Recarregue a página ou crie uma nova sessão.',
-            type: 'session'
-          }
-        }));
+      // Verificação mínima do sessionId - apenas verificar se temos alguma coisa
+      if (!this.sessionId || this.sessionId.length < 3) {
+        console.warn('HybridAI: ID da sessão completamente inválido ou vazio, transcrição não será salva', this.sessionId);
         return;
       }
       
-      // Permitir sessionIds temporários em localhost, mas logar
-      if (this.sessionId.startsWith('temp_') && 
-          (window.location.hostname === 'localhost' || 
-           window.location.hostname.includes('127.0.0.1'))) {
+      // Em ambiente de desenvolvimento, logar uso de IDs temporários
+      const isDevelopment = window.location.hostname === 'localhost' || window.location.hostname.includes('127.0.0.1');
+      if (isDevelopment && this.sessionId.startsWith('temp_')) {
         console.log('HybridAI: Usando ID temporário em ambiente de desenvolvimento:', this.sessionId);
+      } else if (this.sessionId.startsWith('temp_')) {
+        // Em produção, logar o uso de temporários mas permitir
+        console.warn('HybridAI: Usando ID temporário em produção:', this.sessionId);
       }
       
       console.log(`HybridAI: Preparando para salvar transcrição. SessionID: ${this.sessionId}, Tamanho do texto: ${normalizedTranscript.length} caracteres`);
@@ -1768,17 +1711,10 @@ Ocorreu um erro inesperado durante a geração do relatório.
         return;
       }
       
-      // Verificar se a API URL está configurada
-      if (!this.apiUrl) {
-        console.warn('HybridAI: URL da API não configurada, tentando inicializar');
-        this.initService();
-      }
-      
       // Enviar para o servidor em background
       this.sendTranscriptionToServer(normalizedTranscript, this.emotions)
         .then(() => console.log('HybridAI: Transcrição salva com sucesso'))
         .catch(err => {
-          // Não exibir erro 401 novamente pois já mostramos no método sendTranscriptionToServer
           if (!err.message?.includes('401') && !err.message?.includes('403') && !err.message?.includes('autenticação')) {
             console.error('HybridAI: Erro ao salvar transcrição:', err);
           }
