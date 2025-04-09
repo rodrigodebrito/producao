@@ -63,23 +63,28 @@ class HybridAIService {
       'telefone', 'celular', 'conta', 'banco', 'email', 'e-mail'
     ];
     
-    // Controle de inatividade
+    // Controle de inatividade - AJUSTADO para maior tolerância
     this.pauseAfterInactivity = true;
-    this.inactivityThreshold = 5000; // 5 segundos
-    this.lastSpeechTimestamp = Date.now();
-    this.inactivityTimeout = null;
+    this.inactivityThreshold = 10000; // Aumentado para 10 segundos (era 5000)
+    this.inactivityTimer = null;
     this.pausedByInactivity = false;
+    this.waitingForSpeech = false;
     
-    // Inicialização sob demanda
-    this.setupPromise = null;
+    // Tratamento de erros
+    this.errorCount = 0;
+    this.maxErrorCount = 10;
+    this.lastErrorType = null;
+    this.lastErrorTime = null;
     
-    // Opções de estilo para o usuário
-    this.userRole = 'paciente'; // paciente ou terapeuta
+    // Estatísticas
+    this.startTime = null;
+    this.totalProcessingTime = 0;
+    this.totalCharactersProcessed = 0;
     
-    // Iniciar o setup
-    this.initService().catch(e => {
-      console.error('HybridAI: Erro durante inicialização:', e);
-    });
+    // Inicialização automática
+    this.initService();
+    
+    console.log('HybridAI: Serviço construído');
   }
 
   async initService() {
@@ -201,284 +206,101 @@ class HybridAIService {
     }
   }
 
-  // Método para recriar o objeto de reconhecimento de voz
+  /**
+   * Configurar o objeto de reconhecimento de voz do navegador
+   * @private
+   */
   setupSpeechRecognition() {
     try {
-      if (!this.recognition) {
-        console.log('HybridAI: Configurando reconhecimento de voz');
-        
-        // Verificar se a API de reconhecimento de voz está disponível
-        if (!window.SpeechRecognition && !window.webkitSpeechRecognition) {
-          console.error('HybridAI: API de reconhecimento de voz não suportada neste navegador');
-          this.hasRecognitionSupport = false;
-          return false;
-        }
-        
-        // Inicializar o reconhecimento de voz
-        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        this.recognition = new SpeechRecognition();
-        
-        // Configurações do reconhecimento
-        this.recognition.lang = 'pt-BR';
-        this.recognition.interimResults = true;
-        this.recognition.continuous = true;
-        this.recognition.maxAlternatives = 1;
-        
-        // Propriedade para controlar pausa automática
-        this.inactivityTimeout = null;
-        this.lastSpeechTimestamp = Date.now();
-        this.pauseAfterInactivity = true; // Nova opção de configuração
-        this.inactivityThreshold = 5000; // 5 segundos de inatividade para pausar
-        this.waitingForSpeech = false; // Para o modo de espera de voz
-        this.pausedByInactivity = false; // Indica se foi pausado por inatividade
-        
-        // Contador de erros para limitar tentativas de reinício
-        this.errorCount = 0;
-        this.maxErrorCount = 3;
-        this.lastErrorType = null;
-        this.lastErrorTime = 0;
-        
-        // Configurar handlers de eventos
-        this.recognition.onstart = () => {
-          console.log('HybridAI: Reconhecimento de voz iniciado pelo navegador');
-          
-          // Resetar variáveis de estado
-          this.isProcessingSpeech = true;
-          this.errorCount = 0;
-          this.lastErrorType = null;
-          this.lastSpeechTimestamp = Date.now();
-          this.pausedByInactivity = false;
-          
-          // Iniciar timer para verificar inatividade
-          this._startInactivityTimer();
-          
-          // Disparar evento de início da gravação
-          window.dispatchEvent(new CustomEvent('recording-started'));
-          
-          // Limpar qualquer timeout de reinício pendente
-          if (this.restartTimeout) {
-            clearTimeout(this.restartTimeout);
-            this.restartTimeout = null;
-          }
-        };
-        
-        this.recognition.onresult = (event) => {
-          try {
-            // Processar resultados do reconhecimento
-            const last = event.results.length - 1;
-            const transcript = event.results[last][0].transcript.trim();
-            const isFinal = event.results[last].isFinal;
-            
-            // Atualizar timestamp da última atividade de voz
-            this.lastSpeechTimestamp = Date.now();
-            
-            // Se estávamos esperando por voz após uma pausa, retomar reconhecimento completo
-            if (this.waitingForSpeech) {
-              console.log('HybridAI: Voz detectada após pausa, retomando reconhecimento completo');
-              this.waitingForSpeech = false;
-              this.pausedByInactivity = false;
-              
-              // Sair do modo de espera e reiniciar o reconhecimento completo
-              if (this.recognition) {
-            try {
-              this.recognition.stop();
-                  
-                  // Reiniciar após um curto delay
-                  setTimeout(() => {
-                    this.startRecording();
-                  }, 300);
-        } catch (e) {
-                  console.error('HybridAI: Erro ao retomar reconhecimento após detecção de voz:', e);
-                }
-                return;
-              }
-            }
-            
-            if (transcript) {
-              // Caso seja um resultado final ou intermediário
-              if (isFinal) {
-                console.log('HybridAI: Texto final reconhecido:', transcript);
-                this._handleFinalSpeechResult(transcript);
-              } else {
-                // Resultados intermediários não precisam de log para não sobrecarregar o console
-                this._handleInterimSpeechResult(transcript);
-              }
-              
-              // Reiniciar o timer de inatividade após um resultado
-              this._resetInactivityTimer();
-            }
-          } catch (e) {
-            console.error('HybridAI: Erro ao processar resultado do reconhecimento:', e);
-          }
-      };
-      
-      this.recognition.onend = () => {
-        console.log('HybridAI: Reconhecimento de voz finalizado pelo navegador');
-          this.isProcessingSpeech = false;
-          
-          // Limpar o timer de inatividade
-          this._clearInactivityTimer();
-          
-          // Verificar se é uma parada intencional ou se devemos reiniciar
-          if (this.stopRequested) {
-            console.log('HybridAI: Reconhecimento finalizado por solicitação do usuário');
-            this.stopRequested = false;
-            this.isListening = false;
-            this.isRecording = false;
-            this.waitingForSpeech = false;
-            this.pausedByInactivity = false;
-            
-            // Disparar evento de parada da gravação
-            window.dispatchEvent(new CustomEvent('recording-stopped'));
-          } else if (this.pausedByInactivity) {
-            // Entrar em modo de espera por voz com baixo consumo de recursos
-            console.log('HybridAI: Entrando em modo de espera por voz após inatividade');
-            this.waitingForSpeech = true;
-            
-            // Iniciar um reconhecimento simplificado para esperar por voz
-            try {
-              // Usar configurações diferentes para o modo de espera
-              this.recognition.continuous = false; // Uma única detecção é suficiente
-              
-              // Iniciar após um pequeno delay
-          setTimeout(() => {
-                if (this.waitingForSpeech && !this.stopRequested) {
-            try {
-              this.recognition.start();
-                    console.log('HybridAI: Modo de espera por voz iniciado');
-                  } catch (e) {
-                    console.error('HybridAI: Erro ao iniciar modo de espera por voz:', e);
-                    this.waitingForSpeech = false;
-                    this.pausedByInactivity = false;
-                    window.dispatchEvent(new CustomEvent('recording-stopped'));
-                  }
-                }
-              }, 500);
-            } catch (e) {
-              console.error('HybridAI: Erro ao configurar modo de espera por voz:', e);
-              this.waitingForSpeech = false;
-              this.pausedByInactivity = false;
-              window.dispatchEvent(new CustomEvent('recording-stopped'));
-            }
-          } else if (this.autoRestart) {
-            // Caso normal: reiniciar reconhecimento após finalização
-            console.log('HybridAI: Reiniciando reconhecimento normalmente');
-            
-            // Verificar se houve erros excessivos
-            if (this.errorCount >= this.maxErrorCount) {
-              console.warn(`HybridAI: Auto-reinício desabilitado após ${this.errorCount} erros`);
-              this.isListening = false;
-              this.isRecording = false;
-              this.autoRestart = false;
-              window.dispatchEvent(new CustomEvent('recording-stopped'));
-            } else {
-              // Manter estado de escuta ativo e reiniciar
-              this.isListening = true;
-              this.isRecording = true;
-              
-              // Reiniciar com um pequeno atraso para evitar conflitos
-              const delay = this.lastErrorType === 'network' ? 5000 : 1000;
-              console.log(`HybridAI: Reiniciando reconhecimento após ${delay}ms`);
-              
-              this.restartTimeout = setTimeout(() => {
-                if (this.isListening) {
-                  try {
-                    // Restaurar configurações normais
-                    this.recognition.continuous = true;
-                    this.recognition.start();
-                    console.log('HybridAI: Reconhecimento reiniciado com sucesso');
-                  } catch (e) {
-                    console.error('HybridAI: Erro ao reiniciar reconhecimento:', e);
-                    
-                    // Tentar novamente com uma nova instância após falha
-                    this.setupSpeechRecognition();
-                    setTimeout(() => {
-                      if (this.isListening) {
-                        try {
-                          this.recognition.start();
-                          console.log('HybridAI: Reconhecimento reiniciado após recriação');
-                        } catch (err) {
-                          console.error('HybridAI: Falha na segunda tentativa de reinício:', err);
-                          this.isListening = false;
-                          this.isRecording = false;
-              window.dispatchEvent(new CustomEvent('recording-stopped'));
-            }
-                      }
-                    }, 1000);
-                  }
-                } else {
-                  console.log('HybridAI: Reinício cancelado pois o modo de escuta foi desativado');
-                }
-              }, delay);
-            }
-          } else {
-            console.log('HybridAI: Auto-reinício desabilitado, parando completamente');
-            this.isListening = false;
-            this.isRecording = false;
-            window.dispatchEvent(new CustomEvent('recording-stopped'));
-        }
-      };
-      
-      this.recognition.onerror = (event) => {
-          console.error(`HybridAI: Erro no reconhecimento de voz: ${event.error}`);
-          this.lastErrorType = event.error;
-          this.lastErrorTime = Date.now();
-          
-          // Tratamento específico para cada tipo de erro
-          switch (event.error) {
-            case 'network':
-              // Erro de rede - esperar mais tempo antes de tentar novamente
-              console.warn('HybridAI: Erro de rede detectado, aguardando conexão...');
-              this.errorCount++;
-              break;
-              
-            case 'not-allowed':
-            case 'service-not-allowed':
-              // Permissão negada - parar completamente
-              console.warn('HybridAI: Permissão de microfone negada, parando reconhecimento');
-              this.autoRestart = false;
-              this.stopRequested = true; // Forçar parada completa
-              this.waitingForSpeech = false;
-              this.pausedByInactivity = false;
-              this.errorCount++;
-              break;
-              
-            case 'aborted':
-              // Abortado pelo navegador ou usuário - mais tolerante
-              console.log('HybridAI: Reconhecimento abortado - tentando reiniciar automaticamente');
-              // Não incrementar contador para erros de aborted, pois são comuns e geralmente recuperáveis
-              // Forçar reinicialização com pequeno delay
-              setTimeout(() => {
-                if (this.isListening && !this.stopRequested && !this.isProcessingSpeech) {
-                  try {
-                    this.recognition.start();
-                    console.log('HybridAI: Reconhecimento reiniciado após aborted');
-                  } catch(e) {
-                    console.error('HybridAI: Falha ao reiniciar após aborted:', e);
-                    this.errorCount++; // Incrementar contador apenas em caso de falha na recuperação
-                  }
-                }
-              }, 300);
-              break;
-              
-            case 'no-speech':
-              // Sem fala detectada - normal, não contar como erro grave
-              console.log('HybridAI: Nenhuma fala detectada');
-              this.errorCount = Math.max(0, this.errorCount - 1); // Reduzir contador
-              break;
-              
-            default:
-              // Outros erros - incrementar contador
-              console.warn(`HybridAI: Erro desconhecido: ${event.error}`);
-              this.errorCount++;
-          }
-        };
-        
-        this.hasRecognitionSupport = true;
-      return true;
+      // Verificar disponibilidade da API
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        console.warn('HybridAI: API de reconhecimento de voz não suportada neste navegador');
+        this.hasRecognitionSupport = false;
+        return false;
       }
       
-      return !!this.recognition;
+      console.log('HybridAI: Configurando nova instância de reconhecimento de voz...');
+      
+      // Inicializar variáveis importantes
+      this.lastSpeechTimestamp = Date.now(); // Inicialização da variável
+      
+      // Criar nova instância
+      this.recognition = new SpeechRecognition();
+      
+      // Configurar parâmetros
+      this.recognition.lang = this.language;
+      this.recognition.continuous = this.continuousRecognition;
+      this.recognition.interimResults = this.interimResults;
+      this.recognition.maxAlternatives = this.maxAlternatives;
+      
+      // AJUSTADO: Reduzir tempo sem voz para reconhecer melhor 
+      // falas mais curtas e pausas naturais
+      this.recognition.interimResults = true; // Habilitar resultados intermediários
+      
+      // Aumentar sensibilidade 
+      if (this.recognition.audioThreshold !== undefined) {
+        this.recognition.audioThreshold = 0.05; // Valor mais baixo = mais sensível
+      }
+      
+      // Eventos
+      this.recognition.onstart = () => {
+        console.log('HybridAI: Reconhecimento de voz iniciado pelo navegador');
+        this.isProcessingSpeech = true;
+        this.waitingForSpeech = false;
+        this.lastSpeechTimestamp = Date.now();
+        
+        // Iniciar timer de inatividade se estiver habilitado
+        if (this.pauseAfterInactivity) {
+          this._startInactivityTimer();
+        }
+        
+        // Disparar evento de início da gravação
+        window.dispatchEvent(new CustomEvent('recording-started'));
+      };
+      
+      // Evento para resultados do reconhecimento
+      this.recognition.onresult = (event) => {
+        try {
+          // Atualizar timestamp de última fala
+          this.lastSpeechTimestamp = Date.now();
+          
+          // Processar resultados
+          let transcript = '';
+          let isFinal = false;
+          
+          // Verificar se temos resultados
+          if (event.results && event.results.length > 0) {
+            // Obter o último resultado
+            const result = event.results[event.results.length - 1];
+            if (result && result.length > 0) {
+              transcript = result[0].transcript;
+              isFinal = result.isFinal;
+            }
+          }
+          
+          if (transcript && transcript.trim().length > 0) {
+            // Reiniciar timer de inatividade
+            this._resetInactivityTimer();
+            
+            if (isFinal) {
+              console.log('HybridAI: Texto final reconhecido:', transcript);
+              this._handleFinalSpeechResult(transcript);
+            } else {
+              // Resultados intermediários não precisam de log para não sobrecarregar o console
+              this._handleInterimSpeechResult(transcript);
+            }
+            
+            // Reiniciar o timer de inatividade após um resultado
+            this._resetInactivityTimer();
+          }
+        } catch (e) {
+          console.error('HybridAI: Erro ao processar resultado do reconhecimento:', e);
+        }
+      };
+      
+      this.hasRecognitionSupport = true;
+      return true;
     } catch (e) {
       console.error('HybridAI: Erro ao configurar reconhecimento de voz:', e);
       this.hasRecognitionSupport = false;
@@ -1745,40 +1567,40 @@ Ocorreu um erro inesperado durante a geração do relatório.
     }
   }
 
-  // Iniciar timer para pausar após inatividade
+  /**
+   * Iniciar o timer de inatividade para pausar reconhecimento após período sem fala
+   * @private
+   */
   _startInactivityTimer() {
-    if (!this.pauseAfterInactivity) return;
-    
     this._clearInactivityTimer();
     
-    this.inactivityTimeout = setTimeout(() => {
+    // Garantir que a variável existe
+    if (!this.lastSpeechTimestamp) {
+      this.lastSpeechTimestamp = Date.now();
+    }
+    
+    this.inactivityTimer = setTimeout(() => {
       const timeSinceLastSpeech = Date.now() - this.lastSpeechTimestamp;
       
-      if (timeSinceLastSpeech >= this.inactivityThreshold && this.isListening && !this.stopRequested) {
+      if (timeSinceLastSpeech >= this.inactivityThreshold) {
         console.log(`HybridAI: Inatividade de ${Math.round(timeSinceLastSpeech/1000)}s detectada, pausando reconhecimento`);
         
-        // Marcar que estamos pausando por inatividade
+        // Marcar como pausado por inatividade
         this.pausedByInactivity = true;
         
-        // Parar o reconhecimento atual para entrar no modo de espera
-        if (this.recognition && this.isProcessingSpeech) {
+        // Parar o reconhecimento atual (será reiniciado no modo de espera)
+        if (this.recognition && (this.recognition.state === 'running' || this.isProcessingSpeech)) {
           try {
-            // Disparar evento ANTES de parar para que a UI possa reagir apropriadamente
-            window.dispatchEvent(new CustomEvent('recognition-paused', {
-              detail: { reason: 'inactivity', timestamp: Date.now() }
-            }));
-            
-            // Agora parar o reconhecimento para entrar em modo de espera
             this.recognition.stop();
           } catch (e) {
-            console.error('HybridAI: Erro ao pausar reconhecimento por inatividade:', e);
+            console.warn('HybridAI: Erro ao pausar reconhecimento por inatividade:', e);
           }
         }
       } else {
-        // Continuar verificando
-        this._resetInactivityTimer();
+        // Continuar verificando inatividade
+        this._startInactivityTimer();
       }
-    }, this.inactivityThreshold);
+    }, Math.max(1000, this.inactivityThreshold / 2)); // Verificar na metade do tempo de inatividade
   }
 
   // Resetar o timer de inatividade
@@ -1792,9 +1614,9 @@ Ocorreu um erro inesperado durante a geração do relatório.
 
   // Limpar o timer de inatividade
   _clearInactivityTimer() {
-    if (this.inactivityTimeout) {
-      clearTimeout(this.inactivityTimeout);
-      this.inactivityTimeout = null;
+    if (this.inactivityTimer) {
+      clearTimeout(this.inactivityTimer);
+      this.inactivityTimer = null;
     }
   }
 
