@@ -130,8 +130,24 @@ export const createAppointment = async (appointmentData) => {
       console.log('Resposta bem-sucedida:', response.data);
       return response.data;
     } catch (apiError) {
-      console.error('Erro na tentativa com API:', apiError);
-      throw apiError;
+      console.error('Erro na tentativa com API padrão:', apiError);
+      console.log('Status do erro:', apiError.response?.status);
+      console.log('Mensagem do erro:', apiError.response?.data);
+      
+      // Se falhou com 400 ou 500, tentar método alternativo automaticamente
+      if (apiError.response && (apiError.response.status === 400 || apiError.response.status === 500)) {
+        console.log('Tentando método alternativo após falha...');
+        try {
+          const altResponse = await createAppointmentDirect(appointmentData);
+          console.log('Método alternativo bem-sucedido:', altResponse);
+          return altResponse;
+        } catch (altError) {
+          console.error('Método alternativo também falhou:', altError);
+          throw apiError; // Retorna o erro original se ambos falharem
+        }
+      } else {
+        throw apiError;
+      }
     }
   } catch (error) {
     console.error('Erro ao criar agendamento:', error);
