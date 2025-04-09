@@ -33,11 +33,10 @@ export const TranscriptionSelector = ({ mode, onChange }) => {
 };
 
 // Componente de botão do microfone
-export const MicButton = () => {
+export const MicButton = ({ transcriptionMode = 'auto' }) => {
   const [isRecording, setIsRecording] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [reconnectAttempts, setReconnectAttempts] = useState(0);
-  const [transcriptionMode, setTranscriptionMode] = useState('auto');
   const recordingTimerRef = useRef(null);
   const reconnectTimerRef = useRef(null);
   
@@ -45,6 +44,7 @@ export const MicButton = () => {
   const restartRecording = useCallback(() => {
     try {
       console.log('Reiniciando gravação de voz...');
+      console.log(`Modo de transcrição selecionado: ${transcriptionMode}`);
       
       // Parar qualquer instância ativa
       if (window.hybridAIService) {
@@ -61,6 +61,7 @@ export const MicButton = () => {
         // Decidir qual serviço usar baseado no modo selecionado
         if (transcriptionMode === 'whisper') {
           if (window.whisperService) {
+            console.log('Iniciando APENAS o serviço Whisper');
             window.whisperService.startRecording();
             setIsRecording(true);
             setIsPaused(false);
@@ -68,6 +69,7 @@ export const MicButton = () => {
           }
         } else if (transcriptionMode === 'webspeech') {
           if (window.hybridAIService) {
+            console.log('Iniciando APENAS o serviço Web Speech API');
             window.hybridAIService.startRecording();
             setIsRecording(true);
             setIsPaused(false);
@@ -75,6 +77,7 @@ export const MicButton = () => {
           }
         } else if (transcriptionMode === 'auto') {
           // No modo auto, inicia ambos
+          console.log('Modo AUTO: Iniciando ambos os serviços de transcrição');
           let started = false;
           
           if (window.whisperService) {
@@ -402,65 +405,102 @@ export const resetTranscriptionServices = () => {
   */
 };
 
-// Componente principal que agrega os outros componentes
+// Componente principal que contém todas as ferramentas de IA
 export const AIToolsContainer = () => {
-  // Este efeito é para garantir que os botões permaneçam visíveis
-  useEffect(() => {
-    // Função para restaurar os botões caso sejam removidos
-    const ensureButtonsExist = () => {
-      // Obter o elemento pai pelo ID específico que não é removido
-      const parent = document.getElementById('direct-ai-buttons');
+  const [transcriptionMode, setTranscriptionMode] = useState('auto');
+  const containerRef = useRef(null);
+
+  // Lógica para garantir que os botões de IA existam
+  const ensureButtonsExist = () => {
+    // Criar um container persistente para os botões de IA
+    if (!document.getElementById('persistent-ai-tools')) {
+      const persistentContainer = document.createElement('div');
+      persistentContainer.id = 'persistent-ai-tools';
+      persistentContainer.className = 'persistent-ai-tools ai-tools-container-direct';
+      document.body.appendChild(persistentContainer);
       
-      if (parent) {
-        // Se o container existir, mas estiver vazio, tentar restaurá-lo
-        if (!parent.querySelector('.persistent-ai-tools') || parent.children.length === 0) {
-          console.log('Restaurando botões de IA que foram removidos indevidamente');
-          
-          // Criar um novo container apenas se o atual foi esvaziado
-          const existingContainer = parent.querySelector('.persistent-ai-tools');
-          
-          if (!existingContainer) {
-            const newContainer = document.createElement('div');
-            newContainer.className = 'persistent-ai-tools';
-            newContainer.id = 'persistent-ai-tools'; // Adicionar ID para fácil identificação
-            newContainer.setAttribute('data-keep', 'true'); // Atributo personalizado para indicar que não deve ser removido
-            
-            // Renderizar os componentes dentro deste novo container
-            ReactDOM.render(
-              <React.StrictMode>
-                <AIButtons />
-                <TranscriptionStatus />
-                <AIResultsPanel />
-              </React.StrictMode>,
-              newContainer
-            );
-            
-            // Adicionar ao pai
-            parent.appendChild(newContainer);
-            
-            console.log('Botões de IA restaurados com sucesso');
-          }
+      console.log('Criado container persistente para AI Tools');
+      
+      // Usar ReactDOM.render para renderizar os botões
+      ReactDOM.render(
+        <div className="ai-simple-toolbar">
+          <AIButtons />
+          <MicButton transcriptionMode={transcriptionMode} />
+          <TranscriptionSelector 
+            mode={transcriptionMode} 
+            onChange={setTranscriptionMode} 
+          />
+        </div>,
+        persistentContainer
+      );
+      
+      // Manter referência para atualização posterior
+      containerRef.current = persistentContainer;
+      
+      // Verificar se o container ainda existe periodicamente
+      const checkInterval = setInterval(() => {
+        const container = document.getElementById('persistent-ai-tools');
+        if (!container) {
+          console.log('Container de AI foi removido, recriando...');
+          clearInterval(checkInterval);
+          ensureButtonsExist();
+        } else {
+          // Atualizar com o modo de transcrição atual
+          ReactDOM.render(
+            <div className="ai-simple-toolbar">
+              <AIButtons />
+              <MicButton transcriptionMode={transcriptionMode} />
+              <TranscriptionSelector 
+                mode={transcriptionMode} 
+                onChange={setTranscriptionMode} 
+              />
+            </div>,
+            container
+          );
         }
+      }, 10000);
+      
+      return persistentContainer;
+    } else {
+      console.log('Mantendo container de AI válido: ', 'persistent-ai-tools');
+      
+      // Atualizar com o modo de transcrição atual
+      const container = document.getElementById('persistent-ai-tools');
+      ReactDOM.render(
+        <div className="ai-simple-toolbar">
+          <AIButtons />
+          <MicButton transcriptionMode={transcriptionMode} />
+          <TranscriptionSelector 
+            mode={transcriptionMode} 
+            onChange={setTranscriptionMode} 
+          />
+        </div>,
+        container
+      );
+      
+      // Manter referência
+      containerRef.current = container;
+      return container;
+    }
+  };
+  
+  // Criar os botões no primeiro render e quando o modo mudar
+  useEffect(() => {
+    const container = ensureButtonsExist();
+    
+    // Limpeza ao desmontar
+    return () => {
+      try {
+        if (container && document.body.contains(container)) {
+          ReactDOM.unmountComponentAtNode(container);
+        }
+      } catch (e) {
+        console.error('Erro ao limpar componente AI:', e);
       }
     };
-    
-    // Executar uma vez após o componente ser montado
-    ensureButtonsExist();
-    
-    // Configurar verificações periódicas
-    const interval = setInterval(ensureButtonsExist, 2000);
-    
-    // Limpar o intervalo quando o componente for desmontado
-    return () => clearInterval(interval);
-  }, []);
-
-  return (
-    <div className="persistent-ai-tools" id="persistent-ai-tools" data-keep="true">
-      <AIButtons />
-      <TranscriptionStatus />
-      <AIResultsPanel />
-    </div>
-  );
+  }, [transcriptionMode]);
+  
+  return null; // Este componente não renderiza nada diretamente
 };
 
 export default AIToolsContainer; 
