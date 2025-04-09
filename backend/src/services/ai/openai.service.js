@@ -205,7 +205,79 @@ const openAIService = {
             logger.error(`Erro ao transcrever áudio/vídeo: ${filePath}`, error);
             throw new Error(`Falha na transcrição: ${error.message}`);
         }
-    }
+    },
+
+    /**
+     * Transcribe audio buffer using OpenAI's Whisper API
+     * @param {Buffer} audioBuffer - Buffer containing audio data
+     * @param {Object} options - Options for transcription
+     * @param {string} options.language - Language code (default: "pt")
+     * @param {string} options.format - Response format (default: "json")
+     * @returns {Promise<Object>} - Transcription result
+     */
+    async callWhisperAPI(audioBuffer, options = {}) {
+        try {
+            logger.info('Iniciando transcrição de áudio com Whisper API');
+            logger.info(`Tamanho do buffer: ${audioBuffer.length} bytes`);
+            
+            const language = options.language || 'pt';
+            const format = options.format || 'json';
+            
+            // Configurar o modelo Whisper
+            const transcriptionOptions = {
+                file: audioBuffer,
+                model: 'whisper-1',
+                response_format: format
+            };
+            
+            // Adicionar o idioma se for especificado
+            if (language) {
+                transcriptionOptions.language = language;
+            }
+            
+            // Processar transcrição
+            logger.info('Enviando áudio para a API Whisper');
+            const response = await openai.audio.transcriptions.create(transcriptionOptions);
+            logger.info('Transcrição concluída');
+            
+            return response;
+        } catch (error) {
+            logger.error('Erro ao transcrever áudio com a API Whisper:', error);
+            throw new Error(`Falha na transcrição com Whisper: ${error.message}`);
+        }
+    },
+
+    /**
+     * Transcribe audio buffer
+     * @param {Buffer} audioBuffer - Audio buffer
+     * @param {string} language - Language code (default: "pt")
+     * @returns {Promise<string>} - Transcribed text
+     */
+    async transcribeAudioFromBuffer(audioBuffer, language = 'pt') {
+        try {
+            logger.info(`Iniciando transcrição de buffer de áudio (${audioBuffer.length} bytes)`);
+            
+            // Configurar o modelo Whisper
+            const transcriptionOptions = {
+                file: audioBuffer,
+                model: 'whisper-1',
+            };
+            
+            // Adicionar o idioma se for especificado
+            if (language) {
+                transcriptionOptions.language = language;
+            }
+            
+            // Processar transcrição
+            const response = await openai.audio.transcriptions.create(transcriptionOptions);
+            
+            logger.info('Transcrição de buffer concluída');
+            return response.text;
+        } catch (error) {
+            logger.error('Erro ao transcrever buffer de áudio:', error);
+            throw new Error(`Falha na transcrição de buffer: ${error.message}`);
+        }
+    },
 };
 
 module.exports = openAIService; 
