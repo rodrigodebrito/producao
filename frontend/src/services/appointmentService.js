@@ -122,26 +122,19 @@ export const createAppointment = async (appointmentData) => {
       throw new Error('Dados incompletos para agendamento. Verifique todos os campos.');
     }
     
-    // Tentando usar URL direta em vez de depender do axios interceptor
-    const apiUrl = `${import.meta.env.VITE_API_URL}/api/appointments`;
+    console.log('Criando agendamento (método padrão) com dados:', appointmentData);
     
-    // Tentativa usando fetch nativo
-    const fetchResponse = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify(appointmentData)
-    });
-    
-    if (fetchResponse.ok) {
-      const data = await fetchResponse.json();
-      return data;
-    } else {
-      throw new Error(`Erro ${fetchResponse.status}: ${fetchResponse.statusText}`);
+    // Usar o objeto api configurado
+    try {
+      const response = await api.post('/appointments', appointmentData);
+      console.log('Resposta bem-sucedida:', response.data);
+      return response.data;
+    } catch (apiError) {
+      console.error('Erro na tentativa com API:', apiError);
+      throw apiError;
     }
   } catch (error) {
+    console.error('Erro ao criar agendamento:', error);
     throw error;
   }
 };
@@ -252,94 +245,38 @@ export const createAppointmentDirect = async (appointmentData) => {
       duration: appointmentData.duration || 50
     };
     
-    // URL base da API
-    const baseUrl = import.meta.env.VITE_API_URL || 'https://theraconnect-prd.onrender.com';
-    console.log('URL base da API:', baseUrl);
+    console.log('Tentando criar agendamento usando bypass...');
     
-    // Usar rotas alternativas para tentar criar o agendamento
-    const url1 = `${baseUrl}/api/appointments`;
-    const url2 = `${baseUrl}/api/therapists/${appointmentData.therapistId}/appointments`;
-    const url3 = `${baseUrl}/api/users/appointments`;  
-    const url4 = `${baseUrl}/api/appointments/bypass`;
-    
-    console.log('Tentando URL 1:', url1);
-    
-    // Tentar a primeira URL
+    // Tentar diferentes rotas, usando o objeto api configurado
     try {
-      const response1 = await fetch(url1, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(formattedData)
-      });
+      // Primeira tentativa: rota padrão de agendamentos
+      console.log('Tentativa 1: rota padrão de agendamentos');
+      const response = await api.post('/appointments/bypass', formattedData);
+      console.log('Agendamento criado com sucesso (tentativa 1):', response.data);
+      return response.data;
+    } catch (error1) {
+      console.warn('Falha na primeira tentativa:', error1.message);
       
-      if (response1.ok) {
-        const data = await response1.json();
-        console.log('Resposta da URL 1:', data);
-        return data;
+      try {
+        // Segunda tentativa: via terapeuta
+        console.log('Tentativa 2: via terapeuta');
+        const response = await api.post(`/therapists/${appointmentData.therapistId}/appointments`, formattedData);
+        console.log('Agendamento criado com sucesso (tentativa 2):', response.data);
+        return response.data;
+      } catch (error2) {
+        console.warn('Falha na segunda tentativa:', error2.message);
+        
+        try {
+          // Terceira tentativa: via usuário
+          console.log('Tentativa 3: via usuário');
+          const response = await api.post('/users/appointments', formattedData);
+          console.log('Agendamento criado com sucesso (tentativa 3):', response.data);
+          return response.data;
+        } catch (error3) {
+          console.error('Todas as tentativas falharam');
+          throw new Error('Não foi possível criar o agendamento após múltiplas tentativas');
+        }
       }
-      
-      console.log('Tentando URL 2:', url2);
-      
-      // Tentar a segunda URL
-      const response2 = await fetch(url2, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(formattedData)
-      });
-      
-      if (response2.ok) {
-        const data = await response2.json();
-        console.log('Resposta da URL 2:', data);
-        return data;
-      }
-      
-      console.log('Tentando URL 3:', url3);
-      
-      // Tentar a terceira URL
-      const response3 = await fetch(url3, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(formattedData)
-      });
-      
-      if (response3.ok) {
-        const data = await response3.json();
-        console.log('Resposta da URL 3:', data);
-        return data;
-      }
-      
-      console.log('Tentando URL 4 (bypass):', url4);
-      
-      // Tentar a rota de bypass (sem autenticação)
-      const response4 = await fetch(url4, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(formattedData)
-      });
-      
-      if (response4.ok) {
-        const data = await response4.json();
-        console.log('Resposta da URL 4 (bypass):', data);
-        return data;
-      }
-      
-      // Se todas as tentativas falharem, lançar erro
-      throw new Error('Não foi possível criar o agendamento em nenhuma das rotas tentadas');
-      
-    } catch (fetchError) {
-      console.error('Erro na tentativa fetch:', fetchError);
-      throw fetchError;
     }
   } catch (error) {
     console.error('Erro ao criar agendamento (método direto):', error);
