@@ -67,110 +67,176 @@ export const MicButton = ({ transcriptionMode = 'auto' }) => {
   const [currentMode, setCurrentMode] = useState(transcriptionMode);
   const recordingTimerRef = useRef(null);
   const reconnectTimerRef = useRef(null);
+  const selectedModeRef = useRef(transcriptionMode);
   
-  // Atualizar o modo quando a prop mudar
-  useEffect(() => {
-    if (currentMode !== transcriptionMode) {
-      console.log(`MicButton: Modo de transcrição alterado de ${currentMode} para ${transcriptionMode}`);
-      setCurrentMode(transcriptionMode);
-      
-      // Se estiver gravando, reiniciar para aplicar o novo modo
-      if (isRecording) {
-        console.log('Reiniciando gravação para aplicar novo modo de transcrição');
-        // Parar brevemente e reiniciar
-        if (window.hybridAIService) {
-          window.hybridAIService.stopRecording();
-        }
-        
-        if (window.whisperService) {
-          window.whisperService.stopRecording();
-        }
-        
-        // Pequeno delay e reinicia com o novo modo
-        setTimeout(() => restartRecording(), 500);
+  // Função para parar todas as gravações ativas
+  const stopAllRecordings = useCallback(() => {
+    console.log('🛑 Parando todos os serviços de gravação');
+    
+    if (window.hybridAIService) {
+      try {
+        console.log('🛑 Parando serviço Web Speech API');
+        window.hybridAIService.stopRecording();
+      } catch (e) {
+        console.error('❌ Erro ao parar hybridAIService:', e);
       }
     }
-  }, [transcriptionMode, currentMode, isRecording]);
-  
-  // Definir a função restartRecording
-  const restartRecording = useCallback(() => {
-    try {
-      console.log('Reiniciando gravação de voz...');
-      console.log(`Modo de transcrição selecionado: ${currentMode}`);
-      
-      // Parar qualquer instância ativa
-      if (window.hybridAIService) {
-        window.hybridAIService.stopRecording();
+    
+    if (window.whisperService) {
+      try {
+        console.log('🛑 Parando serviço Whisper');
+        window.whisperService.stopRecording();
+      } catch (e) {
+        console.error('❌ Erro ao parar whisperService:', e);
       }
+    }
+  }, []);
+  
+  // Função de iniciar gravação com um modo específico
+  const startRecordingWithMode = useCallback((mode) => {
+    const effectiveMode = mode || selectedModeRef.current || currentMode || 'auto';
+    console.log(`▶️ Iniciando gravação no modo: ${effectiveMode}`);
+    
+    // Limpar qualquer timeout anterior
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+    }
+    
+    if (effectiveMode === 'whisper') {
+      if (window.whisperService) {
+        console.log('▶️ Iniciando APENAS o serviço Whisper');
+        console.log('⚠️ Serviço Web Speech será ignorado neste modo');
+        window.whisperService.startRecording();
+        setIsRecording(true);
+        toast.info('Reconhecimento Whisper iniciado');
+        return true;
+      } else {
+        console.error('❌ Serviço Whisper não disponível');
+        toast.error('Serviço Whisper não disponível');
+        return false;
+      }
+    } 
+    else if (effectiveMode === 'webspeech') {
+      if (window.hybridAIService) {
+        console.log('▶️ Iniciando APENAS o serviço Web Speech API');
+        console.log('⚠️ Serviço Whisper será ignorado neste modo');
+        window.hybridAIService.startRecording();
+        setIsRecording(true);
+        toast.info('Reconhecimento Web Speech iniciado');
+        return true;
+      } else {
+        console.error('❌ Serviço Web Speech não disponível');
+        toast.error('Serviço Web Speech não disponível');
+        return false;
+      }
+    } 
+    else { // auto mode
+      console.log('▶️ Modo AUTO: Iniciando ambos os serviços de transcrição');
+      let started = false;
       
       if (window.whisperService) {
-        window.whisperService.stopRecording();
+        console.log('▶️ Iniciando serviço Whisper (parte do modo Auto)');
+        window.whisperService.startRecording();
+        started = true;
       }
       
-      // Pequeno delay para garantir que tudo foi limpo
-      clearTimeout(reconnectTimerRef.current);
-      reconnectTimerRef.current = setTimeout(() => {
-        // Decidir qual serviço usar baseado no modo selecionado
-        if (currentMode === 'whisper') {
-          if (window.whisperService) {
-            console.log('Iniciando APENAS o serviço Whisper');
-            window.whisperService.startRecording();
-            setIsRecording(true);
-            setIsPaused(false);
-            toast.info('Reconhecimento Whisper iniciado');
-          }
-        } else if (currentMode === 'webspeech') {
-          if (window.hybridAIService) {
-            console.log('Iniciando APENAS o serviço Web Speech API');
-            window.hybridAIService.startRecording();
-            setIsRecording(true);
-            setIsPaused(false);
-            toast.info('Reconhecimento Web Speech iniciado');
-          }
-        } else if (currentMode === 'auto') {
-          // No modo auto, inicia ambos
-          console.log('Modo AUTO: Iniciando ambos os serviços de transcrição');
-          let started = false;
-          
-          if (window.whisperService) {
-            window.whisperService.startRecording();
-            started = true;
-          }
-          
-          if (window.hybridAIService) {
-            window.hybridAIService.startRecording();
-            started = true;
-          }
-          
-          if (started) {
-            setIsRecording(true);
-            setIsPaused(false);
-            toast.info('Reconhecimento híbrido iniciado');
-          } else {
-            toast.error('Nenhum serviço de reconhecimento disponível');
-            setIsRecording(false);
-          }
-        }
-      }, 1000);
-    } catch (e) {
-      console.error('Erro ao reiniciar gravação:', e);
-      setIsRecording(false);
-      setIsPaused(false);
+      if (window.hybridAIService) {
+        console.log('▶️ Iniciando serviço Web Speech (parte do modo Auto)');
+        window.hybridAIService.startRecording();
+        started = true;
+      }
+      
+      if (started) {
+        setIsRecording(true);
+        toast.info('Reconhecimento híbrido iniciado');
+        return true;
+      } else {
+        toast.error('Nenhum serviço de reconhecimento disponível');
+        return false;
+      }
     }
-  }, [currentMode]);
+  }, []);
+  
+  // Função para reiniciar gravação
+  const restartRecording = useCallback(() => {
+    try {
+      // Primeiro parar tudo
+      stopAllRecordings();
+      setIsRecording(false);
+      
+      // Esperar um momento antes de iniciar novamente
+      setTimeout(() => {
+        const success = startRecordingWithMode();
+        if (!success) {
+          console.error('❌ Falha ao reiniciar gravação');
+          setIsRecording(false);
+        }
+      }, 500);
+    } catch (e) {
+      console.error('❌ Erro ao reiniciar gravação:', e);
+      setIsRecording(false);
+    }
+  }, [stopAllRecordings, startRecordingWithMode]);
+  
+  // Alternar entre gravar e parar
+  const toggleMicrophone = useCallback(() => {
+    try {
+      if (isRecording) {
+        // Parar gravação
+        console.log('🛑 Parando gravação de voz');
+        stopAllRecordings();
+        setIsRecording(false);
+        toast.info('Reconhecimento de voz parado');
+      } else {
+        // Iniciar gravação
+        startRecordingWithMode();
+      }
+    } catch (error) {
+      console.error('❌ Erro ao alternar microfone:', error);
+      toast.error('Erro ao controlar reconhecimento de voz');
+    }
+  }, [isRecording, stopAllRecordings, startRecordingWithMode]);
   
   // Inicializar os serviços de transcrição
   useEffect(() => {
     // Verificar se os serviços já foram inicializados globalmente
     if (!window.hybridAIService) {
-      console.log('Inicializando serviço Web Speech API');
+      console.log('🔧 Inicializando serviço Web Speech API');
       window.hybridAIService = hybridAIService;
     }
     
     if (!window.whisperService) {
-      console.log('Inicializando serviço Whisper');
+      console.log('🔧 Inicializando serviço Whisper');
       window.whisperService = WhisperTranscriptionService;
     }
+    
+    // Carregar modo da variável global ou localStorage
+    const getInitialMode = () => {
+      // Primeiro tentar da variável global
+      if (window.currentTranscriptionMode && 
+          ['auto', 'whisper', 'webspeech'].includes(window.currentTranscriptionMode)) {
+        console.log(`🎛️ MicButton sincronizando com modo global: ${window.currentTranscriptionMode}`);
+        return window.currentTranscriptionMode;
+      }
+      
+      // Senão, tentar da localStorage
+      try {
+        const savedMode = localStorage.getItem('transcription-mode');
+        if (savedMode && ['auto', 'whisper', 'webspeech'].includes(savedMode)) {
+          console.log(`🎛️ MicButton carregando modo da localStorage: ${savedMode}`);
+          return savedMode;
+        }
+      } catch (e) {
+        console.error('❌ Erro ao carregar modo da localStorage:', e);
+      }
+      
+      // Fallback para o modo prop (ou 'auto' se não definido)
+      return transcriptionMode || 'auto';
+    };
+    
+    const initialMode = getInitialMode();
+    setCurrentMode(initialMode);
+    selectedModeRef.current = initialMode;
     
     // Limpar ao desmontar
     return () => {
@@ -181,36 +247,64 @@ export const MicButton = ({ transcriptionMode = 'auto' }) => {
       if (recordingTimerRef.current) {
         clearTimeout(recordingTimerRef.current);
       }
-    };
-  }, []);
-  
-  // Alternar entre gravar e parar
-  const toggleMicrophone = useCallback(() => {
-    try {
+      
+      // Garantir que a gravação seja interrompida ao desmontar
       if (isRecording) {
-        // Parar gravação
-        console.log('Parando gravação de voz');
-        
-        if (window.hybridAIService) {
-          window.hybridAIService.stopRecording();
-        }
-        
-        if (window.whisperService) {
-          window.whisperService.stopRecording();
-        }
-        
-        setIsRecording(false);
-        toast.info('Reconhecimento de voz parado');
-      } else {
-        // Iniciar gravação
-        console.log('Iniciando gravação de voz');
-        restartRecording();
+        stopAllRecordings();
       }
-    } catch (error) {
-      console.error('Erro ao alternar microfone:', error);
-      toast.error('Erro ao controlar reconhecimento de voz');
+    };
+  }, []); // Empty dependency array = only run once on mount
+  
+  // Escutar por mudanças de modo via eventos
+  useEffect(() => {
+    const handleModeChange = (event) => {
+      if (event && event.detail && event.detail.mode) {
+        const newMode = event.detail.mode;
+        console.log(`🎧 MicButton recebeu evento de mudança de modo: ${newMode}`);
+        
+        if (newMode !== currentMode) {
+          setCurrentMode(newMode);
+          selectedModeRef.current = newMode;
+          
+          // Se estiver gravando, parar e reiniciar com o novo modo
+          if (isRecording) {
+            console.log('🔄 Reiniciando gravação devido a mudança de modo via evento');
+            stopAllRecordings();
+            
+            // Pequeno delay antes de reiniciar
+            setTimeout(() => {
+              startRecordingWithMode(newMode);
+            }, 500);
+          }
+        }
+      }
+    };
+    
+    window.addEventListener('transcription-mode-changed', handleModeChange);
+    
+    return () => {
+      window.removeEventListener('transcription-mode-changed', handleModeChange);
+    };
+  }, [currentMode, isRecording, stopAllRecordings, startRecordingWithMode]);
+  
+  // Atualizar o modo quando a prop transcriptionMode mudar
+  useEffect(() => {
+    if (transcriptionMode !== currentMode) {
+      console.log(`🔄 MicButton: Modo alterado via prop de ${currentMode} para ${transcriptionMode}`);
+      setCurrentMode(transcriptionMode);
+      selectedModeRef.current = transcriptionMode;
+      
+      // Se estiver gravando, atualizar o modo em uso
+      if (isRecording) {
+        console.log('🔄 Reiniciando gravação para aplicar novo modo');
+        stopAllRecordings();
+        
+        setTimeout(() => {
+          startRecordingWithMode(transcriptionMode);
+        }, 500);
+      }
     }
-  }, [isRecording, restartRecording]);
+  }, [transcriptionMode, currentMode, isRecording, stopAllRecordings, startRecordingWithMode]);
   
   // Renderização do ícone do microfone
   const renderIcon = () => {
@@ -225,6 +319,7 @@ export const MicButton = ({ transcriptionMode = 'auto' }) => {
       onClick={toggleMicrophone}
       className={`mic-button ${isRecording ? 'recording' : ''}`}
       title={isRecording ? `Parar gravação (${currentMode})` : `Iniciar gravação (${currentMode})`}
+      data-mode={currentMode}
     >
       {renderIcon()}
     </button>
@@ -531,21 +626,67 @@ export const AIToolsContainer = () => {
 
   // Função específica para mudar o modo de transcrição
   const handleTranscriptionModeChange = useCallback((newMode) => {
-    console.log(`Alterando modo de transcrição de ${transcriptionMode} para ${newMode}`);
+    console.log(`🎚️ Alterando modo de transcrição de ${transcriptionMode} para ${newMode}`);
+    
+    // Garantir que é um modo válido
+    if (!['auto', 'whisper', 'webspeech'].includes(newMode)) {
+      console.error(`❌ Modo inválido: ${newMode}, usando 'auto' como fallback`);
+      newMode = 'auto';
+    }
+    
+    // Atualizar estado local
     setTranscriptionMode(newMode);
     previousModeRef.current = newMode;
+    
+    // Definir variável global para compatibilidade entre componentes
+    try {
+      window.currentTranscriptionMode = newMode;
+      console.log(`🌐 Modo de transcrição global definido como: ${newMode}`);
+    } catch (e) {
+      console.error('❌ Erro ao definir variável global:', e);
+    }
+    
+    // Parar qualquer gravação ativa antes de mudar o modo
+    if (window.hybridAIService && window.hybridAIService.isRecording) {
+      console.log('🛑 Parando gravação do Web Speech para aplicar novo modo');
+      try {
+        window.hybridAIService.stopRecording();
+      } catch (e) {
+        console.error('❌ Erro ao parar hybridAIService:', e);
+      }
+    }
+    
+    if (window.whisperService && window.whisperService.isRecording) {
+      console.log('🛑 Parando gravação do Whisper para aplicar novo modo');
+      try {
+        window.whisperService.stopRecording();
+      } catch (e) {
+        console.error('❌ Erro ao parar whisperService:', e);
+      }
+    }
     
     // Salvar na localStorage para manter a configuração entre sessões
     try {
       localStorage.setItem('transcription-mode', newMode);
-      console.log(`Modo de transcrição '${newMode}' salvo na localStorage`);
+      console.log(`💾 Modo de transcrição '${newMode}' salvo na localStorage`);
     } catch (e) {
-      console.error('Erro ao salvar modo de transcrição:', e);
+      console.error('❌ Erro ao salvar modo de transcrição:', e);
     }
     
-    toast.info(`Modo de transcrição alterado para: ${newMode === 'auto' ? 'Auto' : 
-                newMode === 'whisper' ? 'Whisper (Alta precisão)' : 
-                'Browser (Tempo real)'}`);
+    // Disparar evento personalizado para que outros componentes sejam notificados
+    window.dispatchEvent(new CustomEvent('transcription-mode-changed', { 
+      detail: { mode: newMode, timestamp: Date.now() }
+    }));
+    console.log(`📢 Evento 'transcription-mode-changed' disparado com modo: ${newMode}`);
+    
+    // Notificar usuário sobre a mudança
+    toast.info(`Modo de transcrição alterado para: ${
+      newMode === 'auto' ? 'Auto (ambos serviços)' : 
+      newMode === 'whisper' ? 'Whisper (Alta precisão)' : 
+      'Browser (Tempo real)'
+    }`);
+    
+    return newMode;
   }, [transcriptionMode]);
 
   // Carregar configuração salva na inicialização
