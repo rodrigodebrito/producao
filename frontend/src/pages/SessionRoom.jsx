@@ -5,6 +5,7 @@ import { getSessionById, markSessionCompleted } from '../services/sessionService
 import FallbackMeeting from '../components/FallbackMeeting';
 import { AIProvider } from '../contexts/AIContext';
 import AIToolsContainer from '../components/AIComponents';
+import AIResultsPanel from '../components/AIResultsPanel';
 import ConstellationField from '../components/ConstellationField/index';
 import io from 'socket.io-client';
 import { SOCKET_URL } from '../config';
@@ -25,13 +26,28 @@ const SessionRoom = () => {
   const [isDragging, setIsDragging] = useState(false);
   const [canDrag, setCanDrag] = useState(false);
   const [isRoomMounted, setIsRoomMounted] = useState(false);
-  const [showAITools, setShowAITools] = useState(false);
+  const [showAITools, setShowAITools] = useState(true);
   const [showConstellation, setShowConstellation] = useState(false);
   const [socket, setSocket] = useState(null);
   
   const aiContainerRef = useRef(null);
   const constellationContainerRef = useRef(null);
   const sessionRoomRef = useRef(null);
+  
+  // Log para verificar se o AIResultsPanel está sendo renderizado
+  useEffect(() => {
+    console.log('SessionRoom: Estado atual de showAITools:', showAITools);
+    console.log('SessionRoom: AIProvider disponível para renderização do AIResultsPanel');
+    
+    // Verificar se o evento de análise está sendo disparado corretamente
+    window.addEventListener('ai-result', (event) => {
+      console.log('Evento ai-result capturado no SessionRoom:', event.detail);
+    });
+    
+    return () => {
+      window.removeEventListener('ai-result', () => {});
+    };
+  }, [showAITools]);
   
   // Inicializar o socket para comunicação
   useEffect(() => {
@@ -545,7 +561,10 @@ const SessionRoom = () => {
           
           <button 
             className="tool-button ai-toggle-button"
-            onClick={toggleAITools}
+            onClick={() => {
+              console.log("Alternando ferramentas de IA. Estado atual:", showAITools);
+              setShowAITools(!showAITools);
+            }}
             title={showAITools ? "Ocultar Ferramentas de IA" : "Mostrar Ferramentas de IA"}
           >
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -560,6 +579,9 @@ const SessionRoom = () => {
             <AIToolsContainer />
           </div>
         )}
+        
+        {/* Adicionar o AIResultsPanel explicitamente para garantir que está sendo renderizado */}
+        <AIResultsPanel />
       </div>
     </AIProvider>
   );
