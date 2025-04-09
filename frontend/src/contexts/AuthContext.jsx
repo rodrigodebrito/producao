@@ -39,9 +39,13 @@ export const AuthProvider = ({ children }) => {
       setError(null);
       setLoading(true);
       
-      console.log('Tentando login com:', { email });
+      console.log('AuthContext: Tentando login com:', { email });
+      console.log('AuthContext: URL da API:', api.defaults.baseURL);
+      console.log('AuthContext: Headers da API:', api.defaults.headers);
+      console.log('AuthContext: URL completa:', `${api.defaults.baseURL}/auth`);
+      
       const response = await api.post('/auth', { email, password });
-      console.log('Resposta do login:', response.data);
+      console.log('AuthContext: Resposta do login:', response.data);
       
       const { token, user } = response.data;
       
