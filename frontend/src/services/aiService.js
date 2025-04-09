@@ -360,6 +360,35 @@ const aiService = {
         details: error.response?.data
       };
     }
+  },
+
+  transcribeAudio: async (formData) => {
+    let attempts = 0;
+    const maxAttempts = 3;
+    
+    while (attempts < maxAttempts) {
+      try {
+        console.log('Sending audio for transcription...');
+        const response = await api.post('/ai/transcribe-audio', formData, {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        });
+        
+        console.log('Transcription response:', response.data);
+        return response.data;
+      } catch (error) {
+        attempts++;
+        console.error(`Transcription attempt ${attempts} failed:`, error);
+        
+        if (attempts >= maxAttempts) {
+          throw new Error('Failed to transcribe audio after multiple attempts');
+        }
+        
+        // Wait before retrying
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
   }
 };
 
