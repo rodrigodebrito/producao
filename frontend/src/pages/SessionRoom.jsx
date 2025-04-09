@@ -25,7 +25,7 @@ const SessionRoom = () => {
   const [isDragging, setIsDragging] = useState(false);
   const [canDrag, setCanDrag] = useState(false);
   const [isRoomMounted, setIsRoomMounted] = useState(false);
-  const [showAITools, setShowAITools] = useState(true);
+  const [showAITools, setShowAITools] = useState(false);
   const [showConstellation, setShowConstellation] = useState(false);
   const [socket, setSocket] = useState(null);
   
@@ -33,41 +33,6 @@ const SessionRoom = () => {
   const constellationContainerRef = useRef(null);
   const sessionRoomRef = useRef(null);
   
-  // Verificar se o container de AI está vazio após a montagem
-  useEffect(() => {
-    const checkIfAIContainerEmpty = () => {
-      if (aiContainerRef.current) {
-        const hasContent = aiContainerRef.current.querySelector('.persistent-ai-tools');
-        if (!hasContent || (hasContent && !hasContent.childNodes.length)) {
-          setShowAITools(false);
-        } else {
-          setShowAITools(true);
-        }
-      }
-    };
-    
-    // Verificar inicialmente
-    checkIfAIContainerEmpty();
-    
-    // Configurar um MutationObserver para monitorar mudanças no container
-    const observer = new MutationObserver(checkIfAIContainerEmpty);
-    
-    if (aiContainerRef.current) {
-      observer.observe(aiContainerRef.current, { 
-        childList: true, 
-        subtree: true 
-      });
-    }
-    
-    // Verificar novamente após alguns segundos para garantir
-    const timer = setTimeout(checkIfAIContainerEmpty, 3000);
-    
-    return () => {
-      observer.disconnect();
-      clearTimeout(timer);
-    };
-  }, [isRoomMounted]);
-
   // Inicializar o socket para comunicação
   useEffect(() => {
     try {
@@ -260,6 +225,7 @@ const SessionRoom = () => {
   // Função para alternar visibilidade das ferramentas de IA
   const toggleAITools = useCallback(() => {
     setShowAITools(prev => !prev);
+    console.log('Alternando visibilidade das ferramentas de IA');
   }, []);
 
   // Adicionar listener para comandos de constelação via socket
