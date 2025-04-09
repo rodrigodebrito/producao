@@ -93,10 +93,52 @@ export const AIProvider = ({ children }) => {
       console.log(`[AIContext] Iniciando análise para sessão: ${effectiveSessionId}`);
       console.log(`[AIContext] Texto para análise (${text?.length || 0} caracteres): ${text?.substring(0, 50)}...`);
       
-      // CORREÇÃO: Remover validação rigorosa de texto mínimo
-      // Sempre tentar processar o texto disponível, mesmo que seja curto
-      if (!text || text.trim().length === 0) {
-        console.warn('[AIContext] Texto completamente vazio para análise');
+      // NOVO: Se o texto estiver vazio, buscar as transcrições do backend
+      let effectiveText = text;
+      if (!effectiveText || effectiveText.trim().length === 0) {
+        try {
+          console.log('[AIContext] Texto vazio, buscando transcrições do backend para a sessão:', effectiveSessionId);
+          
+          // Obter token de autenticação
+          const authToken = localStorage.getItem('authToken') || 
+                           sessionStorage.getItem('authToken') || 
+                           localStorage.getItem('token') || 
+                           sessionStorage.getItem('token');
+          
+          // Buscar as transcrições diretamente usando o endpoint
+          const response = await fetch(`/api/ai/transcriptions/session/${effectiveSessionId}`, {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${authToken}`
+            }
+          });
+          
+          if (response.ok) {
+            const transcriptData = await response.json();
+            console.log('[AIContext] Transcrições obtidas com sucesso do backend:', transcriptData);
+            
+            if (transcriptData.data && transcriptData.data.length > 0) {
+              // Combinar as transcrições em um único texto
+              effectiveText = transcriptData.data
+                .map(t => `${t.speaker}: ${t.content}`)
+                .join('\n');
+              
+              console.log(`[AIContext] Texto combinado das transcrições: ${effectiveText.length} caracteres`);
+              
+              // Atualizar o estado do transcript
+              setTranscript(effectiveText);
+            }
+          } else {
+            console.warn('[AIContext] Erro ao buscar transcrições:', response.status);
+          }
+        } catch (fetchError) {
+          console.error('[AIContext] Erro ao buscar transcrições do backend:', fetchError);
+        }
+      }
+      
+      // Se ainda não temos texto após tentar buscar do backend
+      if (!effectiveText || effectiveText.trim().length === 0) {
+        console.warn('[AIContext] Texto completamente vazio para análise, mesmo após buscar do backend');
         toast.warning('Não há texto para analisar. Inicie a gravação ou continue a conversa.');
         
         const mockResult = {
@@ -113,8 +155,8 @@ export const AIProvider = ({ children }) => {
       let result;
       try {
         // Usar o sessionId efetivo para a análise
-        console.log(`[AIContext] Enviando para análise: sessão=${effectiveSessionId}, texto=${text.length} caracteres`);
-        result = await hybridAIService.analyzeText(text, effectiveSessionId);
+        console.log(`[AIContext] Enviando para análise: sessão=${effectiveSessionId}, texto=${effectiveText.length} caracteres`);
+        result = await hybridAIService.analyzeText(effectiveText, effectiveSessionId);
         console.log('[AIContext] Resultado da análise:', result);
       } catch (error) {
         console.error('[AIContext] Erro no serviço de análise:', error);
@@ -231,15 +273,61 @@ export const AIProvider = ({ children }) => {
       console.log(`[AIContext] Iniciando sugestões para sessão: ${effectiveSessionId}`);
       console.log(`[AIContext] Texto para sugestões (${text?.length || 0} caracteres): ${text?.substring(0, 50)}...`);
       
-      // CORREÇÃO: Remover validação rigorosa de texto mínimo
-      if (!text || text.trim().length === 0) {
-        console.warn('[AIContext] Texto completamente vazio para sugestões');
-        toast.warning('Não há texto para gerar sugestões. Inicie a gravação ou continue a conversa.');
+      // NOVO: Se o texto estiver vazio, buscar as transcrições do backend
+      let effectiveText = text;
+      if (!effectiveText || effectiveText.trim().length === 0) {
+        try {
+          console.log('[AIContext] Texto vazio, buscando transcrições do backend para a sessão:', effectiveSessionId);
+          
+          // Obter token de autenticação
+          const authToken = localStorage.getItem('authToken') || 
+                           sessionStorage.getItem('authToken') || 
+                           localStorage.getItem('token') || 
+                           sessionStorage.getItem('token');
+          
+          // Buscar as transcrições diretamente usando o endpoint
+          const response = await fetch(`/api/ai/transcriptions/session/${effectiveSessionId}`, {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${authToken}`
+            }
+          });
+          
+          if (response.ok) {
+            const transcriptData = await response.json();
+            console.log('[AIContext] Transcrições obtidas com sucesso do backend:', transcriptData);
+            
+            if (transcriptData.data && transcriptData.data.length > 0) {
+              // Combinar as transcrições em um único texto
+              effectiveText = transcriptData.data
+                .map(t => `${t.speaker}: ${t.content}`)
+                .join('\n');
+              
+              console.log(`[AIContext] Texto combinado das transcrições: ${effectiveText.length} caracteres`);
+              
+              // Atualizar o estado do transcript
+              setTranscript(effectiveText);
+            }
+          } else {
+            console.warn('[AIContext] Erro ao buscar transcrições:', response.status);
+          }
+        } catch (fetchError) {
+          console.error('[AIContext] Erro ao buscar transcrições do backend:', fetchError);
+        }
+      }
+      
+      // Se ainda não temos texto após tentar buscar do backend
+      if (!effectiveText || effectiveText.trim().length === 0) {
+        console.warn('[AIContext] Texto completamente vazio para sugestões, mesmo após buscar do backend');
+        
+        toast.warning('Não há texto para analisar. Inicie a gravação ou continue a conversa.');
         
         const mockResult = {
           type: 'suggestions',
-          suggestions: ['É necessário ter algum conteúdo de conversa para gerar sugestões úteis.'],
-          content: 'Inicie ou continue a conversa para receber sugestões.'
+          suggestions: [
+            'Não há conteúdo de conversa suficiente para gerar sugestões.',
+            'Inicie ou continue a conversa para receber sugestões relevantes.'
+          ]
         };
         
         setLastResult(mockResult);
@@ -250,8 +338,8 @@ export const AIProvider = ({ children }) => {
       let result;
       try {
         // Usar o sessionId efetivo para as sugestões
-        console.log(`[AIContext] Enviando para sugestões: sessão=${effectiveSessionId}, texto=${text.length} caracteres`);
-        result = await hybridAIService.generateSuggestions(text, effectiveSessionId);
+        console.log(`[AIContext] Enviando para geração de sugestões: sessão=${effectiveSessionId}, texto=${effectiveText.length} caracteres`);
+        result = await hybridAIService.generateSuggestions(effectiveText, effectiveSessionId);
         console.log('[AIContext] Resultado das sugestões:', result);
       } catch (error) {
         console.error('[AIContext] Erro no serviço de sugestões:', error);
@@ -339,15 +427,59 @@ export const AIProvider = ({ children }) => {
       console.log(`[AIContext] Iniciando relatório para sessão: ${effectiveSessionId}`);
       console.log(`[AIContext] Texto para relatório (${text?.length || 0} caracteres): ${text?.substring(0, 50)}...`);
       
-      // CORREÇÃO: Remover validação rigorosa de texto mínimo
-      if (!text || text.trim().length === 0) {
-        console.warn('[AIContext] Texto completamente vazio para relatório');
+      // NOVO: Se o texto estiver vazio, buscar as transcrições do backend
+      let effectiveText = text;
+      if (!effectiveText || effectiveText.trim().length === 0) {
+        try {
+          console.log('[AIContext] Texto vazio, buscando transcrições do backend para a sessão:', effectiveSessionId);
+          
+          // Obter token de autenticação
+          const authToken = localStorage.getItem('authToken') || 
+                           sessionStorage.getItem('authToken') || 
+                           localStorage.getItem('token') || 
+                           sessionStorage.getItem('token');
+          
+          // Buscar as transcrições diretamente usando o endpoint
+          const response = await fetch(`/api/ai/transcriptions/session/${effectiveSessionId}`, {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${authToken}`
+            }
+          });
+          
+          if (response.ok) {
+            const transcriptData = await response.json();
+            console.log('[AIContext] Transcrições obtidas com sucesso do backend:', transcriptData);
+            
+            if (transcriptData.data && transcriptData.data.length > 0) {
+              // Combinar as transcrições em um único texto
+              effectiveText = transcriptData.data
+                .map(t => `${t.speaker}: ${t.content}`)
+                .join('\n');
+              
+              console.log(`[AIContext] Texto combinado das transcrições: ${effectiveText.length} caracteres`);
+              
+              // Atualizar o estado do transcript
+              setTranscript(effectiveText);
+            }
+          } else {
+            console.warn('[AIContext] Erro ao buscar transcrições:', response.status);
+          }
+        } catch (fetchError) {
+          console.error('[AIContext] Erro ao buscar transcrições do backend:', fetchError);
+        }
+      }
+      
+      // Se ainda não temos texto após tentar buscar do backend
+      if (!effectiveText || effectiveText.trim().length === 0) {
+        console.warn('[AIContext] Texto completamente vazio para relatório, mesmo após buscar do backend');
+        
         toast.warning('Não há texto para gerar relatório. Inicie a gravação ou continue a conversa.');
         
         const mockResult = {
           type: 'report',
-          report: 'É necessário ter algum conteúdo de conversa para gerar um relatório útil.',
-          content: 'Inicie ou continue a sessão para capturar informações para o relatório.'
+          report: 'Não há conteúdo de conversa suficiente para gerar um relatório. Inicie ou continue a sessão para registrar a conversa.',
+          success: false
         };
         
         setLastResult(mockResult);
@@ -358,8 +490,8 @@ export const AIProvider = ({ children }) => {
       let result;
       try {
         // Usar o sessionId efetivo para o relatório
-        console.log(`[AIContext] Enviando para relatório: sessão=${effectiveSessionId}, texto=${text.length} caracteres`);
-        result = await hybridAIService.generateReport(text, effectiveSessionId);
+        console.log(`[AIContext] Enviando para geração de relatório: sessão=${effectiveSessionId}, texto=${effectiveText.length} caracteres`);
+        result = await hybridAIService.generateReport(effectiveText, effectiveSessionId);
         console.log('[AIContext] Resultado do relatório:', result);
       } catch (error) {
         console.error('[AIContext] Erro no serviço de relatório:', error);
