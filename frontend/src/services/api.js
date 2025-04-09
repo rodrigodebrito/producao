@@ -19,22 +19,23 @@ api.interceptors.request.use(
     // Get token directly from localStorage instead of authService
     const token = localStorage.getItem('token');
     
-    // Log para depuração
-    console.log(`Interceptor de API: URL da requisição: ${config.url}`);
-    console.log(`Interceptor de API: Método: ${config.method}`);
-    console.log(`Interceptor de API: Token presente: ${token ? 'Sim' : 'Não'}`);
+    // Log detalhado para cada requisição
+    console.log(`🚀 REQUISIÇÃO ENVIADA: ${config.method.toUpperCase()} ${config.baseURL}${config.url}`);
+    console.log('📝 Dados:', config.data ? JSON.parse(JSON.stringify(config.data)) : 'Sem dados');
+    console.log('🔑 Token presente:', token ? 'Sim' : 'Não');
+    console.log('📋 Headers:', config.headers);
     
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
-      console.log('Token adicionado ao cabeçalho de autorização');
+      console.log('✅ Token adicionado ao cabeçalho de autorização');
     } else {
-      console.warn('Sem token disponível para esta requisição');
+      console.warn('❌ Sem token disponível para esta requisição');
     }
     
     return config;
   },
   (error) => {
-    console.error('Erro no interceptor de requisição:', error);
+    console.error('❌ Erro no interceptor de requisição:', error);
     return Promise.reject(error);
   }
 );
@@ -42,18 +43,29 @@ api.interceptors.request.use(
 // Adicionar interceptor de resposta para log de erros
 api.interceptors.response.use(
   (response) => {
-    // Sucesso - apenas retorna a resposta
+    // Log de sucesso
+    console.log(`✅ RESPOSTA RECEBIDA: ${response.status} ${response.config.method.toUpperCase()} ${response.config.url}`);
+    console.log('📊 Dados recebidos:', response.data);
     return response;
   },
   (error) => {
     // Logar detalhes do erro para depuração
-    console.error('Erro na resposta da API:', {
-      url: error.config?.url,
-      method: error.config?.method,
-      status: error.response?.status,
-      data: error.response?.data,
-      hasToken: !!error.config?.headers?.Authorization
-    });
+    if (error.response) {
+      // A requisição foi feita e o servidor respondeu com um status diferente de 2xx
+      console.error(`❌ ERRO DE RESPOSTA: ${error.response.status} ${error.config?.method?.toUpperCase()} ${error.config?.url}`);
+      console.error('📋 Dados do erro:', error.response.data);
+      console.error('📋 Headers da resposta:', error.response.headers);
+    } else if (error.request) {
+      // A requisição foi feita mas não recebeu resposta
+      console.error('❌ ERRO SEM RESPOSTA - A requisição foi enviada, mas o servidor não respondeu:');
+      console.error('📋 Requisição:', error.request);
+      console.error('📋 URL:', error.config?.url);
+      console.error('📋 Método:', error.config?.method);
+      console.error('📋 Dados enviados:', error.config?.data);
+    } else {
+      // Algo aconteceu na configuração da requisição que causou o erro
+      console.error('❌ ERRO DE CONFIGURAÇÃO:', error.message);
+    }
     
     return Promise.reject(error);
   }
