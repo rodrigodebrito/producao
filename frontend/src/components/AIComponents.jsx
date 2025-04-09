@@ -409,98 +409,126 @@ export const resetTranscriptionServices = () => {
 export const AIToolsContainer = () => {
   const [transcriptionMode, setTranscriptionMode] = useState('auto');
   const containerRef = useRef(null);
+  
+  // Obter funções de IA do contexto para que possam ser passadas aos botões
+  const { analyze, suggest, report } = useAI();
 
-  // Lógica para garantir que os botões de IA existam
-  const ensureButtonsExist = () => {
-    // Criar um container persistente para os botões de IA
+  // Verificar se container existe e criar se necessário
+  useEffect(() => {
+    // Criar um container persistente para os botões de IA se ainda não existir
     if (!document.getElementById('persistent-ai-tools')) {
       const persistentContainer = document.createElement('div');
       persistentContainer.id = 'persistent-ai-tools';
       persistentContainer.className = 'persistent-ai-tools ai-tools-container-direct';
       document.body.appendChild(persistentContainer);
-      
-      console.log('Criado container persistente para AI Tools');
-      
-      // Usar ReactDOM.render para renderizar os botões
-      ReactDOM.render(
-        <div className="ai-simple-toolbar">
-          <AIButtons />
-          <MicButton transcriptionMode={transcriptionMode} />
-          <TranscriptionSelector 
-            mode={transcriptionMode} 
-            onChange={setTranscriptionMode} 
-          />
-        </div>,
-        persistentContainer
-      );
-      
-      // Manter referência para atualização posterior
       containerRef.current = persistentContainer;
-      
-      // Verificar se o container ainda existe periodicamente
-      const checkInterval = setInterval(() => {
-        const container = document.getElementById('persistent-ai-tools');
-        if (!container) {
-          console.log('Container de AI foi removido, recriando...');
-          clearInterval(checkInterval);
-          ensureButtonsExist();
-        } else {
-          // Atualizar com o modo de transcrição atual
-          ReactDOM.render(
-            <div className="ai-simple-toolbar">
-              <AIButtons />
-              <MicButton transcriptionMode={transcriptionMode} />
-              <TranscriptionSelector 
-                mode={transcriptionMode} 
-                onChange={setTranscriptionMode} 
-              />
-            </div>,
-            container
-          );
-        }
-      }, 10000);
-      
-      return persistentContainer;
+      console.log('Criado container persistente para AI Tools');
     } else {
-      console.log('Mantendo container de AI válido: ', 'persistent-ai-tools');
-      
-      // Atualizar com o modo de transcrição atual
-      const container = document.getElementById('persistent-ai-tools');
+      containerRef.current = document.getElementById('persistent-ai-tools');
+      console.log('Usando container de AI existente');
+    }
+
+    // Verificar periodicamente se o container ainda existe
+    const interval = setInterval(() => {
+      if (!document.getElementById('persistent-ai-tools')) {
+        console.log('Container de AI foi removido, recriando...');
+        const newContainer = document.createElement('div');
+        newContainer.id = 'persistent-ai-tools';
+        newContainer.className = 'persistent-ai-tools ai-tools-container-direct';
+        document.body.appendChild(newContainer);
+        containerRef.current = newContainer;
+      }
+    }, 5000);
+
+    return () => {
+      clearInterval(interval);
+    };
+  }, []);
+
+  // Handlers para os botões
+  const handleAnalyze = useCallback(() => {
+    analyze().then(result => {
+      console.log('Análise concluída:', result);
+      toast.success('Análise concluída com sucesso');
+    }).catch(error => {
+      console.error('Erro na análise:', error);
+      toast.error('Erro ao realizar análise');
+    });
+  }, [analyze]);
+
+  const handleSuggest = useCallback(() => {
+    suggest().then(result => {
+      console.log('Sugestões geradas:', result);
+      toast.success('Sugestões geradas com sucesso');
+    }).catch(error => {
+      console.error('Erro ao gerar sugestões:', error);
+      toast.error('Erro ao gerar sugestões');
+    });
+  }, [suggest]);
+
+  const handleReport = useCallback(() => {
+    report().then(result => {
+      console.log('Relatório gerado:', result);
+      toast.success('Relatório gerado com sucesso');
+    }).catch(error => {
+      console.error('Erro ao gerar relatório:', error);
+      toast.error('Erro ao gerar relatório');
+    });
+  }, [report]);
+
+  // Renderizar os componentes no portal
+  useEffect(() => {
+    if (containerRef.current) {
+      // Injetamos diretamente os componentes simples e os handlers definidos acima
       ReactDOM.render(
         <div className="ai-simple-toolbar">
-          <AIButtons />
+          <button 
+            onClick={handleAnalyze}
+            className="ai-button analyze-button"
+            title="Analisar conversa atual"
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM13 17H11V15H13V17ZM13 13H11V7H13V13Z" fill="white"/>
+            </svg>
+            <span className="button-text">Analisar</span>
+          </button>
+          
+          <button 
+            onClick={handleSuggest}
+            className="ai-button suggest-button"
+            title="Obter sugestões"
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM12 20C7.59 20 4 16.41 4 12C4 7.59 7.59 4 12 4C16.41 4 20 7.59 20 12C20 16.41 16.41 20 12 20ZM11 16H13V18H11ZM12.61 6.04C10.55 5.79 8.73 7.13 8.27 9.17C8.05 10.3 9.03 10.99 10.1 10.68C10.65 10.5 11.25 10.07 11.36 9.5C11.78 7.83 14.08 8.2 14.08 10.25C14.08 11.28 13.47 11.8 12.69 12.5C11.91 13.2 11 14.09 11 15.25V15.5H13V15.25C13 14.58 13.67 14.11 14.45 13.41C15.23 12.71 16 11.8 16 10.25C16 7.92 14.57 6.29 12.61 6.04Z" fill="white"/>
+            </svg>
+            <span className="button-text">Sugestões</span>
+          </button>
+          
+          <button 
+            onClick={handleReport}
+            className="ai-button report-button"
+            title="Gerar relatório"
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M14 2H6C4.9 2 4 2.9 4 4V20C4 21.1 4.9 22 6 22H18C19.1 22 20 21.1 20 20V8L14 2ZM18 20H6V4H13V9H18V20ZM8 14H16V16H8V14ZM8 18H13V20H8V18ZM8 10H16V12H8V10Z" fill="white"/>
+            </svg>
+            <span className="button-text">Relatório</span>
+          </button>
+          
           <MicButton transcriptionMode={transcriptionMode} />
+          
           <TranscriptionSelector 
             mode={transcriptionMode} 
             onChange={setTranscriptionMode} 
           />
         </div>,
-        container
+        containerRef.current
       );
-      
-      // Manter referência
-      containerRef.current = container;
-      return container;
     }
-  };
-  
-  // Criar os botões no primeiro render e quando o modo mudar
-  useEffect(() => {
-    const container = ensureButtonsExist();
-    
-    // Limpeza ao desmontar
-    return () => {
-      try {
-        if (container && document.body.contains(container)) {
-          ReactDOM.unmountComponentAtNode(container);
-        }
-      } catch (e) {
-        console.error('Erro ao limpar componente AI:', e);
-      }
-    };
-  }, [transcriptionMode]);
-  
-  return null; // Este componente não renderiza nada diretamente
+  }, [transcriptionMode, handleAnalyze, handleSuggest, handleReport]);
+
+  // Este componente não renderiza nada no seu local original
+  return null;
 };
 
 export default AIToolsContainer; 

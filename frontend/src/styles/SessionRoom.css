@@ -1671,4 +1671,66 @@ body {
   box-shadow: 0 4px 12px rgba(0,0,0,0.3);
   border: 2px solid rgba(255,255,255,0.2);
   overflow: hidden;
+}
+
+/* Botões de ferramentas na sala da sessão */
+.session-tools-buttons {
+  position: absolute;
+  right: 20px;
+  bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 10000;
+}
+
+.tool-button {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.tool-button:hover {
+  transform: scale(1.1);
+  background: rgba(0, 0, 0, 0.8);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.constellation-button {
+  background-color: rgba(211, 84, 0, 0.85);
+}
+
+.constellation-button:hover {
+  background-color: rgba(230, 126, 34, 0.95);
+}
+
+.ai-toggle-button {
+  background-color: rgba(41, 128, 185, 0.85);
+}
+
+.ai-toggle-button:hover {
+  background-color: rgba(52, 152, 219, 0.95);
+}
+
+/* Versão responsiva */
+@media (max-width: 768px) {
+  .session-tools-buttons {
+    right: 15px;
+    bottom: 15px;
+    gap: 8px;
+  }
+  
+  .tool-button {
+    width: 40px;
+    height: 40px;
+  }
 } 

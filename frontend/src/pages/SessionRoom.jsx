@@ -257,6 +257,11 @@ const SessionRoom = () => {
     }
   }, [sessionId, socket]);
 
+  // Função para alternar visibilidade das ferramentas de IA
+  const toggleAITools = useCallback(() => {
+    setShowAITools(prev => !prev);
+  }, []);
+
   // Adicionar listener para comandos de constelação via socket
   useEffect(() => {
     if (socket) {
@@ -561,6 +566,29 @@ const SessionRoom = () => {
             />
           </div>
         )}
+        
+        {/* Botões de ferramentas */}
+        <div className="session-tools-buttons">
+          <button 
+            className="tool-button constellation-button"
+            onClick={handleToggleConstellation}
+            title="Ativar/Desativar Campo de Constelação"
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 17.27L18.18 21L16.54 13.97L22 9.24L14.81 8.63L12 2L9.19 8.63L2 9.24L7.46 13.97L5.82 21L12 17.27Z" fill="white"/>
+            </svg>
+          </button>
+          
+          <button 
+            className="tool-button ai-toggle-button"
+            onClick={toggleAITools}
+            title={showAITools ? "Ocultar Ferramentas de IA" : "Mostrar Ferramentas de IA"}
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM13 17H11V15H13V17ZM13 13H11V7H13V13Z" fill="white"/>
+            </svg>
+          </button>
+        </div>
         
         {/* Ferramentas de IA */}
         {showAITools && (
