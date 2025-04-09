@@ -56,63 +56,64 @@ class HybridAIService {
     try {
       console.log('HybridAI: Inicializando serviço...');
       
-      // Verificar se temos suporte para reconhecimento de voz
-      this.hasRecognitionSupport = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+      // Verificar ambiente
+      const isDevelopment = window.location.hostname === 'localhost' || window.location.hostname.includes('127.0.0.1');
       
-      if (!this.hasRecognitionSupport) {
-        console.warn('HybridAI: Este navegador não suporta reconhecimento de voz');
-        return false;
-      }
-      
-      // Configurar reconhecimento de voz
-      this.setupSpeechRecognition();
-      
-      // Extrair sessionId e definir handlers
-      this.sessionId = this.extractSessionId();
-      this.handleKeyEvents();
-      
-      // Carregar dicionário de emoções
-      await this.loadEmotionKeywords();
-      
-      // Habilitar reinício automático por padrão
-      this.autoRestart = true;
-      
-      // Garantir que a apiUrl está configurada
-      if (!this.apiUrl || this.apiUrl === '') {
+      // Definir URL da API com base no ambiente
+      if (!this.apiUrl) {
+        // Tentar importar configuração global
         try {
-          const config = await import('../environments');
-          this.apiUrl = config.default.apiUrl;
-          console.log(`HybridAI: API URL configurada via import dinâmico: ${this.apiUrl}`);
+          // Importar de módulo separado
+          const { API_URL } = await import('../config');
+          this.apiUrl = API_URL;
+          console.log(`HybridAI: API URL importada de configuração global: ${this.apiUrl}`);
         } catch (e) {
-          // Fallback para URL padrão
-          this.apiUrl = 'http://localhost:3000/api';
-          console.warn('HybridAI: Usando URL padrão por falha em importar config:', e);
+          console.warn('HybridAI: Erro ao importar configuração:', e);
+          
+          // Configuração de fallback: URL absoluta para evitar CORS
+          if (isDevelopment) {
+            this.apiUrl = 'http://localhost:3000/api';
+          } else {
+            // Usar URL do backend em produção (hardcoded como última opção)
+            this.apiUrl = 'https://theraconnect-prd.onrender.com/api';
+          }
+          
+          console.log(`HybridAI: Usando API URL de fallback: ${this.apiUrl}`);
         }
       }
       
-      // Adicionar à window para acesso global em caso de emergência
-      if (window) {
-        window.hybridAIService = this;
-        window.restartHybridAI = () => {
-          console.log('HybridAI: Reinicialização forçada via método global');
-          
-          // Tentar uma reinicialização completa
-          try {
-            this.stopRecording();
-            setTimeout(() => {
-      this.setupSpeechRecognition();
-              this.startRecording();
-            }, 1000);
-          } catch (e) {
-            console.error('HybridAI: Erro na reinicialização de emergência:', e);
-          }
-        };
+      // SOLUÇÃO: Verificar e corrigir a URL se for incorreta
+      if (this.apiUrl.includes('terapia-conect-frontend.vercel.app')) {
+        console.warn('HybridAI: Corrigindo URL da API que apontava incorretamente para o frontend');
+        this.apiUrl = 'https://theraconnect-prd.onrender.com/api';
       }
       
-      console.log(`HybridAI: Serviço inicializado com sucesso. SessionId: ${this.sessionId}`);
+      console.log(`HybridAI: API URL configurada: ${this.apiUrl}`);
+      
+      // Verificar sessionId (extrair da URL se não tiver)
+      if (!this.sessionId) {
+        this.sessionId = this.extractSessionId();
+        console.log(`HybridAI: sessionId extraído: ${this.sessionId}`);
+      }
+      
+      // Carregar emoções
+      await this.loadEmotionKeywords();
+      
+      // Verificar disponibilidade da API Fetch
+      if (!fetch) {
+        throw new Error('API Fetch não suportada neste navegador');
+      }
+      
+      // Setup do reconhecimento de voz
+      this.setupSpeechRecognition();
+      
+      // Setup de eventos de teclado
+      this.handleKeyEvents();
+      
+      console.log('HybridAI: Serviço inicializado com sucesso!');
       return true;
-    } catch (error) {
-      console.error('HybridAI: Erro ao inicializar serviço:', error);
+    } catch (e) {
+      console.error('HybridAI: Erro ao inicializar serviço:', e);
       return false;
     }
   }
@@ -727,10 +728,23 @@ class HybridAIService {
       
       console.log('HybridAI: Extraindo sessionId de URL:', url);
       
+      // Primeiro tentar obter do localStorage (prioridade)
+      const savedSessionId = localStorage.getItem('currentSessionId');
+      if (savedSessionId) {
+        console.log('HybridAI: SessionId encontrado no localStorage:', savedSessionId);
+        return savedSessionId;
+      }
+      
       // Tentar padrão /session/{id}
       const sessionMatch = url.match(/\/session\/([a-zA-Z0-9_-]+)/);
       if (sessionMatch && sessionMatch[1]) {
         console.log('HybridAI: SessionId extraído da URL (padrão /session/):', sessionMatch[1]);
+        // Salvar no localStorage para usos futuros
+        try {
+          localStorage.setItem('currentSessionId', sessionMatch[1]);
+        } catch (e) {
+          console.warn('HybridAI: Não foi possível salvar sessionId no localStorage:', e);
+        }
         return sessionMatch[1];
       }
       
@@ -774,15 +788,15 @@ class HybridAIService {
         }
       }
       
-      // Verificar localStorage/sessionStorage para um sessionId salvo
-      const savedSessionId = localStorage.getItem('sessionId') || 
-                           sessionStorage.getItem('sessionId') ||
-                           localStorage.getItem('meetingId') || 
-                           sessionStorage.getItem('meetingId');
+      // Verificar localStorage/sessionStorage para um sessionId salvo (opções adicionais)
+      const alternativeSavedId = localStorage.getItem('sessionId') || 
+                          sessionStorage.getItem('sessionId') ||
+                          localStorage.getItem('meetingId') || 
+                          sessionStorage.getItem('meetingId');
       
-      if (savedSessionId) {
-        console.log('HybridAI: SessionId recuperado do armazenamento:', savedSessionId);
-        return savedSessionId;
+      if (alternativeSavedId) {
+        console.log('HybridAI: SessionId recuperado do armazenamento alternativo:', alternativeSavedId);
+        return alternativeSavedId;
       }
       
       // Verificar data attributes em elementos relevantes
@@ -904,104 +918,55 @@ class HybridAIService {
     }));
   }
 
-  // Enviar transcrição para o servidor
+  // Método para enviar transcrição ao servidor
   async sendTranscriptionToServer(transcript, emotions = null) {
     try {
-      // Verificação mais rigorosa do transcript
-      if (!transcript || typeof transcript !== 'string' || transcript.trim().length === 0) {
-        console.warn('HybridAI: Texto vazio ou inválido, não será enviado para o servidor');
-        return;
+      console.log('HybridAI: Preparando para enviar transcrição ao servidor');
+      
+      // Verificar se temos uma URL de API configurada
+      if (!this.apiUrl) {
+        console.error('HybridAI: URL da API não configurada');
+        throw new Error('URL da API não configurada');
       }
       
-      // Normalizar transcript - remover espaços extras e caracteres especiais
-      const normalizedTranscript = transcript.trim();
+      // Verificar se a URL da API é válida e corrigir se necessário
+      // CORREÇÃO: Garantir que estamos usando o backend correto, não o frontend
+      let endpoint = `${this.apiUrl}/ai/transcript`;
       
-      if (normalizedTranscript.length === 0) {
-        console.warn('HybridAI: Após normalização, o transcript ficou vazio');
-        return;
+      // Verificar se a URL está apontando para o frontend por engano
+      if (endpoint.includes('terapia-conect-frontend.vercel.app')) {
+        console.warn('HybridAI: Corrigindo URL da API que apontava incorretamente para o frontend');
+        // Usar URL do backend em produção
+        endpoint = 'https://theraconnect-prd.onrender.com/api/ai/transcript';
       }
+
+      console.log(`HybridAI: Endpoint para salvar transcrição: ${endpoint}`);
       
-      // Extrair o sessionId se não estiver definido ainda
-      if (!this.sessionId) {
-        this.sessionId = this.extractSessionId();
-      }
-      
-      // Verificar se temos um sessionId válido
-      if (!this.sessionId || this.sessionId.length < 5 || this.sessionId.startsWith('fallback_') || this.sessionId.startsWith('session_') || this.sessionId.startsWith('temp_') || this.sessionId.startsWith('error_')) {
-        console.warn('HybridAI: ID da sessão inválido ou genérico, transcrição não será salva', this.sessionId);
-        window.dispatchEvent(new CustomEvent('hybridai-error', {
-          detail: { 
-            message: 'Não foi possível identificar a sessão atual. Recarregue a página ou crie uma nova sessão.',
-            type: 'session'
-          }
-        }));
-        return;
-      }
-      
-      // Permitir sessionIds temporários em localhost, mas logar
-      if (this.sessionId.startsWith('temp_') && 
-          (window.location.hostname === 'localhost' || 
-           window.location.hostname.includes('127.0.0.1'))) {
-        console.log('HybridAI: Usando ID temporário em ambiente de desenvolvimento:', this.sessionId);
-      }
-      
-      console.log(`HybridAI: Enviando transcrição para o servidor. SessionID: ${this.sessionId}`);
-      
-      // Tentar obter o token do localStorage ou sessionStorage
+      // Obter token de autenticação
       const authToken = this.getAuthToken();
-      
       if (!authToken) {
-        console.warn('HybridAI: Token de autenticação não encontrado, transcrição não será salva');
+        console.error('HybridAI: Token de autenticação não encontrado');
         this.dispatchAuthError();
-        return;
+        throw new Error('Token de autenticação não encontrado ou inválido');
       }
       
-      // Importar config diretamente se não for inicializado no construtor
-      let apiUrl;
-      if (this.apiUrl) {
-        apiUrl = `${this.apiUrl}/ai/transcript`;
-      } else {
-        // Fallback para importar diretamente
-        try {
-          const config = require('../environments').default;
-          apiUrl = '/api/ai/transcript';
-          console.warn('HybridAI: Usando URL relativa por falha em importar config:', e);
-        } catch (e) {
-          // Fallback para URL relativa em caso de erro (para funcionar com o proxy do Vite)
-          apiUrl = '/api/ai/transcript';
-          console.warn('HybridAI: Usando URL relativa por falha em importar config:', e);
-        }
-      }
-      
-      console.log(`HybridAI: Usando API URL: ${apiUrl}`);
-      
-      // Aplicar anonimização se necessário
-      const processedText = this.useAnonymization ? this.anonymizeText(normalizedTranscript) : normalizedTranscript;
-      
-      // Verificação final do texto processado
-      if (!processedText || processedText.trim().length === 0) {
-        console.warn('HybridAI: Texto processado ficou vazio após anonimização');
-        return;
-      }
-      
-      // Preparar payload
+      // Formatar os dados
       const data = {
         sessionId: this.sessionId,
-        content: processedText,
-        speaker: 'user',
+        speaker: this.userRole || 'paciente', // Default para paciente se não especificado
+        content: transcript,
         timestamp: new Date().toISOString(),
-        transcript: processedText
       };
       
-      // Adicionar emoções detectadas, se houver
+      // Adicionar emoções se disponíveis
       if (emotions) {
         data.emotions = emotions;
       }
       
-      console.log('HybridAI: Payload para API:', JSON.stringify(data));
+      console.log(`HybridAI: Enviando transcrição para o servidor (${transcript.length} caracteres)`);
       
-      // Enviar para o servidor com autenticação
-      const response = await fetch(apiUrl, {
+      // Enviar os dados via POST
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1010,63 +975,42 @@ class HybridAIService {
         body: JSON.stringify(data)
       });
       
+      // CORREÇÃO: Verificar o status e tratar resposta adequadamente para evitar leitura dupla
       if (!response.ok) {
-        // Tentar obter mais detalhes sobre o erro
-        let errorDetails = '';
+        let errorMessage;
         try {
+          // Ler resposta apenas uma vez e guardar o resultado
           const errorResponse = await response.json();
-          errorDetails = JSON.stringify(errorResponse);
-          console.error('HybridAI: Detalhes do erro da API:', errorResponse);
-        } catch (e) {
-          errorDetails = await response.text();
-          console.error('HybridAI: Resposta de erro da API (texto):', errorDetails);
+          errorMessage = errorResponse.message || errorResponse.error || `Erro ${response.status}: ${response.statusText}`;
+        } catch (parseError) {
+          // Se não conseguir ler como JSON, usar texto de status
+          errorMessage = `Erro ${response.status}: ${response.statusText}`;
         }
+        
+        console.error('HybridAI: Erro na resposta do servidor:', errorMessage);
         
         if (response.status === 401 || response.status === 403) {
-          // Erro de autenticação, notificar ao usuário
+          // Problema de autenticação
           this.dispatchAuthError();
-          throw new Error(`Erro de autenticação: ${response.status}`);
-        } else if (response.status === 400) {
-          // Bad Request - provavelmente dados inválidos
-          console.error(`HybridAI: Erro 400 (Bad Request) ao salvar transcrição. Detalhes: ${errorDetails}`);
-          
-          // Verificar se o erro menciona sessionId
-          if (errorDetails.includes('sessionId') || errorDetails.includes('session')) {
-            // Tentar limpar e obter um novo sessionId
-            this.sessionId = null;
-            const newSessionId = this.extractSessionId();
-            console.log('HybridAI: Tentando com novo sessionId:', newSessionId);
-            
-            // Notificar sobre o problema
-            window.dispatchEvent(new CustomEvent('hybridai-error', {
-              detail: { 
-                message: 'Problema com a identificação da sessão. Tente recarregar a página.',
-                type: 'session'
-              }
-            }));
-          }
-          
-          throw new Error(`Erro ao salvar transcrição (400 Bad Request): ${errorDetails}`);
+          throw new Error('Sessão expirada ou inválida. Faça login novamente.');
         }
         
-        throw new Error(`Erro ao salvar transcrição: ${response.status} ${response.statusText}. Detalhes: ${errorDetails}`);
+        throw new Error(errorMessage);
       }
       
-      const result = await response.json();
-      console.log('HybridAI: Transcrição salva com sucesso:', result);
-      
-      return result;
+      try {
+        // Ler a resposta apenas uma vez
+        const result = await response.json();
+        console.log('HybridAI: Transcrição salva com sucesso:', result);
+        return result;
+      } catch (parseError) {
+        console.warn('HybridAI: Erro ao processar resposta JSON, mas requisição bem-sucedida');
+        return { success: true };
+      }
     } catch (error) {
-      console.error('HybridAI: Erro ao enviar transcrição para o servidor:', error.message);
+      console.error('HybridAI: Erro ao enviar transcrição para o servidor:', error);
       
-      // Verificar se é erro de autenticação e emitir evento específico
-      if (error.message.includes('401') || 
-          error.message.includes('403') || 
-          error.message.includes('autenticação')) {
-        this.dispatchAuthError();
-      }
-      
-      // Disparar evento de erro geral
+      // Disparar evento de erro para interface
       window.dispatchEvent(new CustomEvent('hybridai-error', {
         detail: { 
           message: `Erro ao salvar transcrição: ${error.message}`,
@@ -1745,20 +1689,58 @@ Ocorreu um erro inesperado durante a geração do relatório.
       if (isSessionPage && pageSessionId && this.sessionId.startsWith('temp_')) {
         console.log('HybridAI: Substituindo ID temporário pelo ID da URL:', pageSessionId);
         this.sessionId = pageSessionId;
+        
+        // Salvar no localStorage para uso futuro
+        try {
+          localStorage.setItem('currentSessionId', pageSessionId);
+        } catch (e) {
+          console.warn('HybridAI: Não foi possível salvar sessionId no localStorage:', e);
+        }
       }
       
-      // Verificação mais flexível considerando o contexto
+      // Verificação menos restritiva - permitir IDs temporários em produção
+      // Se for um ID temporário, verificar no localStorage
+      if (this.sessionId.startsWith('temp_')) {
+        // Tentar encontrar um sessionId no localStorage
+        const savedId = localStorage.getItem('currentSessionId');
+        if (savedId && !savedId.startsWith('temp_')) {
+          console.log('HybridAI: Usando sessionId do localStorage em vez do temporário:', savedId);
+          this.sessionId = savedId;
+        } else {
+          // Verificar se estamos em produção
+          const isProduction = !window.location.hostname.includes('localhost') && 
+                             !window.location.hostname.includes('127.0.0.1');
+          
+          if (isProduction) {
+            console.log('HybridAI: IMPORTANTE - Em produção com ID temporário, verificando outras opções...');
+            
+            // Tentar extrair UUID da URL (mais agressivamente)
+            const url = window.location.href;
+            const uuidMatch = url.match(/[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}/i) || 
+                             url.match(/[a-f0-9-]{10,}/);
+            
+            if (uuidMatch && uuidMatch[0]) {
+              console.log('HybridAI: Encontrado possível UUID na URL:', uuidMatch[0]);
+              this.sessionId = uuidMatch[0];
+              
+              // Salvar para uso futuro
+              try {
+                localStorage.setItem('currentSessionId', this.sessionId);
+              } catch (e) {}
+            }
+          }
+        }
+      }
+      
+      // Verificação final
       const invalidSessionId = 
         !this.sessionId || 
         this.sessionId.length < 5 || 
         this.sessionId.startsWith('fallback_') || 
         this.sessionId.startsWith('session_') || 
-        (this.sessionId.startsWith('error_'));
+        this.sessionId.startsWith('error_');
       
-      // Permitir IDs temporários apenas se não estivermos em uma página de sessão válida
-      const isTemporaryId = this.sessionId.startsWith('temp_') && !isSessionPage;
-      
-      if (invalidSessionId || isTemporaryId) {
+      if (invalidSessionId) {
         console.warn('HybridAI: ID da sessão inválido ou genérico, transcrição não será salva', this.sessionId);
         window.dispatchEvent(new CustomEvent('hybridai-error', {
           detail: { 
