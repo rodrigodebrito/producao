@@ -272,6 +272,13 @@ const testAuthMiddleware = (req, res, next) => {
   next();
 };
 
+// Garantir que o diretório tmp exista para arquivos temporários
+const tmpDir = './tmp';
+if (!fs.existsSync(tmpDir)) {
+  fs.mkdirSync(tmpDir, { recursive: true });
+  console.log('Diretório tmp criado para arquivos temporários');
+}
+
 // Rota para transcrição de áudio com a API Whisper
 router.post('/whisper/transcribe', 
   testAuthMiddleware,

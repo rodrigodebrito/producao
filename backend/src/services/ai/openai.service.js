@@ -252,35 +252,58 @@ const openAIService = {
             
             logger.info(`Configurando opções de transcrição: idioma=${language}, formato=${format}`);
             
-            // Criar um objeto temporário para o arquivo usando o método correto da OpenAI
-            // Em vez de usar File que é uma API do navegador, usamos Buffer diretamente
-            const fileObject = {
-                buffer: audioBuffer,
-                name: 'audio.wav', // Nome do arquivo
-                type: 'audio/wav'   // MIME type
-            };
+            // Criar um arquivo temporário no disco para o buffer
+            const tempFileName = `./tmp/audio_${Date.now()}_${Math.floor(Math.random() * 10000)}.wav`;
+            logger.info(`Criando arquivo temporário: ${tempFileName}`);
+            
+            // Garantir que o diretório tmp exista
+            if (!fs.existsSync('./tmp')) {
+                fs.mkdirSync('./tmp', { recursive: true });
+                logger.info('Diretório tmp criado');
+            }
+            
+            // Escrever o buffer para o arquivo temporário
+            fs.writeFileSync(tempFileName, audioBuffer);
+            logger.info(`Arquivo escrito com sucesso: ${tempFileName} (${fs.statSync(tempFileName).size} bytes)`);
             
             logger.info('Enviando áudio para a API Whisper...');
             
-            // Configurar a chamada para a API Whisper usando a biblioteca oficial da OpenAI
-            const transcriptionOptions = {
-                file: fileObject,
-                model: 'whisper-1',
-                response_format: format
-            };
-            
-            // Adicionar o idioma se for especificado
-            if (language) {
-                transcriptionOptions.language = language;
+            try {
+                // Abrir o arquivo como stream para a API da OpenAI
+                const fileStream = fs.createReadStream(tempFileName);
+                
+                // Configurar a chamada para a API Whisper usando a biblioteca oficial da OpenAI
+                const transcriptionOptions = {
+                    file: fileStream,
+                    model: 'whisper-1',
+                    response_format: format
+                };
+                
+                // Adicionar o idioma se for especificado
+                if (language) {
+                    transcriptionOptions.language = language;
+                }
+                
+                // Fazer a chamada API usando o SDK da OpenAI
+                logger.info(`Chamando API com opções: ${JSON.stringify(transcriptionOptions, (key, value) => key === 'file' ? '[FILE_STREAM]' : value)}`);
+                const response = await openai.audio.transcriptions.create(transcriptionOptions);
+                
+                logger.info('Transcrição concluída com sucesso');
+                logger.info(`Resposta recebida: ${JSON.stringify(response).substring(0, 200)}...`);
+                
+                return response;
+            } finally {
+                // Limpar: remover o arquivo temporário
+                try {
+                    if (fs.existsSync(tempFileName)) {
+                        fs.unlinkSync(tempFileName);
+                        logger.info(`Arquivo temporário removido: ${tempFileName}`);
+                    }
+                } catch (cleanupError) {
+                    logger.error(`Erro ao remover arquivo temporário: ${cleanupError.message}`);
+                    // Não interrompe o fluxo se a limpeza falhar
+                }
             }
-            
-            // Fazer a chamada API usando o SDK da OpenAI
-            const response = await openai.audio.transcriptions.create(transcriptionOptions);
-            
-            logger.info('Transcrição concluída com sucesso');
-            logger.info(`Resposta recebida: ${JSON.stringify(response).substring(0, 200)}...`);
-            
-            return response;
         } catch (error) {
             logger.error(`Erro ao transcrever áudio com a API Whisper: ${error.message}`);
             logger.error(`Stack trace: ${error.stack}`);
