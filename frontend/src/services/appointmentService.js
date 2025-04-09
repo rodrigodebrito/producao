@@ -345,4 +345,111 @@ export const createAppointmentDirect = async (appointmentData) => {
     console.error('Erro ao criar agendamento (método direto):', error);
     throw error;
   }
+};
+
+// Criar um novo agendamento especificamente para terapeutas que querem agendar como clientes
+export const createTherapistSelfAppointment = async (appointmentData) => {
+  try {
+    console.log('Criando agendamento para terapeuta como cliente:', appointmentData);
+    
+    // Garantir que temos o token antes de fazer a requisição
+    const token = localStorage.getItem('token');
+    if (!token) {
+      console.error('Tentativa de criar agendamento sem token de autenticação');
+      throw new Error('Usuário não autenticado. Por favor, faça login novamente.');
+    }
+    
+    // Formatar os dados do appointment para o formato que o backend espera
+    const formattedData = {
+      therapistId: appointmentData.therapistId,
+      date: appointmentData.date,
+      time: appointmentData.time,
+      toolId: appointmentData.toolId,
+      mode: appointmentData.mode || 'ONLINE'
+    };
+    
+    // URL base da API
+    const baseUrl = import.meta.env.VITE_API_URL || 'https://theraconnect-prd.onrender.com';
+    console.log('URL base da API:', baseUrl);
+    
+    // Usar a nova rota especializada para terapeutas como clientes
+    const url = `${baseUrl}/api/appointments/create-therapist-client`;
+    
+    console.log('Usando rota especializada para terapeuta como cliente:', url);
+    
+    // Fazer a requisição
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(formattedData)
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      console.log('Agendamento de terapeuta como cliente criado com sucesso:', data);
+      return data;
+    } else {
+      // Se falhar, tentar extrair a mensagem de erro detalhada
+      let errorData;
+      try {
+        errorData = await response.json();
+      } catch (e) {
+        errorData = { error: `${response.status}: ${response.statusText}` };
+      }
+      
+      console.error('Erro na resposta da API:', errorData);
+      throw new Error(errorData.error || 'Erro ao criar agendamento');
+    }
+  } catch (error) {
+    console.error('Erro ao criar agendamento para terapeuta como cliente:', error);
+    throw error;
+  }
+};
+
+/**
+ * Função inteligente para criar agendamento, detecta se o usuário é terapeuta ou cliente
+ * e usa a rota adequada para cada caso
+ */
+export const createAppointmentSmart = async (appointmentData) => {
+  try {
+    // Obter informações do usuário do localStorage
+    const userJson = localStorage.getItem('user');
+    if (!userJson) {
+      throw new Error('Usuário não encontrado no localStorage');
+    }
+    
+    const user = JSON.parse(userJson);
+    console.log('Criando agendamento para usuário:', user);
+    
+    // Detectar se o usuário é terapeuta
+    const isTherapist = user.role === 'THERAPIST';
+    
+    // Verificar se o terapeuta está tentando agendar consigo mesmo
+    const selfAppointment = isTherapist && (!appointmentData.clientId || appointmentData.selfBooking);
+    
+    console.log(`Tipo de agendamento: ${isTherapist ? 'Terapeuta' : 'Cliente'}, Auto-agendamento: ${selfAppointment}`);
+    
+    if (selfAppointment) {
+      // Usar a rota especial para terapeutas agendando para si mesmos
+      console.log('Usando rota especializada para terapeuta como cliente');
+      return await createTherapistSelfAppointment(appointmentData);
+    } else {
+      // Tentar método regular primeiro
+      try {
+        console.log('Tentando método regular de agendamento');
+        return await createAppointment(appointmentData);
+      } catch (regularError) {
+        console.error('Método regular falhou, tentando método direto:', regularError);
+        
+        // Se falhar, tentar o método direto
+        return await createAppointmentDirect(appointmentData);
+      }
+    }
+  } catch (error) {
+    console.error('Erro no agendamento inteligente:', error);
+    throw error;
+  }
 }; 

@@ -34,6 +34,17 @@ const meetingRoutes = require('./routes/meeting.routes');
 const trainingRoutes = require('./routes/training.routes');
 const transcriptionRoutes = require('./routes/transcription.routes');
 
+// Carregar explicitamente o serviço OpenAI no início
+const openaiService = require('./services/ai/openai.service');
+console.log('OpenAI Service importado explicitamente no index.js');
+
+// Verificar se o serviço foi carregado corretamente
+if (openaiService) {
+  console.log('OpenAI Service: Objeto do serviço carregado com sucesso');
+} else {
+  console.error('ERRO: Falha ao carregar o serviço OpenAI');
+}
+
 // Configuração da aplicação
 const app = express();
 const PORT = process.env.PORT || 3000;
