@@ -1,8 +1,8 @@
 import axios from 'axios';
 import { BASE_API_URL } from '../config';
 
-// EMERGENCY FIX - Forçar URL do backend correto
-const baseURL = 'https://theraconnect-prd.onrender.com/api';
+// Usar a URL da configuração que detecta automaticamente o ambiente
+const baseURL = BASE_API_URL;
 
 // Criar uma instância do axios com configuração básica
 console.log('API.JS - Criando instância do axios com baseURL:', baseURL);
