@@ -68,6 +68,30 @@ const audioUploadConfig = multer({
   }
 });
 
+// Configuração para armazenar áudio em memória (para Whisper)
+const memoryStorage = multer.memoryStorage();
+
+// Configuração para upload de áudio específica para Whisper
+const whisperUploadConfig = multer({ 
+  storage: memoryStorage, // Usar armazenamento em memória
+  limits: { fileSize: 25 * 1024 * 1024 }, // 25MB
+  fileFilter: function (req, file, cb) {
+    // Verificar tipo de arquivo
+    const allowedMimeTypes = [
+      'audio/mpeg', 'audio/mp4', 'audio/wav', 'audio/webm', 
+      'audio/ogg', 'audio/flac', 'audio/x-m4a', 'video/mp4',
+      'video/mpeg', 'video/webm'
+    ];
+    
+    if (allowedMimeTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      console.warn(`Arquivo rejeitado para Whisper: ${file.originalname}, tipo: ${file.mimetype}`);
+      cb(new Error(`Tipo de arquivo não suportado: ${file.mimetype}. Use mp3, wav, webm, ogg, flac, mp4, etc.`));
+    }
+  }
+});
+
 const router = express.Router();
 
 // Rotas públicas (sem autenticação)
@@ -251,31 +275,65 @@ const testAuthMiddleware = (req, res, next) => {
 // Rota para transcrição de áudio com a API Whisper
 router.post('/whisper/transcribe', 
   testAuthMiddleware,
-  audioUploadConfig.single('file'),
+  whisperUploadConfig.single('file'),
   async (req, res) => {
     try {
       // Verificar se um arquivo foi enviado
       if (!req.file) {
+        console.log('Nenhum arquivo recebido na requisição para Whisper');
         return res.status(400).json({
           success: false,
           error: 'Nenhum arquivo de áudio foi enviado.'
         });
       }
       
-      console.log(`Arquivo recebido: ${req.file.originalname} (${req.file.mimetype}, ${req.file.size} bytes)`);
+      // Log detalhado do arquivo recebido
+      console.log(`Arquivo recebido para Whisper: ${req.file.originalname}`);
+      console.log(`Tipo MIME: ${req.file.mimetype}`);
+      console.log(`Tamanho: ${req.file.size} bytes`);
+      console.log(`Armazenamento: ${req.file.buffer ? 'Em memória (buffer)' : 'Em disco'}`);
+      
+      // Verificar se temos um buffer (armazenamento em memória)
+      if (!req.file.buffer) {
+        console.error('Erro: Arquivo recebido, mas sem buffer (configuração incorreta do multer)');
+        return res.status(500).json({
+          success: false,
+          error: 'Erro de configuração do servidor: arquivo não disponível como buffer.'
+        });
+      }
+      
+      console.log(`Tamanho do buffer: ${req.file.buffer.length} bytes`);
+      
+      // Verificar o formato do áudio solicitado
+      const format = req.body.format || 'json';
+      const language = req.body.language || 'pt';
+      console.log(`Parâmetros de transcrição: formato=${format}, idioma=${language}`);
       
       // Processar a transcrição com OpenAI
+      console.log('Enviando áudio para transcrição via Whisper API...');
       const transcription = await openaiService.callWhisperAPI(req.file.buffer, {
-        format: 'json',
-        language: req.body.language || 'pt'
+        format,
+        language
       });
       
+      console.log('Transcrição concluída com sucesso!');
+      
+      // Verificar se temos texto na resposta
+      if (!transcription || !transcription.text) {
+        console.warn('API Whisper retornou resposta sem texto.');
+        return res.status(422).json({
+          success: false,
+          error: 'A API de transcrição não retornou texto. O áudio pode estar vazio ou com problemas.'
+        });
+      }
+      
+      // Retornar o resultado
       return res.json({
         success: true,
         text: transcription.text
       });
     } catch (error) {
-      console.error('Erro na transcrição:', error);
+      console.error('Erro na transcrição Whisper:', error);
       return res.status(500).json({
         success: false,
         error: error.message

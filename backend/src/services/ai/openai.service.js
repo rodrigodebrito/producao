@@ -218,31 +218,67 @@ const openAIService = {
     async callWhisperAPI(audioBuffer, options = {}) {
         try {
             logger.info('Iniciando transcrição de áudio com Whisper API');
+            
+            // Verificar se o buffer é válido
+            if (!audioBuffer) {
+                logger.error('Erro: audioBuffer é undefined ou null');
+                throw new Error('Buffer de áudio inválido ou não fornecido');
+            }
+            
+            if (!Buffer.isBuffer(audioBuffer)) {
+                logger.error(`Erro: O parâmetro audioBuffer não é um Buffer. Tipo: ${typeof audioBuffer}`);
+                // Tentar converter para Buffer se for possível
+                if (typeof audioBuffer === 'string') {
+                    logger.info('Tentando converter string para Buffer...');
+                    audioBuffer = Buffer.from(audioBuffer);
+                } else if (audioBuffer instanceof Uint8Array) {
+                    logger.info('Convertendo Uint8Array para Buffer...');
+                    audioBuffer = Buffer.from(audioBuffer);
+                } else {
+                    throw new Error(`Tipo de dados inválido para transcrição: ${typeof audioBuffer}`);
+                }
+            }
+            
             logger.info(`Tamanho do buffer: ${audioBuffer.length} bytes`);
+            
+            // Verificar se o buffer contém dados
+            if (audioBuffer.length === 0) {
+                logger.error('Erro: Buffer de áudio está vazio (0 bytes)');
+                throw new Error('Buffer de áudio vazio. Nenhum dado para transcrever.');
+            }
             
             const language = options.language || 'pt';
             const format = options.format || 'json';
             
-            // Configurar o modelo Whisper
-            const transcriptionOptions = {
+            logger.info(`Configurando opções de transcrição: idioma=${language}, formato=${format}`);
+            
+            // Criar um objeto FormData com o buffer e os parâmetros
+            const formData = new FormData();
+            
+            // Adicionar o arquivo como um Blob ao FormData
+            const fileData = new Blob([audioBuffer], { type: 'audio/mpeg' }); // Definir tipo MIME apropriado
+            formData.append('file', fileData, 'audio.mp3');
+            formData.append('model', 'whisper-1');
+            formData.append('language', language);
+            formData.append('response_format', format);
+            
+            logger.info('Enviando áudio para a API Whisper...');
+            
+            // Fazer a chamada API usando fetch
+            const response = await openai.audio.transcriptions.create({
                 file: audioBuffer,
                 model: 'whisper-1',
+                language: language,
                 response_format: format
-            };
+            });
             
-            // Adicionar o idioma se for especificado
-            if (language) {
-                transcriptionOptions.language = language;
-            }
-            
-            // Processar transcrição
-            logger.info('Enviando áudio para a API Whisper');
-            const response = await openai.audio.transcriptions.create(transcriptionOptions);
-            logger.info('Transcrição concluída');
+            logger.info('Transcrição concluída com sucesso');
+            logger.info(`Resposta recebida: ${JSON.stringify(response).substring(0, 200)}...`);
             
             return response;
         } catch (error) {
-            logger.error('Erro ao transcrever áudio com a API Whisper:', error);
+            logger.error(`Erro ao transcrever áudio com a API Whisper: ${error.message}`);
+            logger.error(`Stack trace: ${error.stack}`);
             throw new Error(`Falha na transcrição com Whisper: ${error.message}`);
         }
     },
