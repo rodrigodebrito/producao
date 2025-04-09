@@ -1737,8 +1737,28 @@ Ocorreu um erro inesperado durante a geração do relatório.
         this.sessionId = this.extractSessionId();
       }
       
-      // Verificar se temos um sessionId válido
-      if (!this.sessionId || this.sessionId.length < 5 || this.sessionId.startsWith('fallback_') || this.sessionId.startsWith('session_') || this.sessionId.startsWith('temp_') || this.sessionId.startsWith('error_')) {
+      // Verificar se estamos na página de sessão válida
+      const isSessionPage = window.location.pathname.includes('/session/');
+      const pageSessionId = isSessionPage ? window.location.pathname.split('/session/')[1] : null;
+      
+      // Se estamos na página de sessão mas com ID temporário, usar o ID da URL
+      if (isSessionPage && pageSessionId && this.sessionId.startsWith('temp_')) {
+        console.log('HybridAI: Substituindo ID temporário pelo ID da URL:', pageSessionId);
+        this.sessionId = pageSessionId;
+      }
+      
+      // Verificação mais flexível considerando o contexto
+      const invalidSessionId = 
+        !this.sessionId || 
+        this.sessionId.length < 5 || 
+        this.sessionId.startsWith('fallback_') || 
+        this.sessionId.startsWith('session_') || 
+        (this.sessionId.startsWith('error_'));
+      
+      // Permitir IDs temporários apenas se não estivermos em uma página de sessão válida
+      const isTemporaryId = this.sessionId.startsWith('temp_') && !isSessionPage;
+      
+      if (invalidSessionId || isTemporaryId) {
         console.warn('HybridAI: ID da sessão inválido ou genérico, transcrição não será salva', this.sessionId);
         window.dispatchEvent(new CustomEvent('hybridai-error', {
           detail: { 

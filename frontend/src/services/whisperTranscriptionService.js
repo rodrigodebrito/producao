@@ -70,29 +70,37 @@ class WhisperTranscriptionService {
   extractSessionId() {
     try {
       // Tentar extrair da URL
-      if (window.location.pathname) {
-        const matches = window.location.pathname.match(/\/session\/([^\/]+)/);
-        if (matches && matches[1]) {
-          return matches[1];
-        }
+      const url = window.location.href;
+      console.log('Whisper: Extraindo sessionId de URL:', url);
+      
+      // 1. Verificar padrão /session/{id} (padrão principal)
+      const sessionMatch = url.match(/\/session\/([a-zA-Z0-9_-]+)/);
+      if (sessionMatch && sessionMatch[1]) {
+        console.log('Whisper: SessionId extraído da URL (padrão /session/):', sessionMatch[1]);
+        return sessionMatch[1];
       }
       
-      // Tentar extrair do Daily.co room name (formato room-123456)
-      if (window.currentCall && window.currentCall.properties) {
-        const roomName = window.currentCall.properties.room_name;
-        if (roomName) {
-          const parts = roomName.split('-');
-          if (parts.length > 1) {
-            return parts[1];
-          }
-          return roomName;
-        }
+      // 2. Verificar padrão de UUID/GUID na URL
+      const uuidMatch = url.match(/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/i);
+      if (uuidMatch && uuidMatch[0]) {
+        console.log('Whisper: SessionId extraído da URL (formato UUID):', uuidMatch[0]);
+        return uuidMatch[0];
       }
       
-      return null;
+      // 3. Obter do localStorage ou sessionStorage
+      const savedSessionId = localStorage.getItem('currentSessionId') || sessionStorage.getItem('currentSessionId');
+      if (savedSessionId) {
+        console.log('Whisper: SessionId obtido do storage:', savedSessionId);
+        return savedSessionId;
+      }
+      
+      // 4. Gerar ID temporário com mais informação
+      const tempId = `temp_${Date.now()}`;
+      console.log('Whisper: Usando ID temporário:', tempId);
+      return tempId;
     } catch (e) {
-      console.error('Erro ao extrair sessionId:', e);
-      return null;
+      console.error('Whisper: Erro ao extrair sessionId:', e);
+      return `error_${Date.now()}`;
     }
   }
 

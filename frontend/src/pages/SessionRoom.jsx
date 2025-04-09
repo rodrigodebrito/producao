@@ -302,6 +302,10 @@ const SessionRoom = () => {
         setSession(data);
         document.title = `${data.title || 'Sessão'} - TerapiaConect`;
         setError(null);
+        
+        // Salvar o sessionId no localStorage para compartilhar com serviços de IA
+        localStorage.setItem('currentSessionId', sessionId);
+        console.log('SessionId armazenado para uso pelos serviços de IA:', sessionId);
       } catch (err) {
         console.error('Erro ao carregar sessão:', err);
         // Em vez de apenas mostrar erro, criar uma sessão temporária para permitir a videochamada
@@ -466,13 +470,12 @@ const SessionRoom = () => {
   const renderMeeting = () => {
     if (!sessionId) return null;
     
-    // Usar o ID da sala específico que sabemos que funciona
-    const workingRoomName = "44568bf2-37cb-4";
-    console.log('Usando sala específica que sabemos funcionar:', workingRoomName);
+    // Usar o ID da sessão real da URL em vez de um valor fixo
+    console.log('Usando sessionId real para a sala:', sessionId);
     
     return (
       <FallbackMeeting
-        roomName={workingRoomName}
+        roomName={sessionId}
         userName={session?.therapist?.name || session?.client?.name || 'Usuário'}
         floating={isPipMode}
         onPipModeChange={handlePipModeChange}
