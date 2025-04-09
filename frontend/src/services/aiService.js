@@ -1,9 +1,24 @@
 import api from './api';
 
+// Configuração para rotas da API com prefixo
+const API_BASE = '/api'; // Remover este prefixo se o backend já o adiciona
+const API_VERSION = '';  // Para versões futuras
+
 /**
  * Serviço para interações com a IA
  */
 const aiService = {
+  // Lista de rotas disponíveis para facilitar manutenção futura
+  routes: {
+    suggest: '/ai/suggest',
+    transcript: '/ai/transcript',
+    transcriptSummary: '/ai/transcript-summary',
+    openaiCheck: '/ai/openai-check',
+    analyzeSession: '/ai/analyze-session',
+    analyzeSessionAdvanced: '/ai/analyze-session/advanced',
+    report: '/ai/report'
+  },
+
   /**
    * Enviar transcrição da sessão para o servidor
    * @param {string} sessionId - ID da sessão
@@ -38,7 +53,7 @@ const aiService = {
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
         console.log(`aiService: Tentativa ${attempt} de salvar transcrição`);
-        const response = await api.post('/ai/transcript', payload);
+        const response = await api.post(aiService.routes.transcript, payload);
         console.log('aiService: Transcrição salva com sucesso');
         return response.data;
       } catch (error) {
@@ -82,8 +97,8 @@ const aiService = {
       
       // Usar o endpoint correto com base no tipo de análise
       const endpoint = useAdvancedAnalysis 
-        ? '/ai/analyze-session/advanced' 
-        : '/ai/analyze-session';
+        ? aiService.routes.analyzeSessionAdvanced
+        : aiService.routes.analyzeSession;
       
       const response = await api.post(endpoint, payload);
       
@@ -140,13 +155,13 @@ const aiService = {
       
       // Verificar se a API OpenAI está configurada
       try {
-        const openaiCheck = await api.get('/ai/openai-check');
+        const openaiCheck = await api.get(aiService.routes.openaiCheck);
         console.log('AI Service: Status da API OpenAI:', openaiCheck.data);
       } catch (openaiError) {
         console.warn('AI Service: Erro ao verificar API OpenAI:', openaiError);
       }
       
-      const response = await api.post('/ai/suggest', payload);
+      const response = await api.post(aiService.routes.suggest, payload);
       
       console.log('AI Service: Resposta recebida:', response.data);
       
@@ -218,8 +233,8 @@ const aiService = {
         : { sessionId };
       console.log(`aiService: Enviando payload para API:`, payload);
       
-      // Fazer chamada à API - remover o prefixo '/api'
-      const response = await api.post('/ai/report', payload);
+      // Fazer chamada à API usando a rota definida no objeto routes
+      const response = await api.post(aiService.routes.report, payload);
       
       // Verificar e logar a resposta
       console.log(`aiService: Resposta da API:`, response);
