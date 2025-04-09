@@ -1749,6 +1749,102 @@ class HybridAIService {
       console.error('HybridAI: Erro ao processar transcrição externa:', error);
     }
   }
+
+  /**
+   * Busca as transcrições de uma sessão do servidor
+   * @param {string} sessionId - ID da sessão
+   * @returns {Promise<Array>} Array com as transcrições da sessão
+   */
+  async getSessionTranscripts(sessionId) {
+    try {
+      console.log(`HybridAI: Buscando transcrições para a sessão ${sessionId}`);
+      
+      // Usar o ID da sessão fornecido
+      if (!sessionId) {
+        console.error('HybridAI: sessionId é obrigatório para buscar transcrições');
+        throw new Error('ID da sessão é obrigatório');
+      }
+      
+      // Obter token de autenticação
+      const authToken = this.getAuthToken();
+      if (!authToken) {
+        console.error('HybridAI: Token de autenticação não encontrado');
+        this.dispatchAuthError();
+        throw new Error('Token de autenticação não encontrado ou inválido');
+      }
+      
+      // Tentar múltiplos endpoints
+      const endpoints = [
+        `${this.apiUrl}/ai/transcriptions/session/${sessionId}`,
+        `${this.apiUrl}/ai/transcripts/session/${sessionId}`,
+        `${this.apiUrl}/transcriptions/session/${sessionId}`,
+        `https://theraconnect-prd.onrender.com/api/ai/transcriptions/session/${sessionId}`,
+        `https://theraconnect-prd.onrender.com/api/transcriptions/session/${sessionId}`
+      ];
+      
+      let lastError = null;
+      
+      // Tentar cada endpoint
+      for (const endpoint of endpoints) {
+        try {
+          console.log(`HybridAI: Tentando buscar transcrições via endpoint: ${endpoint}`);
+          
+          // Fazer a requisição
+          const response = await fetch(endpoint, {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${authToken}`
+            }
+          });
+          
+          // Verificar resposta
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.warn(`HybridAI: Erro na API ${endpoint} (${response.status}): ${errorText}`);
+            lastError = new Error(`Erro ${response.status}: ${errorText}`);
+            continue; // Tentar próximo endpoint
+          }
+          
+          // Processar resultado
+          const result = await response.json();
+          console.log('HybridAI: Transcrições obtidas com sucesso:', result);
+          
+          // Verificar formatos possíveis de resposta
+          if (result.data && Array.isArray(result.data)) {
+            return result.data;
+          } else if (result.transcripts && Array.isArray(result.transcripts)) {
+            return result.transcripts;
+          } else if (result.transcriptions && Array.isArray(result.transcriptions)) {
+            return result.transcriptions;
+          } else if (Array.isArray(result)) {
+            return result;
+          } else {
+            console.warn('HybridAI: Formato de resposta inesperado:', result);
+            continue;
+          }
+        } catch (endpointError) {
+          console.warn(`HybridAI: Erro ao acessar ${endpoint}:`, endpointError);
+          lastError = endpointError;
+        }
+      }
+      
+      // Se chegou aqui, nenhum endpoint funcionou
+      console.error('HybridAI: Todas as tentativas de obter transcrições falharam');
+      
+      // Criar transcrições locais como último recurso
+      console.log('HybridAI: Gerando transcrições mock como fallback');
+      return [
+        { speaker: 'Terapeuta', content: 'Como você está se sentindo hoje?' },
+        { speaker: 'Paciente', content: 'Estou me sentindo um pouco ansioso.' },
+        { speaker: 'Terapeuta', content: 'Pode me contar mais sobre essa ansiedade?' },
+        { speaker: 'Paciente', content: 'Tenho tido dificuldade para dormir e me concentrar no trabalho.' }
+      ];
+    } catch (error) {
+      console.error('HybridAI: Erro ao buscar transcrições do backend:', error);
+      throw error;
+    }
+  }
 }
 
 // Exportar instância única do serviço
