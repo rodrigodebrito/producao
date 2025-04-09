@@ -86,7 +86,13 @@ const SessionRoom = () => {
         ? 'http://localhost:3000'
         : window.location.origin;
       
-      console.log('Conectando socket.io ao servidor:', socketURL);
+      console.log(`🔌 Socket.IO: Iniciando conexão com ${socketURL}`);
+      console.log(`🔌 Socket.IO: Configuração`, {
+        transports: ['polling', 'websocket'],
+        reconnection: true,
+        reconnectionAttempts: 10,
+        path: '/socket.io'
+      });
       
       // Conectar ao servidor de sockets
       const socketInstance = io(socketURL, {
@@ -99,27 +105,62 @@ const SessionRoom = () => {
         path: '/socket.io' // Caminho padrão para socket.io
       });
       
+      // Monitor all socket events for debugging
+      socketInstance.onAny((event, ...args) => {
+        console.log(`🔌 Socket.IO: Evento recebido - "${event}"`, args);
+      });
+      
       // Configurar listeners de eventos do socket
       socketInstance.on('connect', () => {
-        console.log('Conectado ao servidor de socket.io com ID:', socketInstance.id);
+        console.log(`✅ Socket.IO: Conectado com sucesso! ID: ${socketInstance.id}`);
+        console.log(`📡 Socket.IO: URL do servidor: ${socketInstance.io.uri}`);
+        console.log(`📡 Socket.IO: Transporte ativo: ${socketInstance.io.engine.transport.name}`);
+        
         // Entrar na sala específica da sessão
+        console.log(`🔑 Socket.IO: Entrando na sala da sessão ${sessionId}`);
         socketInstance.emit('join-session', { sessionId });
         
         toast.success('Conexão em tempo real estabelecida');
       });
       
+      socketInstance.on('disconnect', (reason) => {
+        console.log(`❌ Socket.IO: Desconectado - Motivo: ${reason}`);
+        if (reason === 'io server disconnect') {
+          // O servidor desconectou o cliente
+          console.log(`🔄 Socket.IO: Tentando reconectar manualmente...`);
+          socketInstance.connect();
+        }
+        // Se for io client disconnect, o próprio cliente desconectou
+      });
+      
       socketInstance.on('connect_error', (error) => {
-        console.error('Erro de conexão com socket.io:', error);
+        console.error(`❌ Socket.IO: Erro de conexão:`, error);
+        console.log(`📝 Socket.IO: Detalhes - ${error.message}`);
+        console.log(`🌐 Socket.IO: Tentando conectar a: ${socketURL}, Caminho: ${socketInstance.io.opts.path}`);
         toast.warning('Tentando estabelecer conexão em tempo real...');
       });
       
       socketInstance.on('connect_timeout', (timeout) => {
-        console.error('Timeout na conexão socket.io:', timeout);
+        console.error(`⏱️ Socket.IO: Timeout na conexão: ${timeout}ms`);
       });
       
       socketInstance.io.on('reconnect', (attempt) => {
-        console.log(`Reconectado ao servidor após ${attempt} tentativas`);
+        console.log(`🔄 Socket.IO: Reconectado após ${attempt} tentativas`);
+        console.log(`🔑 Socket.IO: Reentrando na sala da sessão ${sessionId}`);
         socketInstance.emit('join-session', { sessionId });
+      });
+      
+      socketInstance.io.on('reconnect_attempt', (attempt) => {
+        console.log(`🔄 Socket.IO: Tentativa de reconexão #${attempt}`);
+      });
+      
+      socketInstance.io.on('reconnect_error', (error) => {
+        console.error(`❌ Socket.IO: Erro na reconexão:`, error);
+      });
+      
+      socketInstance.io.on('reconnect_failed', () => {
+        console.error(`❌ Socket.IO: Falha na reconexão após todas tentativas`);
+        toast.error('Não foi possível reconectar ao servidor. Tente atualizar a página.');
       });
       
       // Armazenar a instância do socket no estado

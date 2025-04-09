@@ -1,4 +1,7 @@
 import api from './api';
+import axios from 'axios';
+
+const BASE_API_URL = 'https://theraconnect-prd.onrender.com';
 
 // Obter agendamentos do terapeuta
 export const getTherapistAppointments = async (therapistId) => {
@@ -220,66 +223,44 @@ export const cancelAppointment = async (id) => {
   }
 };
 
-// Criar um novo agendamento usando abordagem direta (bypass)
+// Criar um novo agendamento diretamente via API
 export const createAppointmentDirect = async (appointmentData) => {
   try {
-    console.log('Criando agendamento (método direto) com dados:', appointmentData);
+    console.log(`🚀 DIRECT APPOINTMENT: Iniciando método createAppointmentDirect`);
+    console.log(`📦 Dados do agendamento: ${JSON.stringify(appointmentData, null, 2)}`);
     
-    // Garantir que temos o token antes de fazer a requisição
-    const token = localStorage.getItem('token');
-    if (!token) {
-      console.error('Tentativa de criar agendamento sem token de autenticação');
-      throw new Error('Usuário não autenticado. Por favor, faça login novamente.');
-    }
+    // Usar a URL base definida no início do arquivo
+    const apiUrl = BASE_API_URL;
+    console.log(`🌐 URL da API: ${apiUrl}`);
     
-    // Formatar os dados do appointment para o formato que o backend espera
-    const formattedData = {
-      therapistId: appointmentData.therapistId,
-      clientId: appointmentData.clientId,
-      date: appointmentData.date,
-      time: appointmentData.time,
-      toolId: appointmentData.toolId,
-      mode: appointmentData.mode || 'ONLINE',
-      status: 'SCHEDULED',
-      price: appointmentData.price || 0,
-      duration: appointmentData.duration || 50
-    };
+    console.log(`📋 Informações críticas do agendamento:
+      📅 Data: ${appointmentData.date}
+      🕒 Hora: ${appointmentData.time}
+      👨‍⚕️ ID do Terapeuta: ${appointmentData.therapistId}
+      👤 ID do Cliente: ${appointmentData.clientId || appointmentData.userId}
+      🔄 Auto-agendamento: ${appointmentData.selfBooking ? 'Sim' : 'Não'}
+    `);
     
-    console.log('Tentando criar agendamento usando bypass...');
+    console.log(`📤 Enviando requisição POST...`);
+    const result = await axios.post(`${apiUrl}/api/appointments`, appointmentData, {
+      headers: { 'Content-Type': 'application/json' }
+    });
     
-    // Tentar diferentes rotas, usando o objeto api configurado
-    try {
-      // Primeira tentativa: rota padrão de agendamentos
-      console.log('Tentativa 1: rota padrão de agendamentos');
-      const response = await api.post('/appointments/bypass', formattedData);
-      console.log('Agendamento criado com sucesso (tentativa 1):', response.data);
-      return response.data;
-    } catch (error1) {
-      console.warn('Falha na primeira tentativa:', error1.message);
-      
-      try {
-        // Segunda tentativa: via terapeuta
-        console.log('Tentativa 2: via terapeuta');
-        const response = await api.post(`/therapists/${appointmentData.therapistId}/appointments`, formattedData);
-        console.log('Agendamento criado com sucesso (tentativa 2):', response.data);
-        return response.data;
-      } catch (error2) {
-        console.warn('Falha na segunda tentativa:', error2.message);
-        
-        try {
-          // Terceira tentativa: via usuário
-          console.log('Tentativa 3: via usuário');
-          const response = await api.post('/users/appointments', formattedData);
-          console.log('Agendamento criado com sucesso (tentativa 3):', response.data);
-          return response.data;
-        } catch (error3) {
-          console.error('Todas as tentativas falharam');
-          throw new Error('Não foi possível criar o agendamento após múltiplas tentativas');
-        }
-      }
-    }
+    console.log(`✅ Resposta recebida com sucesso:`, result.data);
+    return result.data;
   } catch (error) {
-    console.error('Erro ao criar agendamento (método direto):', error);
+    console.error(`❌ ERRO ao criar agendamento (método direto):`, error);
+    if (error.response) {
+      console.error(`📊 Detalhes do erro:
+        Status: ${error.response.status}
+        Data: ${JSON.stringify(error.response.data, null, 2)}
+        Headers: ${JSON.stringify(error.response.headers, null, 2)}
+      `);
+    } else if (error.request) {
+      console.error(`🌐 Problema de rede - Requisição enviada mas sem resposta`);
+    } else {
+      console.error(`⚠️ Erro ao configurar requisição: ${error.message}`);
+    }
     throw error;
   }
 };
@@ -334,20 +315,21 @@ export const createTherapistSelfAppointment = async (appointmentData) => {
   }
 };
 
-/**
- * Função inteligente para criar agendamento, detecta se o usuário é terapeuta ou cliente
- * e usa a rota adequada para cada caso
- */
+// Criar um novo agendamento usando abordagem inteligente
 export const createAppointmentSmart = async (appointmentData) => {
   try {
+    console.log(`📊 SMART APPOINTMENT: Iniciando criação de agendamento inteligente`);
+    console.log(`📦 Dados do agendamento:`, appointmentData);
+    
     // Obter informações do usuário do localStorage
     const userJson = localStorage.getItem('user');
     if (!userJson) {
+      console.error(`❌ ERRO: Usuário não encontrado no localStorage`);
       throw new Error('Usuário não encontrado no localStorage');
     }
     
     const user = JSON.parse(userJson);
-    console.log('Criando agendamento para usuário:', user);
+    console.log(`👤 Usuário logado: ${user.name} (${user.email}) - Role: ${user.role}`);
     
     // Detectar se o usuário é terapeuta
     const isTherapist = user.role === 'THERAPIST';
@@ -358,35 +340,59 @@ export const createAppointmentSmart = async (appointmentData) => {
     // Garantir que a flag selfBooking esteja definida no objeto de dados
     if (selfAppointment) {
       appointmentData.selfBooking = true;
+      console.log(`🔄 Flag selfBooking definida como TRUE`);
     }
     
-    console.log(`Tipo de agendamento: ${isTherapist ? 'Terapeuta' : 'Cliente'}, Auto-agendamento: ${selfAppointment}`);
+    console.log(`🏷️ Tipo de agendamento: ${isTherapist ? 'TERAPEUTA' : 'CLIENTE'}, Auto-agendamento: ${selfAppointment ? 'SIM' : 'NÃO'}`);
     
     if (selfAppointment) {
       // Adicionar o ID do terapeuta como clientId se não estiver definido
       if (!appointmentData.clientId && user.id) {
-        console.log('Adicionando ID do terapeuta como clientId para auto-agendamento');
+        console.log(`➕ Adicionando ID do terapeuta (${user.id}) como userId para auto-agendamento`);
         appointmentData.userId = user.id;
       }
       
       // Usar a rota especial para terapeutas agendando para si mesmos
-      console.log('Usando rota especializada para terapeuta como cliente');
+      console.log(`🔀 ROTA: Usando fluxo especializado para terapeuta como cliente`);
       try {
-        return await createTherapistSelfAppointment(appointmentData);
+        console.log(`🔄 Tentativa 1: createTherapistSelfAppointment`);
+        const result = await createTherapistSelfAppointment(appointmentData);
+        console.log(`✅ Sucesso no auto-agendamento (rota especializada): ID ${result.id}`);
+        return result;
       } catch (selfAppointmentError) {
-        console.error('Método especializado falhou, tentando método direto:', selfAppointmentError);
-        return await createAppointmentDirect({...appointmentData, selfBooking: true});
+        console.error(`❌ Falha na tentativa 1:`, selfAppointmentError);
+        console.log(`🔄 Tentativa 2: createAppointmentDirect com selfBooking=true`);
+        
+        try {
+          const result = await createAppointmentDirect({...appointmentData, selfBooking: true});
+          console.log(`✅ Sucesso no auto-agendamento (rota direta): ID ${result.id}`);
+          return result;
+        } catch (directError) {
+          console.error(`❌ Falha na tentativa 2:`, directError);
+          throw new Error(`Falha nas rotas de auto-agendamento: ${directError.message}`);
+        }
       }
     } else {
       // Tentar método regular primeiro
       try {
-        console.log('Tentando método regular de agendamento');
-        return await createAppointment(appointmentData);
+        console.log(`🔀 ROTA: Usando fluxo regular para cliente`);
+        console.log(`🔄 Tentativa 1: createAppointment (método padrão)`);
+        const result = await createAppointment(appointmentData);
+        console.log(`✅ Sucesso no agendamento (método padrão): ID ${result.id}`);
+        return result;
       } catch (regularError) {
-        console.error('Método regular falhou, tentando método direto:', regularError);
+        console.error(`❌ Falha na tentativa 1:`, regularError);
+        console.log(`🔄 Tentativa 2: createAppointmentDirect (método direto)`);
         
-        // Se falhar, tentar o método direto
-        return await createAppointmentDirect(appointmentData);
+        try {
+          // Se falhar, tentar o método direto
+          const result = await createAppointmentDirect(appointmentData);
+          console.log(`✅ Sucesso no agendamento (método direto): ID ${result.id}`);
+          return result;
+        } catch (directError) {
+          console.error(`❌ Falha na tentativa 2:`, directError);
+          throw new Error(`Falha em todas as rotas de agendamento: ${directError.message}`);
+        }
       }
     }
   } catch (error) {

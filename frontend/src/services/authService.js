@@ -9,8 +9,10 @@ const authService = {
       console.log(`authService: Tentando login com ${email}`);
       console.log('authService: URL base usada:', api.defaults.baseURL);
       
-      // Como baseURL já inclui '/api', usar apenas '/auth/login'
-      const response = await api.post('/auth/login', { email, password });
+      // Rota correta: o backend define a rota como /api/auth (não /api/auth/login)
+      console.log('authService: Enviando requisição para:', api.defaults.baseURL + '/auth');
+      
+      const response = await api.post('/auth', { email, password });
       
       console.log('authService: Resposta do login:', response.data);
       
@@ -18,11 +20,25 @@ const authService = {
         // Salvar token no localStorage
         localStorage.setItem('token', response.data.token);
         localStorage.setItem('user', JSON.stringify(response.data.user));
+        console.log('authService: Token e dados do usuário salvos com sucesso');
+      } else {
+        console.warn('authService: Resposta não contém token ou dados do usuário:', response.data);
       }
       
       return response.data;
     } catch (error) {
       console.error('Erro de login:', error);
+      if (error.response) {
+        console.error('authService: Detalhes do erro:', {
+          status: error.response.status,
+          data: error.response.data,
+          headers: error.response.headers
+        });
+      } else if (error.request) {
+        console.error('authService: Requisição enviada mas sem resposta:', error.request);
+      } else {
+        console.error('authService: Erro ao configurar requisição:', error.message);
+      }
       throw error;
     }
   },
