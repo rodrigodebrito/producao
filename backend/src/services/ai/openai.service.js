@@ -252,25 +252,30 @@ const openAIService = {
             
             logger.info(`Configurando opções de transcrição: idioma=${language}, formato=${format}`);
             
-            // Criar um objeto FormData com o buffer e os parâmetros
-            const formData = new FormData();
-            
-            // Adicionar o arquivo como um Blob ao FormData
-            const fileData = new Blob([audioBuffer], { type: 'audio/mpeg' }); // Definir tipo MIME apropriado
-            formData.append('file', fileData, 'audio.mp3');
-            formData.append('model', 'whisper-1');
-            formData.append('language', language);
-            formData.append('response_format', format);
+            // Criar um arquivo temporário na memória para o buffer
+            // A biblioteca OpenAI espera um objeto com nome e dados do tipo File ou Blob
+            const audioFile = new File(
+                [audioBuffer], 
+                "audio.mp3", 
+                { type: "audio/mpeg" }
+            );
             
             logger.info('Enviando áudio para a API Whisper...');
             
-            // Fazer a chamada API usando fetch
-            const response = await openai.audio.transcriptions.create({
-                file: audioBuffer,
+            // Configurar a chamada para a API Whisper usando a biblioteca oficial
+            const transcriptionOptions = {
+                file: audioFile,
                 model: 'whisper-1',
-                language: language,
                 response_format: format
-            });
+            };
+            
+            // Adicionar o idioma se for especificado
+            if (language) {
+                transcriptionOptions.language = language;
+            }
+            
+            // Fazer a chamada API
+            const response = await openai.audio.transcriptions.create(transcriptionOptions);
             
             logger.info('Transcrição concluída com sucesso');
             logger.info(`Resposta recebida: ${JSON.stringify(response).substring(0, 200)}...`);
