@@ -851,334 +851,325 @@ class HybridAIService {
     }
   }
 
-  // Analisar texto com IA
-  async analyzeText(text) {
+  /**
+   * Analisa o texto da transcrição e gera insights para o terapeuta
+   * @param {string} text - Texto da transcrição para analisar
+   * @param {string} [providedSessionId] - ID da sessão (opcional)
+   * @returns {Promise<object>} Resultado da análise
+   */
+  async analyzeText(text, providedSessionId = null) {
     try {
-      if (!text || text.trim().length < 10) {
-        console.warn('HybridAI: Texto insuficiente para análise');
-        return { 
-          type: 'analysis',
-          error: 'Texto insuficiente para análise',
-          analysis: 'É necessário mais conteúdo na sessão para realizar uma análise útil.',
-          content: 'Continue a conversa para obter insights baseados na interação.'
+      console.log(`HybridAI: Iniciando análise de texto (${text?.length || 0} caracteres)`);
+      
+      // Usar o sessionId fornecido ou buscar o atual se não for fornecido
+      const effectiveSessionId = providedSessionId || this.sessionId || this.extractSessionId();
+      console.log(`HybridAI: Usando sessionId para análise: ${effectiveSessionId}`);
+      
+      // Atualizar o sessionId interno se fornecido um novo
+      if (providedSessionId && providedSessionId !== this.sessionId) {
+        this.sessionId = providedSessionId;
+        console.log(`HybridAI: SessionId atualizado: ${this.sessionId}`);
+      }
+      
+      // Verificar URL
+      const apiUrl = `${this.apiUrl}/ai/analyze-session`;
+      console.log(`HybridAI: Enviando análise para: ${apiUrl}`);
+      
+      // Verificar se temos texto
+      if (!text || text.trim().length === 0) {
+        console.warn('HybridAI: Texto vazio para análise');
+        return {
+          analysis: 'Não há texto para analisar.',
+          content: 'Inicie a gravação ou continue a conversa para gerar texto para análise.'
         };
       }
       
-      // Obter ID da sessão da URL
-      const sessionId = this.extractSessionId();
-      
-      // Verificar se temos um ID válido
-      if (!sessionId || sessionId.length > 50) {
-        console.error('HybridAI: ID de sessão inválido para análise:', sessionId);
-        return { 
-          type: 'analysis',
-          error: 'ID de sessão inválido',
-          analysis: 'Não foi possível identificar corretamente a sessão atual.',
-          content: 'Recarregue a página ou verifique a URL da sessão.'
-        };
-      }
-      
-      console.log(`HybridAI: Analisando texto para sessão ${sessionId}`);
-      
-      // Enviar para o servidor para análise
-      let result;
-      try {
-        result = await aiService.analyzeSession(sessionId, text);
-        console.log('HybridAI: Resultado da análise recebido:', result);
-      } catch (apiError) {
-        console.error('HybridAI: Erro na chamada da API:', apiError);
-        // Criar resposta de fallback
-        result = {
-          type: 'analysis',
-          error: 'Falha na comunicação com o servidor',
-          message: apiError.message,
-          analysis: 'Não foi possível analisar a sessão atual devido a um problema técnico.',
-          content: 'O servidor está temporariamente indisponível.'
-        };
-      }
-      
-      // Verificar se o resultado contém dados
-      if (!result || (Object.keys(result).length === 0)) {
-        console.warn('HybridAI: Resultado vazio ou inválido recebido');
-        result = {
-          type: 'analysis',
-          analysis: 'Não foi possível identificar padrões específicos neste momento.',
-          content: 'Continue a sessão para permitir uma análise mais profunda.'
-        };
-      }
-      
-      // Garantir que o tipo está definido
-      if (!result.type) {
-        result.type = 'analysis';
-      }
-      
-      // Garantir que há conteúdo de análise
-      if (!result.analysis && !result.content && !result.error) {
-        // Se temos alguma resposta do servidor, mas sem análise específica
-        if (result.data && result.data.analysis) {
-          result.analysis = result.data.analysis;
-        } else {
-          result.analysis = 'Baseado na conversa atual, não foram identificados padrões específicos que necessitem de atenção.';
-          result.content = 'A sessão está progredindo sem aspectos que exijam intervenção imediata.';
+      // Verificar se temos sessionId
+      if (!effectiveSessionId) {
+        console.warn('HybridAI: SessionId não definido para análise');
+        // Tentar extrair novamente
+        const extractedId = this.extractSessionId();
+        console.log(`HybridAI: Tentativa de extrair sessionId: ${extractedId}`);
+        if (!extractedId) {
+          console.error('HybridAI: Não foi possível obter sessionId');
         }
       }
       
-      return result;
+      // Preparar payload
+      const payload = {
+        sessionId: effectiveSessionId || 'session-' + Date.now(),
+        transcript: text,
+        timestamp: new Date().toISOString()
+      };
+      
+      console.log(`HybridAI: Payload para análise: sessionId=${payload.sessionId}, texto=${text.length} caracteres`);
+      
+      // Preparar headers
+      const token = this.getAuthToken();
+      const headers = {
+        'Content-Type': 'application/json'
+      };
+      
+      // Adicionar token de autenticação se disponível
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      } else {
+        console.warn('HybridAI: Token de autenticação não disponível');
+      }
+      
+      // Fazer requisição
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload)
+      });
+      
+      // Verificar resposta
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`HybridAI: Erro na API de análise (${response.status}): ${errorText}`);
+        throw new Error(`Erro na API (${response.status}): ${errorText}`);
+      }
+      
+      // Processar resultado
+      const result = await response.json();
+      console.log('HybridAI: Resposta de análise recebida:', result);
+      
+      // Garantir formato
+      const formattedResult = {
+        ...result,
+        type: 'analysis',
+        analysis: result.analysis || result.content || (result.data && result.data.analysis)
+      };
+      
+      return formattedResult;
     } catch (error) {
       console.error('HybridAI: Erro ao analisar texto:', error);
-      return { 
-        type: 'analysis', 
-        error: 'Erro ao analisar texto', 
+      return {
+        error: 'Erro na análise',
         message: error.message,
-        analysis: 'Ocorreu um erro ao processar a análise da sessão.',
-        content: 'Tente novamente em alguns instantes.'
+        analysis: 'Ocorreu um erro ao processar a análise.',
+        content: 'Por favor, tente novamente em alguns instantes.'
       };
     }
   }
-  
-  // Gerar sugestões
-  async generateSuggestions(text) {
+
+  /**
+   * Gera sugestões baseadas na transcrição
+   * @param {string} text - Texto da transcrição
+   * @param {string} [sessionId] - ID da sessão (opcional)
+   * @returns {Promise<object>} Resultado com sugestões
+   */
+  async generateSuggestions(text, providedSessionId = null) {
     try {
-      if (!text || text.trim().length < 10) {
-        console.warn('HybridAI: Texto insuficiente para sugestões');
-        return { 
-          type: 'suggestions',
-          error: 'Texto insuficiente para sugestões',
-          suggestions: ['Aguarde até que haja mais conteúdo na sessão.'],
-          content: 'É necessário mais conteúdo na sessão para gerar sugestões úteis.'
+      console.log(`HybridAI: Iniciando geração de sugestões (${text.length} caracteres)`);
+      
+      // Usar o sessionId fornecido ou buscar o atual se não for fornecido
+      const effectiveSessionId = providedSessionId || this.sessionId || this.extractSessionId();
+      console.log(`HybridAI: Usando sessionId para sugestões: ${effectiveSessionId}`);
+      
+      // Atualizar o sessionId interno se fornecido um novo
+      if (providedSessionId && providedSessionId !== this.sessionId) {
+        this.sessionId = providedSessionId;
+        console.log(`HybridAI: SessionId atualizado: ${this.sessionId}`);
+      }
+      
+      // Preparar dados para enviar à API
+      const apiUrl = `${this.apiUrl}/ai/suggest`;
+      console.log(`HybridAI: Enviando sugestões para: ${apiUrl}`);
+      
+      const payload = {
+        sessionId: effectiveSessionId,
+        transcript: text,
+        timestamp: new Date().toISOString()
+      };
+      
+      // Log detalhado para debug
+      console.log('HybridAI: Enviando payload para sugestões:', {
+        sessionId: effectiveSessionId,
+        textLength: text.length,
+        apiUrl
+      });
+      
+      const headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.getAuthToken()}`
+      };
+      
+      // Fazer a requisição para a API
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload)
+      });
+      
+      if (!response.ok) {
+        // Melhor tratamento de erros de API
+        const errorText = await response.text();
+        console.error(`HybridAI: Erro na API de sugestões (${response.status}): ${errorText}`);
+        
+        // Tentar extrair detalhes do erro
+        let errorDetails;
+        try {
+          errorDetails = JSON.parse(errorText);
+        } catch (e) {
+          errorDetails = { message: errorText };
+        }
+        
+        throw new Error(`Erro ${response.status}: ${errorDetails.message || errorText}`);
+      }
+      
+      // Processar a resposta
+      const result = await response.json();
+      console.log('HybridAI: Resposta de sugestões:', result);
+      
+      // Garantir um resultado com propriedades básicas
+      if (!result) {
+        console.warn('HybridAI: Resposta de sugestões vazia');
+        return {
+          suggestions: ['Não foi possível gerar sugestões neste momento.'],
+          content: 'Tente novamente mais tarde.'
         };
       }
       
-      // Obter ID da sessão da URL
-      const sessionId = this.extractSessionId();
-      
-      // Verificar se temos um ID válido
-      if (!sessionId || sessionId.length > 50) {
-        console.error('HybridAI: ID de sessão inválido para sugestões:', sessionId);
-        return { 
-          type: 'suggestions',
-          error: 'ID de sessão inválido',
-          suggestions: ['Não foi possível identificar corretamente a sessão atual.'],
-          content: 'Recarregue a página ou verifique a URL da sessão.'
-        };
-      }
-      
-      console.log(`HybridAI: Gerando sugestões para sessão ${sessionId}`);
-      
-      // Enviar para o servidor para sugestões
-      let result;
-      try {
-        result = await aiService.generateSuggestions(sessionId, text);
-        console.log('HybridAI: Resultado das sugestões recebido:', result);
-      } catch (apiError) {
-        console.error('HybridAI: Erro na chamada da API:', apiError);
-        // Criar resposta de fallback
-        result = {
-          type: 'suggestions',
-          error: 'Falha na comunicação com o servidor',
-          message: apiError.message,
-          suggestions: ['Tente novamente em alguns instantes.'],
-          content: 'O servidor está temporariamente indisponível.'
-        };
-      }
-      
-      // Verificar se o resultado contém dados
-      if (!result || (Object.keys(result).length === 0)) {
-        console.warn('HybridAI: Resultado vazio ou inválido recebido');
-        result = {
-          type: 'suggestions',
-          suggestions: ['Não foi possível gerar sugestões específicas neste momento.'],
-          content: 'Continue a sessão para obter resultados mais específicos.'
-        };
-      }
-      
-      // Garantir que o tipo está definido
-      if (!result.type) {
-        result.type = 'suggestions';
-      }
-      
-      // Garantir que há sugestões
-      if (!result.suggestions && !result.error) {
-        result.suggestions = ['Baseado na conversa atual, continue o diálogo normalmente.'];
-        result.content = 'Não foram identificados aspectos que necessitem de sugestões específicas.';
-      }
-      
+      // Retornar o resultado
       return result;
     } catch (error) {
       console.error('HybridAI: Erro ao gerar sugestões:', error);
-      return { 
-        type: 'suggestions', 
-        error: 'Erro ao gerar sugestões', 
+      
+      // Verificar se é um erro de conexão
+      const isConnectionError = error.message.includes('Failed to fetch') || 
+                               error.message.includes('Network request failed') ||
+                               error.message.includes('networkerror') ||
+                               error.message.includes('Network Error');
+      
+      if (isConnectionError) {
+        return {
+          error: 'Erro de conexão',
+          message: 'Não foi possível conectar ao serviço de IA. Verifique sua conexão com a internet.',
+          suggestions: [
+            'Considere fazer perguntas abertas para explorar os sentimentos.',
+            'Mantenha uma postura acolhedora e empática.',
+            'Observe padrões de comunicação e comportamento.'
+          ]
+        };
+      }
+      
+      return {
+        error: 'Erro nas sugestões',
         message: error.message,
-        suggestions: ['Ocorreu um erro técnico. Tente novamente.'],
-        content: 'Houve um problema ao processar as sugestões.'
+        suggestions: [
+          'Faça perguntas abertas para explorar sentimentos.',
+          'Pratique a escuta ativa durante a sessão.',
+          'Ofereça validação e apoio emocional.'
+        ],
+        content: 'Sugestões genéricas (erro ao processar sugestões específicas).'
       };
     }
   }
-  
-  // Gerar relatório
-  async generateReport(text) {
+
+  /**
+   * Gera relatório baseado na transcrição
+   * @param {string} text - Texto da transcrição
+   * @param {string} [sessionId] - ID da sessão (opcional)
+   * @returns {Promise<object>} Resultado com relatório
+   */
+  async generateReport(text, providedSessionId = null) {
     try {
-      if (!text || text.trim().length < 10) {
-        console.warn('HybridAI: Texto insuficiente para relatório');
-        return { 
-          type: 'report',
-          error: 'Texto insuficiente para relatório',
-          report: `**Texto insuficiente para gerar um relatório completo**
-
-Para gerar um relatório detalhado, é necessário mais conteúdo da sessão.
-Continue a sessão e tente novamente quando houver mais diálogo entre terapeuta e cliente.
-
-*Recomendações:*
-- Certifique-se de que o microfone está ativo durante a sessão
-- Verifique se a transcrição está funcionando corretamente
-- Sessões com pelo menos 15-20 minutos de diálogo geralmente produzem melhores relatórios`,
-          content: 'Continue a sessão para capturar mais dados para o relatório.'
-        };
+      console.log('HybridAI: Gerando relatório');
+      
+      // Usar o sessionId fornecido ou buscar o atual se não for fornecido
+      const effectiveSessionId = providedSessionId || this.sessionId || this.extractSessionId();
+      console.log(`HybridAI: Usando sessionId para relatório: ${effectiveSessionId}`);
+      
+      // Atualizar o sessionId interno se fornecido um novo
+      if (providedSessionId && providedSessionId !== this.sessionId) {
+        this.sessionId = providedSessionId;
+        console.log(`HybridAI: SessionId atualizado: ${this.sessionId}`);
       }
       
-      // Obter ID da sessão da URL
-      const sessionId = this.extractSessionId();
+      // Preparar dados para enviar à API
+      const apiUrl = `${this.apiUrl}/ai/generate-report`;
+      console.log(`HybridAI: Enviando relatório para: ${apiUrl}`);
       
-      // Verificar se temos um ID válido
-      if (!sessionId || sessionId.length > 50) {
-        console.error('HybridAI: ID de sessão inválido para relatório:', sessionId);
-        return { 
-          type: 'report',
-          error: 'ID de sessão inválido',
-          report: `**Não foi possível gerar o relatório**
-
-O sistema não conseguiu identificar corretamente a sessão atual.
-
-*Possíveis razões:*
-- URL da sessão incorreta ou malformada
-- Problema na identificação da sessão no sistema
-- Erro temporário no serviço
-
-*Recomendações:*
-- Recarregue a página
-- Verifique se você está na URL correta da sessão
-- Se o problema persistir, tente criar uma nova sessão`,
-          content: 'Não foi possível identificar corretamente a sessão atual.'
-        };
-      }
+      const payload = {
+        sessionId: effectiveSessionId,
+        transcript: text,
+        timestamp: new Date().toISOString()
+      };
       
-      console.log(`HybridAI: Gerando relatório para sessão ${sessionId}`);
+      // Log detalhado para debug
+      console.log('HybridAI: Enviando payload para relatório:', {
+        sessionId: effectiveSessionId,
+        textLength: text.length,
+        apiUrl
+      });
       
-      // Enviar para o servidor para relatório
-      let result;
-      try {
-        result = await aiService.generateReport(sessionId, text);
-        console.log('HybridAI: Resultado do relatório recebido:', result);
-      } catch (apiError) {
-        console.error('HybridAI: Erro na chamada da API:', apiError);
-        // Criar resposta de fallback mais útil
-        return {
-          type: 'report',
-          error: 'Falha na comunicação com o servidor',
-          message: apiError.message,
-          report: `**Não foi possível conectar ao serviço de relatórios**
-
-O sistema encontrou um problema ao tentar gerar o relatório desta sessão.
-
-*Possíveis causas:*
-- Problemas de conectividade com o servidor
-- Sobrecarga temporária do sistema
-- Limitações da API do serviço de IA
-
-*Recomendações:*
-- Verifique sua conexão com a internet
-- Aguarde alguns minutos e tente novamente
-- Se o problema persistir, entre em contato com o suporte técnico
-
-Detalhes técnicos: ${apiError.message || 'Erro de comunicação com o servidor'}`,
-          content: 'O servidor está temporariamente indisponível.'
-        };
-      }
+      const headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.getAuthToken()}`
+      };
       
-      // Verificar se o resultado contém dados
-      if (!result || (Object.keys(result).length === 0)) {
-        console.warn('HybridAI: Resultado vazio ou inválido recebido');
-        return {
-          type: 'report',
-          report: `**Relatório não disponível**
-
-Não foi possível gerar um relatório específico para esta sessão no momento.
-
-*Possíveis causas:*
-- A sessão pode ser muito curta
-- A qualidade do áudio pode estar comprometida
-- Pode haver poucos elementos terapêuticos para análise
-
-*Recomendações:*
-- Continue a sessão por mais tempo
-- Verifique se o microfone está funcionando corretamente
-- Tente novamente após mais interações terapeuta-cliente`,
-          content: 'Continue a sessão para obter resultados mais completos.'
-        };
-      }
+      // Fazer a requisição para a API
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload)
+      });
       
-      // Verificar se há um relatório válido no resultado
-      if (result.report && typeof result.report === 'string') {
-        // Verificar se o conteúdo é genérico demais
-        if (result.report.includes('Não foi possível gerar conteúdo específico') || 
-            result.report.trim().length < 100) {
-          
-          console.warn('HybridAI: Conteúdo do relatório parece genérico ou muito curto');
-          return {
-            type: 'report',
-            report: `**Relatório parcial da sessão**
-
-O sistema não conseguiu gerar um relatório detalhado para esta sessão específica.
-
-*Possíveis razões:*
-- Poucos dados de transcrição disponíveis
-- Limitações temporárias do modelo de IA
-- Problemas no processamento do contexto da sessão
-
-*Sugestões para o terapeuta:*
-1. Verifique a qualidade da transcrição da sessão
-2. Tente solicitar o relatório novamente após mais diálogo
-3. Considere fazer anotações manuais complementares
-
-*Observações gerais para sessões terapêuticas:*
-- Mantenha uma comunicação clara e empática
-- Observe as reações e sinais não-verbais do paciente
-- Faça perguntas abertas para explorar sentimentos e pensamentos
-- Valide as experiências e emoções do paciente
-- Estabeleça metas claras para o tratamento`,
-            content: 'Relatório parcial com recomendações gerais para o terapeuta.'
-          };
+      if (!response.ok) {
+        // Melhor tratamento de erros de API
+        const errorText = await response.text();
+        console.error(`HybridAI: Erro na API de relatório (${response.status}): ${errorText}`);
+        
+        // Tentar extrair detalhes do erro
+        let errorDetails;
+        try {
+          errorDetails = JSON.parse(errorText);
+        } catch (e) {
+          errorDetails = { message: errorText };
         }
+        
+        throw new Error(`Erro ${response.status}: ${errorDetails.message || errorText}`);
       }
       
-      // Garantir que o tipo está definido
-      if (!result.type) {
-        result.type = 'report';
+      // Processar a resposta
+      const result = await response.json();
+      console.log('HybridAI: Resposta de relatório:', result);
+      
+      // Garantir um resultado com propriedades básicas
+      if (!result) {
+        console.warn('HybridAI: Resposta de relatório vazia');
+        return {
+          report: 'Não foi possível gerar relatório neste momento.',
+          content: 'Tente novamente mais tarde.'
+        };
       }
       
-      // Verificar se há conteúdo significativo
-      if (result.report && result.report.length < 200) {
-        console.warn('HybridAI: Relatório parece muito curto:', result.report);
-      }
-      
+      // Retornar o resultado
       return result;
     } catch (error) {
       console.error('HybridAI: Erro ao gerar relatório:', error);
+      
+      // Verificar se é um erro de conexão
+      const isConnectionError = error.message.includes('Failed to fetch') || 
+                               error.message.includes('Network request failed') ||
+                               error.message.includes('networkerror') ||
+                               error.message.includes('Network Error');
+      
+      if (isConnectionError) {
+        return {
+          error: 'Erro de conexão',
+          message: 'Não foi possível conectar ao serviço de IA. Verifique sua conexão com a internet.',
+          report: 'Serviço temporariamente indisponível devido a um problema de conexão.'
+        };
+      }
+      
       return {
-        type: 'report',
-        error: 'Erro durante processamento do relatório',
-        report: `**Erro ao gerar relatório**
-
-Ocorreu um erro inesperado durante a geração do relatório.
-
-*Detalhes técnicos:* ${error.message || 'Erro desconhecido'}
-
-*Recomendações:*
-- Recarregue a página e tente novamente
-- Verifique se a sessão está ativa
-- Se o problema persistir, entre em contato com o suporte`,
-        content: 'Ocorreu um erro inesperado. Por favor, tente novamente.'
+        error: 'Erro no relatório',
+        message: error.message,
+        report: 'Ocorreu um erro ao processar a geração do relatório.',
+        content: 'Tente novamente mais tarde.'
       };
     }
   }

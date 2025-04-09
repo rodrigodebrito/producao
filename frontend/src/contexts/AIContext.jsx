@@ -87,17 +87,22 @@ export const AIProvider = ({ children }) => {
       setIsProcessing(true);
       toast.info('Analisando sessão...', { autoClose: 2000 });
       
-      console.log(`[AIContext] Iniciando análise para sessão: ${sessionId}`);
-      console.log(`[AIContext] Texto para análise: ${text.substring(0, 50)}...`);
+      // Obter sessionId do contexto ou da URL se não for fornecido
+      const effectiveSessionId = sessionId || extractSessionIdFromUrl() || window.currentSessionId;
       
-      if (!text || text.trim().length < 10) {
-        console.warn('[AIContext] Texto insuficiente para análise');
-        toast.warning('Texto insuficiente para análise. Aguarde mais conversa.');
+      console.log(`[AIContext] Iniciando análise para sessão: ${effectiveSessionId}`);
+      console.log(`[AIContext] Texto para análise (${text?.length || 0} caracteres): ${text?.substring(0, 50)}...`);
+      
+      // CORREÇÃO: Remover validação rigorosa de texto mínimo
+      // Sempre tentar processar o texto disponível, mesmo que seja curto
+      if (!text || text.trim().length === 0) {
+        console.warn('[AIContext] Texto completamente vazio para análise');
+        toast.warning('Não há texto para analisar. Inicie a gravação ou continue a conversa.');
         
         const mockResult = {
           type: 'analysis',
-          analysis: 'É necessário mais conteúdo de conversa para realizar uma análise útil.',
-          content: 'Continue a conversa para receber análises baseadas na interação.'
+          analysis: 'É necessário ter algum conteúdo de conversa para realizar uma análise.',
+          content: 'Inicie ou continue a conversa para receber análises.'
         };
         
         setLastResult(mockResult);
@@ -107,7 +112,9 @@ export const AIProvider = ({ children }) => {
       
       let result;
       try {
-        result = await hybridAIService.analyzeText(text);
+        // Usar o sessionId efetivo para a análise
+        console.log(`[AIContext] Enviando para análise: sessão=${effectiveSessionId}, texto=${text.length} caracteres`);
+        result = await hybridAIService.analyzeText(text, effectiveSessionId);
         console.log('[AIContext] Resultado da análise:', result);
       } catch (error) {
         console.error('[AIContext] Erro no serviço de análise:', error);
@@ -155,6 +162,12 @@ export const AIProvider = ({ children }) => {
       // Adicionar tipo para identificação no painel de resultados
       const resultWithType = { ...result, type: 'analysis' };
       setLastResult(resultWithType);
+      
+      // Disparar evento específico para garantir que o painel seja exibido
+      window.dispatchEvent(new CustomEvent('ai-result', {
+        detail: { result: resultWithType, source: 'analysis' }
+      }));
+      
       toast.success('Análise concluída!');
       return resultWithType;
     } catch (error) {
@@ -177,23 +190,56 @@ export const AIProvider = ({ children }) => {
     }
   };
   
+  // Nova função auxiliar para extrair sessionId da URL
+  const extractSessionIdFromUrl = () => {
+    try {
+      const url = window.location.href;
+      
+      // Tentar extrair de padrões comuns
+      // 1. Pattern /session/{id}
+      const sessionMatch = url.match(/\/session\/([a-zA-Z0-9_-]+)/);
+      if (sessionMatch && sessionMatch[1]) {
+        return sessionMatch[1];
+      }
+      
+      // 2. Pattern de UUID
+      const uuidMatch = url.match(/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/i);
+      if (uuidMatch && uuidMatch[0]) {
+        return uuidMatch[0];
+      }
+      
+      // 3. Storage
+      return localStorage.getItem('currentSessionId') || 
+             sessionStorage.getItem('currentSessionId') ||
+             localStorage.getItem('sessionId') ||
+             sessionStorage.getItem('sessionId');
+    } catch (e) {
+      console.error('Erro ao extrair sessionId da URL:', e);
+      return null;
+    }
+  };
+  
   // Função para gerar sugestões
   const suggest = async (sessionId, text = transcript) => {
     try {
       setIsProcessing(true);
       toast.info('Gerando sugestões...', { autoClose: 2000 });
       
-      console.log(`[AIContext] Iniciando sugestões para sessão: ${sessionId}`);
-      console.log(`[AIContext] Texto para sugestões: ${text.substring(0, 50)}...`);
+      // Obter sessionId do contexto ou da URL se não for fornecido
+      const effectiveSessionId = sessionId || extractSessionIdFromUrl() || window.currentSessionId;
       
-      if (!text || text.trim().length < 10) {
-        console.warn('[AIContext] Texto insuficiente para sugestões');
-        toast.warning('Texto insuficiente para gerar sugestões. Aguarde mais conversa.');
+      console.log(`[AIContext] Iniciando sugestões para sessão: ${effectiveSessionId}`);
+      console.log(`[AIContext] Texto para sugestões (${text?.length || 0} caracteres): ${text?.substring(0, 50)}...`);
+      
+      // CORREÇÃO: Remover validação rigorosa de texto mínimo
+      if (!text || text.trim().length === 0) {
+        console.warn('[AIContext] Texto completamente vazio para sugestões');
+        toast.warning('Não há texto para gerar sugestões. Inicie a gravação ou continue a conversa.');
         
         const mockResult = {
           type: 'suggestions',
-          suggestions: ['É necessário mais conteúdo de conversa para gerar sugestões úteis.'],
-          content: 'Continue a conversa para receber sugestões baseadas na interação.'
+          suggestions: ['É necessário ter algum conteúdo de conversa para gerar sugestões úteis.'],
+          content: 'Inicie ou continue a conversa para receber sugestões.'
         };
         
         setLastResult(mockResult);
@@ -203,7 +249,9 @@ export const AIProvider = ({ children }) => {
       
       let result;
       try {
-        result = await hybridAIService.generateSuggestions(text);
+        // Usar o sessionId efetivo para as sugestões
+        console.log(`[AIContext] Enviando para sugestões: sessão=${effectiveSessionId}, texto=${text.length} caracteres`);
+        result = await hybridAIService.generateSuggestions(text, effectiveSessionId);
         console.log('[AIContext] Resultado das sugestões:', result);
       } catch (error) {
         console.error('[AIContext] Erro no serviço de sugestões:', error);
@@ -247,6 +295,12 @@ export const AIProvider = ({ children }) => {
       // Adicionar tipo para identificação no painel de resultados se não estiver presente
       const resultWithType = { ...result, type: 'suggestions' };
       setLastResult(resultWithType);
+      
+      // Disparar evento específico para garantir que o painel seja exibido
+      window.dispatchEvent(new CustomEvent('ai-result', {
+        detail: { result: resultWithType, source: 'suggestions' }
+      }));
+      
       toast.success('Sugestões geradas!');
       return resultWithType;
     } catch (error) {
@@ -279,17 +333,21 @@ export const AIProvider = ({ children }) => {
       setIsProcessing(true);
       toast.info('Gerando relatório...', { autoClose: 2000 });
       
-      console.log(`[AIContext] Iniciando relatório para sessão: ${sessionId}`);
-      console.log(`[AIContext] Texto para relatório: ${text.substring(0, 50)}...`);
+      // Obter sessionId do contexto ou da URL se não for fornecido
+      const effectiveSessionId = sessionId || extractSessionIdFromUrl() || window.currentSessionId;
       
-      if (!text || text.trim().length < 10) {
-        console.warn('[AIContext] Texto insuficiente para gerar relatório');
-        toast.warning('Texto insuficiente para gerar relatório. Aguarde mais conversa.');
+      console.log(`[AIContext] Iniciando relatório para sessão: ${effectiveSessionId}`);
+      console.log(`[AIContext] Texto para relatório (${text?.length || 0} caracteres): ${text?.substring(0, 50)}...`);
+      
+      // CORREÇÃO: Remover validação rigorosa de texto mínimo
+      if (!text || text.trim().length === 0) {
+        console.warn('[AIContext] Texto completamente vazio para relatório');
+        toast.warning('Não há texto para gerar relatório. Inicie a gravação ou continue a conversa.');
         
         const mockResult = {
           type: 'report',
-          report: 'É necessário mais conteúdo de conversa para gerar um relatório útil.',
-          content: 'Continue a sessão para capturar mais informações para o relatório.'
+          report: 'É necessário ter algum conteúdo de conversa para gerar um relatório útil.',
+          content: 'Inicie ou continue a sessão para capturar informações para o relatório.'
         };
         
         setLastResult(mockResult);
@@ -299,7 +357,9 @@ export const AIProvider = ({ children }) => {
       
       let result;
       try {
-        result = await hybridAIService.generateReport(text);
+        // Usar o sessionId efetivo para o relatório
+        console.log(`[AIContext] Enviando para relatório: sessão=${effectiveSessionId}, texto=${text.length} caracteres`);
+        result = await hybridAIService.generateReport(text, effectiveSessionId);
         console.log('[AIContext] Resultado do relatório:', result);
       } catch (error) {
         console.error('[AIContext] Erro no serviço de relatório:', error);
@@ -364,14 +424,18 @@ export const AIProvider = ({ children }) => {
       // Adicionar tipo para identificação no painel de resultados
       const resultWithType = { ...result, type: 'report' };
       setLastResult(resultWithType);
-      toast.success('Relatório gerado com sucesso!');
       
-      if (resultWithType.report || resultWithType.content) {
-        // Mostrar o relatório na tela
-        window.dispatchEvent(new CustomEvent('report-generated', { 
-          detail: { result: resultWithType } 
-        }));
-      }
+      // Disparar evento específico para garantir que o painel seja exibido
+      window.dispatchEvent(new CustomEvent('ai-result', {
+        detail: { result: resultWithType, source: 'report' }
+      }));
+      
+      // Também disparar o evento que já existia
+      window.dispatchEvent(new CustomEvent('report-generated', { 
+        detail: { result: resultWithType } 
+      }));
+      
+      toast.success('Relatório gerado com sucesso!');
       
       return resultWithType;
     } catch (error) {
