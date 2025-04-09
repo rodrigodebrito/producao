@@ -1,22 +1,30 @@
-// Configuração global da aplicação - EMERGENCY FIX
+// Configuração global da aplicação
 
-// HARD-CODED URL FOR PRODUCTION - EMERGENCY FIX
-export const API_URL = 'https://theraconnect-prd.onrender.com/api';
-export const FRONTEND_URL = 'https://terapia-conect-frontend.vercel.app';
+// Determinar o ambiente atual
+const isDevelopment = 
+  window.location.hostname === 'localhost' || 
+  window.location.hostname === '127.0.0.1';
 
-// Forçando ambiente de produção para resolver problema urgente
-const isDevelopment = false;
+// URLs baseadas no ambiente
+export const API_URL = isDevelopment 
+  ? 'http://localhost:3000/api'
+  : 'https://theraconnect-prd.onrender.com/api';
 
-// URL hardcoded para resolver problema urgente
-export const BASE_API_URL = 'https://theraconnect-prd.onrender.com/api';
+export const FRONTEND_URL = isDevelopment
+  ? 'http://localhost:3001'
+  : 'https://terapia-conect-frontend.vercel.app';
+
+// URL base da API para facilitar importação
+export const BASE_API_URL = API_URL;
 
 // Debug global para mostrar qual URL está sendo usada
-console.log('CONFIG.JS - URL da API configurada:', BASE_API_URL);
+console.log(`CONFIG.JS - URL da API configurada: ${BASE_API_URL} (${isDevelopment ? 'desenvolvimento' : 'produção'})`);
 
 // Injetar URL global na janela para debug
 if (typeof window !== 'undefined') {
   window.__API_CONFIG = {
     url: BASE_API_URL,
+    environment: isDevelopment ? 'development' : 'production',
     timestamp: new Date().toISOString()
   };
 }
