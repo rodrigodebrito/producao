@@ -77,8 +77,19 @@ const SessionRoom = () => {
         return;
       }
       
-      // Conectar ao servidor de sockets usando o endereço explícito do backend com HTTP
-      const socketInstance = io('http://localhost:3000', {
+      // Determinar o endereço do servidor com base no ambiente atual
+      const isDevelopment = window.location.hostname === 'localhost' || 
+                            window.location.hostname === '127.0.0.1';
+      
+      // Usar o mesmo host da aplicação para produção ou localhost para desenvolvimento
+      const socketURL = isDevelopment 
+        ? 'http://localhost:3000'
+        : window.location.origin;
+      
+      console.log('Conectando socket.io ao servidor:', socketURL);
+      
+      // Conectar ao servidor de sockets
+      const socketInstance = io(socketURL, {
         transports: ['polling', 'websocket'], // Tente polling primeiro, depois websocket
         reconnection: true,
         reconnectionAttempts: 10,
