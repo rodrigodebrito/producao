@@ -100,7 +100,7 @@ const TranscriptionControls = ({
           className={`capture-mode-button ${disabled || isRecording ? 'disabled' : ''}`}
           disabled={disabled || isRecording}
         >
-          {mode === 'mic' ? '🎙️ Microfone' : '🔊 Áudio do Sistema'}
+          {mode === 'mic' ? '🎙️ Apenas Microfone' : '🔊 Microfone + Chamada'}
         </button>
       </div>
       
@@ -124,13 +124,13 @@ const TranscriptionControls = ({
       <div className="transcription-status">
         {isRecording ? (
           <span className="recording-status">
-            {mode === 'system' ? 'Gravando áudio do sistema...' : 'Gravando microfone...'}
+            {mode === 'system' ? 'Gravando microfone + áudio da chamada...' : 'Gravando apenas microfone...'}
           </span>
         ) : (
           <span className="ready-status">
             {mode === 'system' 
-              ? 'Clique no microfone para gravar o áudio do sistema' 
-              : 'Clique no microfone para gravar'}
+              ? 'Clique no microfone para gravar você + áudio da chamada' 
+              : 'Clique no microfone para gravar apenas sua voz'}
           </span>
         )}
       </div>
