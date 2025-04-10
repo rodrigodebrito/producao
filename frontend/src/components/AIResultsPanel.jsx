@@ -965,17 +965,44 @@ const AIResultsPanel = () => {
     
     // Fechar o painel
     setVisible(false);
+    setResultData(null); // Limpar dados para garantir que o painel não seja renderizado
     
     // Limpar CSS injetado
     const oldStyle = document.getElementById('ai-results-priority-styles');
     if (oldStyle) oldStyle.remove();
     
-    // Remover botões flutuantes se existirem
-    const floatingButtons = document.getElementById('floating-report-buttons');
-    if (floatingButtons) floatingButtons.remove();
+    // Remover botões flutuantes e outros elementos
+    const elementsToRemove = [
+      'floating-report-buttons',
+      'backup-report-buttons',
+      'direct-report-actions',
+      'ai-results-portal',
+      'ai-results-overlay-panel'
+    ];
     
-    const backupButtons = document.getElementById('backup-report-buttons');
-    if (backupButtons) backupButtons.remove();
+    // Remover cada elemento
+    elementsToRemove.forEach(id => {
+      const element = document.getElementById(id);
+      if (element) {
+        try {
+          element.remove();
+          console.log(`AIResultsPanel: Removido elemento ${id}`);
+        } catch (e) {
+          console.error(`Erro ao remover elemento ${id}:`, e);
+        }
+      }
+    });
+    
+    // Remover qualquer portal React usando querySelector
+    const portals = document.querySelectorAll('[id^="ai-results"], [class^="ai-results"]');
+    portals.forEach(portal => {
+      try {
+        portal.remove();
+        console.log('AIResultsPanel: Removido portal React adicional');
+      } catch (e) {
+        console.error('Erro ao remover portal React:', e);
+      }
+    });
     
     // Se tiver função de remover botão, executá-la
     if (typeof removeButtonFn === 'function') {
@@ -1014,6 +1041,17 @@ const AIResultsPanel = () => {
         });
       });
     }, 200);
+    
+    // Também forçar o document.body a remover qualquer estilo relacionado
+    document.body.querySelectorAll('[id^="ai-results"], [class^="ai-results"]').forEach(el => {
+      el.remove();
+    });
+    
+    // Limpar qualquer intervalo pendente
+    if (window._aiResultsIntervals) {
+      window._aiResultsIntervals.forEach(intervalId => clearInterval(intervalId));
+      window._aiResultsIntervals = [];
+    }
     
     toast.info('Painel de resultados fechado', { autoClose: 2000 });
   }, [removeButtonFn]);
