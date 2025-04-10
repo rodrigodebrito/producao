@@ -470,4 +470,30 @@
 .instructions-list li {
   margin-bottom: 8px;
   line-height: 1.5;
+}
+
+/* Estilos para o seletor de modo de captura */
+.capture-mode-container {
+  margin-bottom: 10px;
+  display: flex;
+  justify-content: center;
+}
+
+.capture-mode-button {
+  background-color: #f0f0f0;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 5px 10px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.capture-mode-button:hover {
+  background-color: #e0e0e0;
+}
+
+.capture-mode-button.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 } 
