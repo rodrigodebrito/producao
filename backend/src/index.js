@@ -130,6 +130,26 @@ io.on('connection', (socket) => {
     }
   });
   
+  // Manipular eventos de gravação de áudio
+  socket.on('recording-event', (data) => {
+    if (data && data.sessionId && data.type) {
+      console.log(`[${socket.id}] Evento de gravação recebido: ${data.type} para sessão ${data.sessionId}`);
+      
+      // Repassar o evento para todos na sala, exceto o remetente
+      if (data.type === 'start') {
+        socket.to(data.sessionId).emit('recording-start', {
+          sessionId: data.sessionId,
+          timestamp: data.timestamp || Date.now()
+        });
+      } else if (data.type === 'stop') {
+        socket.to(data.sessionId).emit('recording-stop', {
+          sessionId: data.sessionId,
+          timestamp: data.timestamp || Date.now()
+        });
+      }
+    }
+  });
+  
   // Manipular rotação específica de representantes
   socket.on('representative_rotated', (data) => {
     if (data && data.sessionId && data.representativeId) {

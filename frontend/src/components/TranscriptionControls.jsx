@@ -9,10 +9,18 @@ import { aiService } from '../services/aiService';
  * @param {string} sessionId - ID da sessão
  * @param {function} onTranscriptionComplete - Função para completar a transcrição
  * @param {boolean} disabled - Se o componente está desabilitado
+ * @param {boolean} syncRecording - Se deve sincronizar gravação com outros participantes
  */
-const TranscriptionControls = ({ sessionId, onTranscriptionComplete, disabled }) => {
+const TranscriptionControls = ({ sessionId, onTranscriptionComplete, disabled, syncRecording = true }) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState(null);
+
+  useEffect(() => {
+    // Armazenar o sessionId globalmente para uso nos componentes que emitem eventos
+    if (sessionId) {
+      window.sessionId = sessionId;
+    }
+  }, [sessionId]);
 
   const handleRecordingStart = () => {
     setError(null);
@@ -56,9 +64,10 @@ const TranscriptionControls = ({ sessionId, onTranscriptionComplete, disabled })
     <div className="transcription-controls">
       {/* Usamos apenas o MicButton que já contém o seletor de modo */}
       <MicButton 
-        onRecordingStart={handleRecordingStart} 
-        onRecordingStop={handleRecordingStop} 
-        disabled={disabled || isProcessing} 
+        onStart={handleRecordingStart} 
+        onStop={handleRecordingStop} 
+        disabled={disabled || isProcessing}
+        syncRecording={syncRecording}
       />
       
       {isProcessing && (
