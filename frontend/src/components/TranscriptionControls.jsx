@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import MicButton from './MicButton';
 import './AIComponents.css';
 import { aiService } from '../services/aiService';
@@ -23,11 +23,23 @@ const TranscriptionControls = ({
   const [error, setError] = useState(null);
   const [mode, setMode] = useState(captureMode);
   const systemCaptureRef = useRef(null);
+  const [modeChanged, setModeChanged] = useState(false);
+
+  // Efeito visual quando o modo é alterado
+  useEffect(() => {
+    if (modeChanged) {
+      const timer = setTimeout(() => {
+        setModeChanged(false);
+      }, 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [modeChanged]);
 
   // Alternar entre os modos de captura
   const toggleCaptureMode = () => {
     const newMode = mode === 'mic' ? 'system' : 'mic';
     setMode(newMode);
+    setModeChanged(true);
     console.log(`Modo de captura alterado para: ${newMode}`);
   };
 
@@ -97,10 +109,18 @@ const TranscriptionControls = ({
       <div className="capture-mode-container">
         <button 
           onClick={toggleCaptureMode}
-          className={`capture-mode-button ${disabled || isRecording ? 'disabled' : ''}`}
+          className={`capture-mode-button ${disabled || isRecording ? 'disabled' : ''} ${modeChanged ? 'mode-changed' : ''}`}
           disabled={disabled || isRecording}
         >
-          {mode === 'mic' ? '🎙️ Apenas Microfone' : '🔊 Microfone + Chamada'}
+          <span className="button-icon">
+            {mode === 'mic' ? '🎙️' : '🔊'}
+          </span>
+          <span className="button-text">
+            {mode === 'mic' ? 'Modo: Apenas Microfone' : 'Modo: Microfone + Chamada'}
+          </span>
+          <span className="mode-toggle-hint">
+            (Clique para alternar)
+          </span>
         </button>
       </div>
       
@@ -134,6 +154,13 @@ const TranscriptionControls = ({
           </span>
         )}
       </div>
+      
+      {mode === 'system' && (
+        <div className="mode-info">
+          <p>Modo atual: <strong>Microfone + Chamada</strong></p>
+          <small>Este modo captura sua voz e o áudio da chamada simultaneamente</small>
+        </div>
+      )}
     </div>
   );
 };

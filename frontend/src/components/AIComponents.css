@@ -474,26 +474,92 @@
 
 /* Estilos para o seletor de modo de captura */
 .capture-mode-container {
-  margin-bottom: 10px;
+  margin-bottom: 15px;
   display: flex;
   justify-content: center;
+  width: 100%;
 }
 
 .capture-mode-button {
   background-color: #f0f0f0;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  padding: 5px 10px;
+  border: 2px solid #3f51b5;
+  border-radius: 20px;
+  padding: 8px 15px;
   font-size: 14px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.3s ease;
+  color: #333;
+  font-weight: bold;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  margin: 5px 0;
+  width: auto;
+  min-width: 200px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .capture-mode-button:hover {
-  background-color: #e0e0e0;
+  background-color: #e0e0f5;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
 }
 
 .capture-mode-button.disabled {
   opacity: 0.6;
   cursor: not-allowed;
+  background-color: #f0f0f0;
+  transform: none;
+  box-shadow: none;
+}
+
+.capture-mode-button.mode-changed {
+  animation: pulse 0.5s 3;
+  background-color: #e0e0f5;
+}
+
+.button-icon {
+  font-size: 20px;
+  margin-bottom: 5px;
+}
+
+.button-text {
+  font-size: 14px;
+  font-weight: bold;
+}
+
+.mode-toggle-hint {
+  font-size: 12px;
+  opacity: 0.7;
+  margin-top: 3px;
+}
+
+.mode-info {
+  margin-top: 10px;
+  padding: 8px;
+  background-color: #f0f5ff;
+  border-radius: 4px;
+  border-left: 3px solid #3f51b5;
+  font-size: 14px;
+}
+
+.mode-info p {
+  margin: 3px 0;
+}
+
+.mode-info strong {
+  color: #3f51b5;
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+    background-color: #d1d8ff;
+  }
+  100% {
+    transform: scale(1);
+  }
 } 
