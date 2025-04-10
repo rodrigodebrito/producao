@@ -959,117 +959,48 @@ const AIResultsPanel = () => {
     }
   }, [visible]);
 
-  // Função simplificada para fechar o painel de resultados
+  // Função super simplificada para fechar o painel de resultados
   const handleClose = useCallback(() => {
-    console.log('AIResultsPanel: Fechando painel de resultados (versão simplificada)');
+    console.log('AIResultsPanel: Fechando painel com implementação ultra-simplificada');
     
-    // Primeiro alterar a visibilidade (para efeito visual imediato)
+    // Apenas desativar visibilidade imediatamente, sem tentar manipular DOM
     setVisible(false);
     
-    try {
-      // Abordagem segura para remover elementos do DOM
-      const safeRemove = (elementId) => {
-        try {
-          const element = document.getElementById(elementId);
-          if (element) {
-            // Método 1: Remover diretamente se possível
-            try {
-              element.remove();
-            } catch (err) {
-              // Método 2: Remover através do parentNode
-              if (element.parentNode) {
-                element.parentNode.removeChild(element);
-              } else {
-                // Método 3: Esconder se não conseguir remover
-                element.style.display = 'none';
-                element.style.visibility = 'hidden';
-                element.style.opacity = '0';
-              }
-            }
-          }
-        } catch (err) {
-          console.log(`Erro ao remover ${elementId}:`, err);
-        }
-      };
-      
-      // Remover todos os elementos principais
-      [
-        'ai-results-portal',
-        'ai-results-priority-styles',
-        'floating-report-buttons',
-        'backup-report-buttons',
-        'direct-report-actions',
-        'ai-results-overlay-panel'
-      ].forEach(safeRemove);
-      
-      // Remover estilos do portal de forma segura
-      try {
-        const styles = document.querySelectorAll('style');
-        styles.forEach(style => {
-          if (style && style.innerHTML && style.innerHTML.includes('#ai-results-portal')) {
-            if (style.parentNode) {
-              style.parentNode.removeChild(style);
-            } else {
-              style.remove();
-            }
-          }
-        });
-      } catch (err) {
-        console.log('Erro ao remover estilos do portal:', err);
-      }
-      
-      // Desativar a função de remoção do botão se existir
-      if (typeof removeButtonFn === 'function') {
-        try {
-          removeButtonFn();
-          setRemoveButtonFn(null);
-        } catch (err) {
-          console.log('Erro na função removeButtonFn:', err.message);
-        }
-      }
-      
-      // Restaurar o overflow do body
-      try {
-        document.body.style.overflow = '';
-      } catch (err) {
-        console.log('Erro ao restaurar overflow do body:', err);
-      }
-      
-      // Restaurar interatividade de elementos com segurança
-      try {
-        const jitsiElements = document.querySelectorAll('#jitsiConferenceFrame0, #new-toolbox, .filmstrip, .subject, .watermark, .tOQNJSLwCYnxUY3bW0zj');
-        jitsiElements.forEach(el => {
-          if (el) {
-            el.style.pointerEvents = 'auto';
-            el.style.zIndex = 'auto';
-            el.style.visibility = 'visible';
-          }
-        });
-      } catch (err) {
-        console.log('Erro ao restaurar elementos Jitsi:', err);
-      }
-      
-      // Restaurar botões do Jitsi
-      try {
-        const hangupButtons = document.querySelectorAll('button[aria-label="Sair da sessão"], button[aria-label="Sair da Sessão"], button[aria-label="Leave"], button[aria-label="Hang up"], button[data-testid="hangup-button"], .toolbox-button.hangup, .hangup-button');
-        hangupButtons.forEach(btn => {
-          if (btn) {
-            btn.style.visibility = 'visible';
-            btn.style.pointerEvents = 'auto';
-            btn.style.zIndex = 'auto';
-          }
-        });
-      } catch (err) {
-        console.log('Erro ao restaurar botões de hangup:', err);
-      }
-    } catch (err) {
-      console.error('Erro global ao fechar o painel:', err);
-    }
-    
-    // Limpar resultado após um pequeno delay
+    // Usar setTimeout para limpar dados após a renderização
     setTimeout(() => {
+      // Ocultar elementos específicos sem tentar remover
+      try {
+        // Técnica segura: esconder em vez de remover
+        ['ai-results-portal', 'ai-results-overlay-panel', 'floating-report-buttons', 
+         'backup-report-buttons', 'direct-report-actions'].forEach(id => {
+          const el = document.getElementById(id);
+          if (el) {
+            el.style.display = 'none';
+            el.style.visibility = 'hidden';
+            el.style.opacity = '0';
+            el.style.pointerEvents = 'none';
+          }
+        });
+        
+        // Restaurar interatividade da sessão
+        document.body.style.overflow = '';
+        
+        // Restaurar elementos do Jitsi
+        document.querySelectorAll('#jitsiConferenceFrame0, #new-toolbox, .filmstrip, .subject, .watermark, .tOQNJSLwCYnxUY3bW0zj, button[aria-label="Sair da sessão"], button[aria-label="Sair da Sessão"], button[aria-label="Leave"], button[aria-label="Hang up"]')
+          .forEach(el => {
+            if (el) {
+              el.style.pointerEvents = 'auto';
+              el.style.visibility = 'visible';
+              el.style.zIndex = 'auto';
+            }
+          });
+      } catch (err) {
+        console.log('Erro ao limpar elementos:', err);
+      }
+      
+      // Limpar dados somente depois de processar elementos
       setResultData(null);
-    }, 100);
+    }, 300);
     
     // Notificar o usuário
     try {
@@ -1077,7 +1008,7 @@ const AIResultsPanel = () => {
     } catch (err) {
       console.log('Não foi possível mostrar toast');
     }
-  }, [removeButtonFn]);
+  }, []);
   
   const togglePinMode = () => {
     setPinnedMode(!pinnedMode);
