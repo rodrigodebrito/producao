@@ -921,143 +921,30 @@ const AIResultsPanel = () => {
         // Verificar portal para elementos interativos
         const portal = document.getElementById('ai-results-portal');
         if (portal) {
-          // Garantir que o portal esteja visível e interativo
-          portal.style.zIndex = "9999999999";
-          portal.style.pointerEvents = "auto";
-          
-          // Verificar se os botões do relatório estão presentes no portal
-          const reportActionsDiv = portal.querySelector('.report-actions');
-          if (reportActionsDiv) {
-            reportActionsDiv.style.zIndex = "9999999999";
-            reportActionsDiv.style.pointerEvents = "auto";
-            reportActionsDiv.style.display = "flex";
-            reportActionsDiv.style.gap = "10px";
-            reportActionsDiv.style.marginTop = "20px";
-            reportActionsDiv.style.justifyContent = "flex-end";
-            
-            // Garantir que os botões estejam visíveis e clicáveis
-            const buttons = reportActionsDiv.querySelectorAll('button');
-            if (buttons.length === 0) {
-              console.log('Recriando botões de relatório');
-              
-              // Se não existem botões, recria-los
-              if (resultData.type === 'report') {
-                const downloadBtn = document.createElement('button');
-                downloadBtn.className = 'report-action-btn';
-                downloadBtn.innerHTML = '<span style="margin-right: 8px;">⬇️</span> Baixar Relatório';
-                downloadBtn.style.zIndex = "9999999999";
-                downloadBtn.style.position = "relative";
-                downloadBtn.style.pointerEvents = "auto";
-                downloadBtn.onclick = (e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  
-                  try {
-                    console.log('Iniciando download direto do relatório recriado');
-                    
-                    // Obter o texto do relatório
-                    const reportText = resultData.report || resultData.data?.report || '';
-                    
-                    // Criar o elemento para download
-                    const element = document.createElement('a');
-                    element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(reportText));
-                    element.setAttribute('download', 'relatorio-sessao.txt');
-                    element.style.display = 'none';
-                    
-                    // Adicionar ao DOM e forçar o clique
-                    document.body.appendChild(element);
-                    element.click();
-                    
-                    // Limpar
-                    document.body.removeChild(element);
-                    
-                    toast.success('Relatório baixado com sucesso!');
-                  } catch (error) {
-                    console.error('Erro ao baixar relatório:', error);
-                    toast.error('Erro ao baixar o relatório. Tente novamente.');
+          // Garantir que todos os elementos dentro do portal tenham eventos
+          try {
+            if (portal && portal.querySelectorAll) {
+              const interactiveElements = portal.querySelectorAll('button, a, input, select, textarea');
+              if (interactiveElements.length > 0) {
+                interactiveElements.forEach(el => {
+                  if (el && typeof el === 'object') {
+                    try {
+                      el.style.pointerEvents = 'auto';
+                      el.style.cursor = 'pointer';
+                      el.style.zIndex = '9999999999';
+                      el.style.position = 'relative';
+                    } catch (styleError) {
+                      console.warn('Erro ao aplicar estilo a elemento interativo:', styleError);
+                    }
                   }
-                };
-                
-                const printBtn = document.createElement('button');
-                printBtn.className = 'report-action-btn';
-                printBtn.innerHTML = '<span style="margin-right: 8px;">🖨️</span> Imprimir';
-                printBtn.style.zIndex = "9999999999";
-                printBtn.style.position = "relative";
-                printBtn.style.pointerEvents = "auto";
-                printBtn.addEventListener('click', (e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  
-                  const reportText = resultData.report || resultData.data?.report || '';
-                  const printWindow = window.open('', '_blank');
-                  printWindow.document.write(`
-                    <html>
-                      <head>
-                        <title>Relatório da Sessão</title>
-                        <style>
-                          body { font-family: Arial, sans-serif; line-height: 1.6; padding: 20px; }
-                          h1 { color: #2c3e50; }
-                          h3 { color: #3498db; margin-top: 20px; }
-                          p { margin-bottom: 10px; }
-                          @media print {
-                            body { padding: 0; margin: 1cm; }
-                            button { display: none; }
-                          }
-                        </style>
-                      </head>
-                      <body>
-                        <h1>Relatório da Sessão</h1>
-                        ${reportText.split('\n').map(p => 
-                          p.trim() ? (
-                            p.startsWith('#') || p.startsWith('##') ? 
-                              `<h3>${p.replace(/^#+\s+/, '')}</h3>` : 
-                              `<p>${p}</p>`
-                          ) : '<br>'
-                        ).join('')}
-                        <hr>
-                        <p style="color: #7f8c8d; font-size: 0.8em;">Gerado por TerapiaConect</p>
-                        <button onclick="window.print()" style="margin-top: 20px; padding: 10px 15px; background: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer;">Imprimir Relatório</button>
-                      </body>
-                    </html>
-                  `);
-                  printWindow.document.close();
-                  toast.success('Preparado para impressão!');
                 });
-                
-                // Adicionar os botões recriados
-                reportActionsDiv.appendChild(downloadBtn);
-                reportActionsDiv.appendChild(printBtn);
               }
-            } else {
-              // Se existem botões, garantir que estão acessíveis
-              buttons.forEach(btn => {
-                btn.style.zIndex = "9999999999";
-                btn.style.position = "relative";
-                btn.style.display = "flex";
-                btn.style.pointerEvents = "auto";
-                btn.style.cursor = "pointer";
-              });
             }
+          } catch (e) {
+            console.error('Erro ao processar elementos interativos:', e);
           }
         }
-        
-        // Forçar que os botões do relatório sejam clicáveis
-        const reportButtons = document.querySelectorAll('.report-action-btn');
-        reportButtons.forEach(btn => {
-          btn.style.position = 'relative';
-          btn.style.zIndex = '9999999999';
-          btn.style.pointerEvents = 'auto';
-        });
-        
-        // No modo não fixado, bloquear elementos do Jitsi
-        if (!pinnedMode) {
-          // Tenta bloquear os elementos do Jitsi quando o painel está aberto
-          const jitsiElements = document.querySelectorAll('#jitsiConferenceFrame0, #new-toolbox, .filmstrip, .subject, .watermark, .tOQNJSLwCYnxUY3bW0zj');
-          jitsiElements.forEach(el => {
-            if (el) el.style.pointerEvents = 'none';
-          });
-        }
-      }, 100);
+      }, 1000);
       
       return () => {
         clearInterval(intervalId);
@@ -1070,7 +957,7 @@ const AIResultsPanel = () => {
         if (el) el.style.pointerEvents = 'auto';
       });
     }
-  }, [visible, pinnedMode]);
+  }, [visible]);
 
   // Função para fechar o painel de resultados
   const handleClose = useCallback(() => {
