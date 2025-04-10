@@ -964,9 +964,8 @@ const AIResultsPanel = () => {
     console.log('AIResultsPanel: Fechando painel de resultados (versão simplificada)');
     
     try {
-      // Apenas alterar os estados React - abordagem mais segura
+      // Primeiro, alterar os estados React
       setVisible(false);
-      setResultData(null);
       
       // Remover apenas o CSS injetado
       const styleElement = document.getElementById('ai-results-priority-styles');
@@ -974,7 +973,7 @@ const AIResultsPanel = () => {
         styleElement.remove();
       }
       
-      // Remover apenas elementos específicos com tratamento de erro individual
+      // Remover elementos específicos sem afetar a navegação
       try {
         const floatingButtons = document.getElementById('floating-report-buttons');
         if (floatingButtons) floatingButtons.parentNode.removeChild(floatingButtons);
@@ -989,6 +988,13 @@ const AIResultsPanel = () => {
         console.log('Não foi possível remover backup-report-buttons');
       }
       
+      try {
+        const directActions = document.getElementById('direct-report-actions');
+        if (directActions) directActions.parentNode.removeChild(directActions);
+      } catch (e) {
+        console.log('Não foi possível remover direct-report-actions');
+      }
+      
       // Opcionalmente, desativar a função de remoção do botão se existir
       if (typeof removeButtonFn === 'function') {
         try {
@@ -1000,12 +1006,27 @@ const AIResultsPanel = () => {
       
       // Restaurar o overflow do body se houver sido alterado
       document.body.style.overflow = '';
+      
+      // Restaurar interatividade de elementos
+      const jitsiElements = document.querySelectorAll('#jitsiConferenceFrame0, #new-toolbox, .filmstrip, .subject, .watermark, .tOQNJSLwCYnxUY3bW0zj');
+      jitsiElements.forEach(el => {
+        if (el) el.style.pointerEvents = 'auto';
+      });
+      
+      // Limpar resultado apenas depois de remover os elementos visuais
+      setTimeout(() => {
+        setResultData(null);
+      }, 100);
     } catch (error) {
       console.error('Erro ao fechar o painel:', error);
       
       // Falhar com segurança - só alterar os estados do React
       setVisible(false);
-      setResultData(null);
+      
+      // Limpar resultado apenas depois de remover os elementos visuais
+      setTimeout(() => {
+        setResultData(null);
+      }, 100);
     }
     
     // Notificar o usuário sem causar problemas adicionais
