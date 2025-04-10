@@ -1,0 +1,10 @@
+[33mfb9504c[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mtheraconnect-prd[m[33m, [m[1;31morigin/theraconnect-prd[m[33m, [m[1;32mtemp-branch[m[33m)[m Fix: Simplificar função handleClose para evitar tela branca ao fechar o painel
+[33mb4fc3e9[m Fix: Corrigir remoção do painel de resultados ao fechar
+[33m9d4007a[m Fix: Melhorar geração de relatórios e corrigir erros no AIResultsPanel
+[33ma171c3d[m Fix: Adicionar AIResultsPanel diretamente no componente SessionRoom para garantir visibilidade
+[33ma885b71[m Fix: Implementar método getSessionTranscripts no hybridAIService para recuperar transcrições do backend
+[33m8083d69[m Fix: Corrigir recuperação de transcrições no AIContext tentando múltiplos endpoints
+[33mdf67a16[m Fix: Corrigir recuperação de transcrições no AIContext para análises e sugestões
+[33m70d0ddd[m Fix: Corrigir compatibilidade de campos transcript/content na API para permitir ambos os formatos
+[33m22c02a3[m Revert: Voltar para versão estável do sistema
+[33m95ca9d2[m Fix: Correção do envio de transcrições para o ChatGPT e visibilidade do painel AIResults
