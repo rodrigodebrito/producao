@@ -544,250 +544,263 @@ const AIResultsPanel = () => {
       
       // Solução radical: Mover o painel para fora do iframe
       setTimeout(() => {
-        const portalDiv = document.createElement('div');
-        portalDiv.id = 'ai-results-portal';
-        portalDiv.style.position = 'fixed';
-        portalDiv.style.top = '0';
-        portalDiv.style.left = '0';
-        portalDiv.style.width = '100vw';
-        portalDiv.style.height = '100vh';
-        portalDiv.style.zIndex = '9999999999';
-        portalDiv.style.pointerEvents = 'auto';
-        
-        // Adicionar estilos inline para o portal
-        const portalStyles = document.createElement('style');
-        portalStyles.innerHTML = `
-          #ai-results-portal {
-            position: fixed !important;
-            top: 0 !important;
-            left: 0 !important;
-            width: 100vw !important;
-            height: 100vh !important;
-            z-index: 9999999999 !important;
-            pointer-events: auto !important;
-          }
+        try {
+          const portalDiv = document.createElement('div');
+          portalDiv.id = 'ai-results-portal';
+          portalDiv.style.position = 'fixed';
+          portalDiv.style.top = '0';
+          portalDiv.style.left = '0';
+          portalDiv.style.width = '100vw';
+          portalDiv.style.height = '100vh';
+          portalDiv.style.zIndex = '9999999999';
+          portalDiv.style.pointerEvents = 'auto';
           
-          #ai-results-portal .ai-results-overlay {
-            position: fixed !important;
-            top: 0 !important;
-            left: 0 !important;
-            width: 100vw !important;
-            height: 100vh !important;
-            background-color: rgba(0, 0, 0, 0.7) !important;
-            display: flex !important;
-            justify-content: center !important;
-            align-items: center !important;
-            z-index: 9999999999 !important;
-            pointer-events: auto !important;
-          }
-          
-          #ai-results-portal .ai-results-panel {
-            background-color: #fff !important;
-            border-radius: 8px !important;
-            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3) !important;
-            width: 90% !important;
-            max-width: 800px !important;
-            max-height: 90vh !important;
-            display: flex !important;
-            flex-direction: column !important;
-            overflow: hidden !important;
-            position: relative !important;
-            z-index: 9999999999 !important;
-            pointer-events: auto !important;
-          }
-          
-          #ai-results-portal .close-button,
-          #ai-results-portal .pin-button,
-          #ai-results-portal .ai-results-button {
-            cursor: pointer !important;
-            pointer-events: auto !important;
-            z-index: 9999999999 !important;
-          }
-          
-          #ai-results-portal .report-actions {
-            display: flex !important;
-            gap: 10px !important;
-            margin-top: 20px !important;
-            justify-content: flex-end !important;
-            position: relative !important;
-            z-index: 9999999999 !important;
-          }
-          
-          #ai-results-portal .report-action-btn {
-            background-color: #2196f3 !important;
-            color: white !important;
-            border: none !important;
-            padding: 10px 16px !important;
-            border-radius: 4px !important;
-            cursor: pointer !important;
-            font-size: 1em !important;
-            display: flex !important;
-            align-items: center !important;
-            font-weight: 500 !important;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2) !important;
-            pointer-events: auto !important;
-            position: relative !important;
-            z-index: 9999999999 !important;
-          }
-          
-          #ai-results-portal .report-action-btn:nth-child(2) {
-            background-color: #4caf50 !important;
-          }
-        `;
-        document.head.appendChild(portalStyles);
-        
-        // Adicionar ao topo do documento principal (fora de qualquer iframe)
-        document.body.appendChild(portalDiv);
-        
-        // Forçar a remoção do antigo painel e montar um novo
-        const oldPanel = document.getElementById('ai-results-overlay-panel');
-        if (oldPanel) {
-          try {
-            // Cria uma cópia visual do painel existente
-            portalDiv.innerHTML = oldPanel.outerHTML;
-            // Remover o original
-            oldPanel.style.display = 'none';
+          // Adicionar estilos inline para o portal
+          const portalStyles = document.createElement('style');
+          portalStyles.innerHTML = `
+            #ai-results-portal {
+              position: fixed !important;
+              top: 0 !important;
+              left: 0 !important;
+              width: 100vw !important;
+              height: 100vh !important;
+              z-index: 9999999999 !important;
+              pointer-events: auto !important;
+            }
             
-            // Adicionar handlers de eventos aos botões copiados
-            // Botão de fechar no header
-            const closeButtons = portalDiv.querySelectorAll('.close-button');
-            closeButtons.forEach(btn => {
-              btn.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                handleClose();
-              });
-            });
+            #ai-results-portal .ai-results-overlay {
+              position: fixed !important;
+              top: 0 !important;
+              left: 0 !important;
+              width: 100vw !important;
+              height: 100vh !important;
+              background-color: rgba(0, 0, 0, 0.7) !important;
+              display: flex !important;
+              justify-content: center !important;
+              align-items: center !important;
+              z-index: 9999999999 !important;
+              pointer-events: auto !important;
+            }
             
-            // Botão de fechar no footer
-            const footerCloseButtons = portalDiv.querySelectorAll('.ai-results-footer .ai-results-button');
-            footerCloseButtons.forEach(btn => {
-              btn.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                handleClose();
-              });
-            });
+            #ai-results-portal .ai-results-panel {
+              background-color: #fff !important;
+              border-radius: 8px !important;
+              box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3) !important;
+              width: 90% !important;
+              max-width: 800px !important;
+              max-height: 90vh !important;
+              display: flex !important;
+              flex-direction: column !important;
+              overflow: hidden !important;
+              position: relative !important;
+              z-index: 9999999999 !important;
+              pointer-events: auto !important;
+            }
             
-            // Botão de pin/fixar
-            const pinButtons = portalDiv.querySelectorAll('.pin-button');
-            pinButtons.forEach(btn => {
-              btn.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                togglePinMode();
-              });
-            });
+            #ai-results-portal .close-button,
+            #ai-results-portal .pin-button,
+            #ai-results-portal .ai-results-button {
+              cursor: pointer !important;
+              pointer-events: auto !important;
+              z-index: 9999999999 !important;
+            }
             
-            // Botões de relatório
-            const reportActionsDiv = portalDiv.querySelectorAll('.report-actions');
+            #ai-results-portal .report-actions {
+              display: flex !important;
+              gap: 10px !important;
+              margin-top: 20px !important;
+              justify-content: flex-end !important;
+              position: relative !important;
+              z-index: 9999999999 !important;
+            }
             
-            // Garantir que os botões estejam visíveis e clicáveis
-            const buttons = reportActionsDiv.querySelectorAll('button');
-            if (buttons.length === 0) {
-              console.log('Recriando botões de relatório');
+            #ai-results-portal .report-action-btn {
+              background-color: #2196f3 !important;
+              color: white !important;
+              border: none !important;
+              padding: 10px 16px !important;
+              border-radius: 4px !important;
+              cursor: pointer !important;
+              font-size: 1em !important;
+              display: flex !important;
+              align-items: center !important;
+              font-weight: 500 !important;
+              box-shadow: 0 2px 5px rgba(0,0,0,0.2) !important;
+              pointer-events: auto !important;
+              position: relative !important;
+              z-index: 9999999999 !important;
+            }
+            
+            #ai-results-portal .report-action-btn:nth-child(2) {
+              background-color: #4caf50 !important;
+            }
+          `;
+          document.head.appendChild(portalStyles);
+          
+          // Adicionar ao topo do documento principal (fora de qualquer iframe)
+          document.body.appendChild(portalDiv);
+          
+          // Forçar a remoção do antigo painel e montar um novo
+          const oldPanel = document.getElementById('ai-results-overlay-panel');
+          if (oldPanel) {
+            try {
+              // Cria uma cópia visual do painel existente
+              portalDiv.innerHTML = oldPanel.outerHTML;
+              // Remover o original
+              oldPanel.style.display = 'none';
               
-              // Se não existem botões, recria-los
-              if (resultData.type === 'report') {
-                const downloadBtn = document.createElement('button');
-                downloadBtn.className = 'report-action-btn';
-                downloadBtn.innerHTML = '<span style="margin-right: 8px;">⬇️</span> Baixar Relatório';
-                downloadBtn.style.zIndex = "9999999999";
-                downloadBtn.style.position = "relative";
-                downloadBtn.style.pointerEvents = "auto";
-                downloadBtn.onclick = (e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  
-                  try {
-                    console.log('Iniciando download direto do relatório recriado');
-                    
-                    // Obter o texto do relatório
-                    const reportText = resultData.report || resultData.data?.report || '';
-                    
-                    // Criar o elemento para download
-                    const element = document.createElement('a');
-                    element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(reportText));
-                    element.setAttribute('download', 'relatorio-sessao.txt');
-                    element.style.display = 'none';
-                    
-                    // Adicionar ao DOM e forçar o clique
-                    document.body.appendChild(element);
-                    element.click();
-                    
-                    // Limpar
-                    document.body.removeChild(element);
-                    
-                    toast.success('Relatório baixado com sucesso!');
-                  } catch (error) {
-                    console.error('Erro ao baixar relatório:', error);
-                    toast.error('Erro ao baixar o relatório. Tente novamente.');
-                  }
-                };
-                
-                const printBtn = document.createElement('button');
-                printBtn.className = 'report-action-btn';
-                printBtn.innerHTML = '<span style="margin-right: 8px;">🖨️</span> Imprimir';
-                printBtn.style.zIndex = "9999999999";
-                printBtn.style.position = "relative";
-                printBtn.style.pointerEvents = "auto";
-                printBtn.addEventListener('click', (e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  
-                  const reportText = resultData.report || resultData.data?.report || '';
-                  const printWindow = window.open('', '_blank');
-                  printWindow.document.write(`
-                    <html>
-                      <head>
-                        <title>Relatório da Sessão</title>
-                        <style>
-                          body { font-family: Arial, sans-serif; line-height: 1.6; padding: 20px; }
-                          h1 { color: #2c3e50; }
-                          h3 { color: #3498db; margin-top: 20px; }
-                          p { margin-bottom: 10px; }
-                          @media print {
-                            body { padding: 0; margin: 1cm; }
-                            button { display: none; }
-                          }
-                        </style>
-                      </head>
-                      <body>
-                        <h1>Relatório da Sessão</h1>
-                        ${reportText.split('\n').map(p => 
-                          p.trim() ? (
-                            p.startsWith('#') || p.startsWith('##') ? 
-                              `<h3>${p.replace(/^#+\s+/, '')}</h3>` : 
-                              `<p>${p}</p>`
-                          ) : '<br>'
-                        ).join('')}
-                        <hr>
-                        <p style="color: #7f8c8d; font-size: 0.8em;">Gerado por TerapiaConect</p>
-                        <button onclick="window.print()" style="margin-top: 20px; padding: 10px 15px; background: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer;">Imprimir Relatório</button>
-                      </body>
-                    </html>
-                  `);
-                  printWindow.document.close();
-                  toast.success('Preparado para impressão!');
+              // Adicionar handlers de eventos aos botões copiados
+              // Verificação de segurança para evitar erro "querySelectorAll is not a function"
+              if (portalDiv && typeof portalDiv.querySelectorAll === 'function') {
+                // Botão de fechar no header
+                const closeButtons = portalDiv.querySelectorAll('.close-button');
+                closeButtons.forEach(btn => {
+                  btn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleClose();
+                  });
                 });
                 
-                // Adicionar os botões recriados
-                reportActionsDiv.appendChild(downloadBtn);
-                reportActionsDiv.appendChild(printBtn);
+                // Botão de fechar no footer
+                const footerCloseButtons = portalDiv.querySelectorAll('.ai-results-footer .ai-results-button');
+                footerCloseButtons.forEach(btn => {
+                  btn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleClose();
+                  });
+                });
+                
+                // Botão de pin/fixar
+                const pinButtons = portalDiv.querySelectorAll('.pin-button');
+                pinButtons.forEach(btn => {
+                  btn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    togglePinMode();
+                  });
+                });
+                
+                // Botões de relatório
+                const reportActionsDiv = portalDiv.querySelectorAll('.report-actions');
+                
+                // Garantir que os botões estejam visíveis e clicáveis
+                const buttons = reportActionsDiv ? reportActionsDiv.forEach(div => {
+                  if (div && typeof div.querySelectorAll === 'function') {
+                    div.querySelectorAll('button').forEach(btn => {
+                      if (btn) {
+                        btn.style.zIndex = "9999999999";
+                        btn.style.position = "relative";
+                        btn.style.display = "flex";
+                        btn.style.pointerEvents = "auto";
+                        btn.style.cursor = "pointer";
+                      }
+                    });
+                  }
+                }) : null;
+                
+                if (!buttons || buttons.length === 0) {
+                  console.log('Recriando botões de relatório');
+                  
+                  // Se não existem botões, recria-los
+                  if (resultData.type === 'report') {
+                    const downloadBtn = document.createElement('button');
+                    downloadBtn.className = 'report-action-btn';
+                    downloadBtn.innerHTML = '<span style="margin-right: 8px;">⬇️</span> Baixar Relatório';
+                    downloadBtn.style.zIndex = "9999999999";
+                    downloadBtn.style.position = "relative";
+                    downloadBtn.style.pointerEvents = "auto";
+                    downloadBtn.onclick = (e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      
+                      try {
+                        console.log('Iniciando download direto do relatório recriado');
+                        
+                        // Obter o texto do relatório
+                        const reportText = resultData.report || resultData.data?.report || '';
+                        
+                        // Criar o elemento para download
+                        const element = document.createElement('a');
+                        element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(reportText));
+                        element.setAttribute('download', 'relatorio-sessao.txt');
+                        element.style.display = 'none';
+                        
+                        // Adicionar ao DOM e forçar o clique
+                        document.body.appendChild(element);
+                        element.click();
+                        
+                        // Limpar
+                        document.body.removeChild(element);
+                        
+                        toast.success('Relatório baixado com sucesso!');
+                      } catch (error) {
+                        console.error('Erro ao baixar relatório:', error);
+                        toast.error('Erro ao baixar o relatório. Tente novamente.');
+                      }
+                    };
+                    
+                    const printBtn = document.createElement('button');
+                    printBtn.className = 'report-action-btn';
+                    printBtn.innerHTML = '<span style="margin-right: 8px;">🖨️</span> Imprimir';
+                    printBtn.style.zIndex = "9999999999";
+                    printBtn.style.position = "relative";
+                    printBtn.style.pointerEvents = "auto";
+                    printBtn.addEventListener('click', (e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      
+                      const reportText = resultData.report || resultData.data?.report || '';
+                      const printWindow = window.open('', '_blank');
+                      printWindow.document.write(`
+                        <html>
+                          <head>
+                            <title>Relatório da Sessão</title>
+                            <style>
+                              body { font-family: Arial, sans-serif; line-height: 1.6; padding: 20px; }
+                              h1 { color: #2c3e50; }
+                              h3 { color: #3498db; margin-top: 20px; }
+                              p { margin-bottom: 10px; }
+                              @media print {
+                                body { padding: 0; margin: 1cm; }
+                                button { display: none; }
+                              }
+                            </style>
+                          </head>
+                          <body>
+                            <h1>Relatório da Sessão</h1>
+                            ${reportText.split('\n').map(p => 
+                              p.trim() ? (
+                                p.startsWith('#') || p.startsWith('##') ? 
+                                  `<h3>${p.replace(/^#+\s+/, '')}</h3>` : 
+                                  `<p>${p}</p>`
+                              ) : '<br>'
+                            ).join('')}
+                            <hr>
+                            <p style="color: #7f8c8d; font-size: 0.8em;">Gerado por TerapiaConect</p>
+                            <button onclick="window.print()" style="margin-top: 20px; padding: 10px 15px; background: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer;">Imprimir Relatório</button>
+                          </body>
+                        </html>
+                      `);
+                      printWindow.document.close();
+                      toast.success('Preparado para impressão!');
+                    });
+                    
+                    // Adicionar os botões recriados se o elemento de actions existir
+                    if (reportActionsDiv && reportActionsDiv.length > 0 && reportActionsDiv[0]) {
+                      reportActionsDiv[0].appendChild(downloadBtn);
+                      reportActionsDiv[0].appendChild(printBtn);
+                    }
+                  }
+                }
               }
-            } else {
-              // Se existem botões, garantir que estão acessíveis
-              buttons.forEach(btn => {
-                btn.style.zIndex = "9999999999";
-                btn.style.position = "relative";
-                btn.style.display = "flex";
-                btn.style.pointerEvents = "auto";
-                btn.style.cursor = "pointer";
-              });
+            } catch (e) {
+              console.error('Erro ao mover painel:', e);
             }
-          } catch (e) {
-            console.error('Erro ao mover painel:', e);
           }
+        } catch (e) {
+          console.error('Erro ao mover painel:', e);
         }
       }, 100);
       
