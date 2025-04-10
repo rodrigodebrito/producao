@@ -963,120 +963,118 @@ const AIResultsPanel = () => {
   const handleClose = useCallback(() => {
     console.log('AIResultsPanel: Fechando painel de resultados (versão simplificada)');
     
+    // Primeiro alterar a visibilidade (para efeito visual imediato)
+    setVisible(false);
+    
     try {
-      // Primeiro alterar a visibilidade (para efeito visual imediato)
-      setVisible(false);
-      
-      // Remover o portal e seus elementos
-      const portal = document.getElementById('ai-results-portal');
-      if (portal) {
+      // Abordagem segura para remover elementos do DOM
+      const safeRemove = (elementId) => {
         try {
-          portal.remove();
-        } catch (e) {
-          console.log('Não foi possível remover o portal:', e);
+          const element = document.getElementById(elementId);
+          if (element) {
+            // Método 1: Remover diretamente se possível
+            try {
+              element.remove();
+            } catch (err) {
+              // Método 2: Remover através do parentNode
+              if (element.parentNode) {
+                element.parentNode.removeChild(element);
+              } else {
+                // Método 3: Esconder se não conseguir remover
+                element.style.display = 'none';
+                element.style.visibility = 'hidden';
+                element.style.opacity = '0';
+              }
+            }
+          }
+        } catch (err) {
+          console.log(`Erro ao remover ${elementId}:`, err);
         }
-      }
+      };
       
-      // Remover estilo injetado
-      const styleElement = document.getElementById('ai-results-priority-styles');
-      if (styleElement) {
-        try {
-          styleElement.remove();
-        } catch (e) {
-          console.log('Não foi possível remover o estilo:', e);
-        }
-      }
-      
-      // Remover elementos específicos
-      const elementsToRemove = [
+      // Remover todos os elementos principais
+      [
+        'ai-results-portal',
+        'ai-results-priority-styles',
         'floating-report-buttons',
         'backup-report-buttons',
         'direct-report-actions',
         'ai-results-overlay-panel'
-      ];
+      ].forEach(safeRemove);
       
-      elementsToRemove.forEach(id => {
-        try {
-          const element = document.getElementById(id);
-          if (element) element.remove();
-        } catch (e) {
-          console.log(`Não foi possível remover ${id}:`, e);
-        }
-      });
-      
-      // Remover estilos do portal
-      const portalStyles = document.querySelectorAll('style');
-      portalStyles.forEach(style => {
-        if (style.innerHTML && style.innerHTML.includes('#ai-results-portal')) {
-          try {
-            style.remove();
-          } catch (e) {
-            console.log('Não foi possível remover estilo do portal:', e);
+      // Remover estilos do portal de forma segura
+      try {
+        const styles = document.querySelectorAll('style');
+        styles.forEach(style => {
+          if (style && style.innerHTML && style.innerHTML.includes('#ai-results-portal')) {
+            if (style.parentNode) {
+              style.parentNode.removeChild(style);
+            } else {
+              style.remove();
+            }
           }
-        }
-      });
+        });
+      } catch (err) {
+        console.log('Erro ao remover estilos do portal:', err);
+      }
       
       // Desativar a função de remoção do botão se existir
       if (typeof removeButtonFn === 'function') {
         try {
           removeButtonFn();
           setRemoveButtonFn(null);
-        } catch (e) {
-          console.log('Erro na função removeButtonFn:', e.message);
+        } catch (err) {
+          console.log('Erro na função removeButtonFn:', err.message);
         }
       }
       
       // Restaurar o overflow do body
-      document.body.style.overflow = '';
+      try {
+        document.body.style.overflow = '';
+      } catch (err) {
+        console.log('Erro ao restaurar overflow do body:', err);
+      }
       
-      // Restaurar interatividade de elementos
-      const jitsiElements = document.querySelectorAll('#jitsiConferenceFrame0, #new-toolbox, .filmstrip, .subject, .watermark, .tOQNJSLwCYnxUY3bW0zj');
-      jitsiElements.forEach(el => {
-        if (el) {
-          try {
+      // Restaurar interatividade de elementos com segurança
+      try {
+        const jitsiElements = document.querySelectorAll('#jitsiConferenceFrame0, #new-toolbox, .filmstrip, .subject, .watermark, .tOQNJSLwCYnxUY3bW0zj');
+        jitsiElements.forEach(el => {
+          if (el) {
             el.style.pointerEvents = 'auto';
             el.style.zIndex = 'auto';
             el.style.visibility = 'visible';
-          } catch (e) {
-            console.log('Erro ao restaurar elemento Jitsi:', e);
           }
-        }
-      });
+        });
+      } catch (err) {
+        console.log('Erro ao restaurar elementos Jitsi:', err);
+      }
       
-      // Restaurar botões do Jitsi que possam ter sido escondidos
-      const hangupButtons = document.querySelectorAll('button[aria-label="Sair da sessão"], button[aria-label="Sair da Sessão"], button[aria-label="Leave"], button[aria-label="Hang up"], button[data-testid="hangup-button"], .toolbox-button.hangup, .hangup-button');
-      
-      hangupButtons.forEach(btn => {
-        if (btn) {
-          try {
+      // Restaurar botões do Jitsi
+      try {
+        const hangupButtons = document.querySelectorAll('button[aria-label="Sair da sessão"], button[aria-label="Sair da Sessão"], button[aria-label="Leave"], button[aria-label="Hang up"], button[data-testid="hangup-button"], .toolbox-button.hangup, .hangup-button');
+        hangupButtons.forEach(btn => {
+          if (btn) {
             btn.style.visibility = 'visible';
             btn.style.pointerEvents = 'auto';
             btn.style.zIndex = 'auto';
-          } catch (e) {
-            console.log('Erro ao restaurar botão de hangup:', e);
           }
-        }
-      });
-      
-      // Limpar resultado apenas depois de remover os elementos visuais
-      setTimeout(() => {
-        setResultData(null);
-      }, 100);
-      
-    } catch (error) {
-      console.error('Erro ao fechar o painel:', error);
-      
-      // Falhar com segurança - alterar apenas os estados do React
-      setVisible(false);
-      setTimeout(() => {
-        setResultData(null);
-      }, 100);
+        });
+      } catch (err) {
+        console.log('Erro ao restaurar botões de hangup:', err);
+      }
+    } catch (err) {
+      console.error('Erro global ao fechar o painel:', err);
     }
+    
+    // Limpar resultado após um pequeno delay
+    setTimeout(() => {
+      setResultData(null);
+    }, 100);
     
     // Notificar o usuário
     try {
       toast.info('Painel fechado');
-    } catch (e) {
+    } catch (err) {
       console.log('Não foi possível mostrar toast');
     }
   }, [removeButtonFn]);
