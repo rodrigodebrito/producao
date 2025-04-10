@@ -964,72 +964,116 @@ const AIResultsPanel = () => {
     console.log('AIResultsPanel: Fechando painel de resultados (versão simplificada)');
     
     try {
-      // Primeiro, alterar os estados React
+      // Primeiro alterar a visibilidade (para efeito visual imediato)
       setVisible(false);
       
-      // Remover apenas o CSS injetado
+      // Remover o portal e seus elementos
+      const portal = document.getElementById('ai-results-portal');
+      if (portal) {
+        try {
+          portal.remove();
+        } catch (e) {
+          console.log('Não foi possível remover o portal:', e);
+        }
+      }
+      
+      // Remover estilo injetado
       const styleElement = document.getElementById('ai-results-priority-styles');
       if (styleElement) {
-        styleElement.remove();
+        try {
+          styleElement.remove();
+        } catch (e) {
+          console.log('Não foi possível remover o estilo:', e);
+        }
       }
       
-      // Remover elementos específicos sem afetar a navegação
-      try {
-        const floatingButtons = document.getElementById('floating-report-buttons');
-        if (floatingButtons) floatingButtons.parentNode.removeChild(floatingButtons);
-      } catch (e) {
-        console.log('Não foi possível remover floating-report-buttons');
-      }
+      // Remover elementos específicos
+      const elementsToRemove = [
+        'floating-report-buttons',
+        'backup-report-buttons',
+        'direct-report-actions',
+        'ai-results-overlay-panel'
+      ];
       
-      try {
-        const backupButtons = document.getElementById('backup-report-buttons');
-        if (backupButtons) backupButtons.parentNode.removeChild(backupButtons);
-      } catch (e) {
-        console.log('Não foi possível remover backup-report-buttons');
-      }
+      elementsToRemove.forEach(id => {
+        try {
+          const element = document.getElementById(id);
+          if (element) element.remove();
+        } catch (e) {
+          console.log(`Não foi possível remover ${id}:`, e);
+        }
+      });
       
-      try {
-        const directActions = document.getElementById('direct-report-actions');
-        if (directActions) directActions.parentNode.removeChild(directActions);
-      } catch (e) {
-        console.log('Não foi possível remover direct-report-actions');
-      }
+      // Remover estilos do portal
+      const portalStyles = document.querySelectorAll('style');
+      portalStyles.forEach(style => {
+        if (style.innerHTML && style.innerHTML.includes('#ai-results-portal')) {
+          try {
+            style.remove();
+          } catch (e) {
+            console.log('Não foi possível remover estilo do portal:', e);
+          }
+        }
+      });
       
-      // Opcionalmente, desativar a função de remoção do botão se existir
+      // Desativar a função de remoção do botão se existir
       if (typeof removeButtonFn === 'function') {
         try {
           removeButtonFn();
+          setRemoveButtonFn(null);
         } catch (e) {
           console.log('Erro na função removeButtonFn:', e.message);
         }
       }
       
-      // Restaurar o overflow do body se houver sido alterado
+      // Restaurar o overflow do body
       document.body.style.overflow = '';
       
       // Restaurar interatividade de elementos
       const jitsiElements = document.querySelectorAll('#jitsiConferenceFrame0, #new-toolbox, .filmstrip, .subject, .watermark, .tOQNJSLwCYnxUY3bW0zj');
       jitsiElements.forEach(el => {
-        if (el) el.style.pointerEvents = 'auto';
+        if (el) {
+          try {
+            el.style.pointerEvents = 'auto';
+            el.style.zIndex = 'auto';
+            el.style.visibility = 'visible';
+          } catch (e) {
+            console.log('Erro ao restaurar elemento Jitsi:', e);
+          }
+        }
+      });
+      
+      // Restaurar botões do Jitsi que possam ter sido escondidos
+      const hangupButtons = document.querySelectorAll('button[aria-label="Sair da sessão"], button[aria-label="Sair da Sessão"], button[aria-label="Leave"], button[aria-label="Hang up"], button[data-testid="hangup-button"], .toolbox-button.hangup, .hangup-button');
+      
+      hangupButtons.forEach(btn => {
+        if (btn) {
+          try {
+            btn.style.visibility = 'visible';
+            btn.style.pointerEvents = 'auto';
+            btn.style.zIndex = 'auto';
+          } catch (e) {
+            console.log('Erro ao restaurar botão de hangup:', e);
+          }
+        }
       });
       
       // Limpar resultado apenas depois de remover os elementos visuais
       setTimeout(() => {
         setResultData(null);
       }, 100);
+      
     } catch (error) {
       console.error('Erro ao fechar o painel:', error);
       
-      // Falhar com segurança - só alterar os estados do React
+      // Falhar com segurança - alterar apenas os estados do React
       setVisible(false);
-      
-      // Limpar resultado apenas depois de remover os elementos visuais
       setTimeout(() => {
         setResultData(null);
       }, 100);
     }
     
-    // Notificar o usuário sem causar problemas adicionais
+    // Notificar o usuário
     try {
       toast.info('Painel fechado');
     } catch (e) {
