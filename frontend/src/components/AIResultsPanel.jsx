@@ -959,101 +959,61 @@ const AIResultsPanel = () => {
     }
   }, [visible]);
 
-  // Função para fechar o painel de resultados
+  // Função simplificada para fechar o painel de resultados
   const handleClose = useCallback(() => {
-    console.log('AIResultsPanel: Fechando painel de resultados');
+    console.log('AIResultsPanel: Fechando painel de resultados (versão simplificada)');
     
-    // Fechar o painel
-    setVisible(false);
-    setResultData(null); // Limpar dados para garantir que o painel não seja renderizado
-    
-    // Limpar CSS injetado
-    const oldStyle = document.getElementById('ai-results-priority-styles');
-    if (oldStyle) oldStyle.remove();
-    
-    // Remover botões flutuantes e outros elementos
-    const elementsToRemove = [
-      'floating-report-buttons',
-      'backup-report-buttons',
-      'direct-report-actions',
-      'ai-results-portal',
-      'ai-results-overlay-panel'
-    ];
-    
-    // Remover cada elemento
-    elementsToRemove.forEach(id => {
-      const element = document.getElementById(id);
-      if (element) {
+    try {
+      // Apenas alterar os estados React - abordagem mais segura
+      setVisible(false);
+      setResultData(null);
+      
+      // Remover apenas o CSS injetado
+      const styleElement = document.getElementById('ai-results-priority-styles');
+      if (styleElement) {
+        styleElement.remove();
+      }
+      
+      // Remover apenas elementos específicos com tratamento de erro individual
+      try {
+        const floatingButtons = document.getElementById('floating-report-buttons');
+        if (floatingButtons) floatingButtons.parentNode.removeChild(floatingButtons);
+      } catch (e) {
+        console.log('Não foi possível remover floating-report-buttons');
+      }
+      
+      try {
+        const backupButtons = document.getElementById('backup-report-buttons');
+        if (backupButtons) backupButtons.parentNode.removeChild(backupButtons);
+      } catch (e) {
+        console.log('Não foi possível remover backup-report-buttons');
+      }
+      
+      // Opcionalmente, desativar a função de remoção do botão se existir
+      if (typeof removeButtonFn === 'function') {
         try {
-          element.remove();
-          console.log(`AIResultsPanel: Removido elemento ${id}`);
+          removeButtonFn();
         } catch (e) {
-          console.error(`Erro ao remover elemento ${id}:`, e);
+          console.log('Erro na função removeButtonFn:', e.message);
         }
       }
-    });
-    
-    // Remover qualquer portal React usando querySelector
-    const portals = document.querySelectorAll('[id^="ai-results"], [class^="ai-results"]');
-    portals.forEach(portal => {
-      try {
-        portal.remove();
-        console.log('AIResultsPanel: Removido portal React adicional');
-      } catch (e) {
-        console.error('Erro ao remover portal React:', e);
-      }
-    });
-    
-    // Se tiver função de remover botão, executá-la
-    if (typeof removeButtonFn === 'function') {
-      try {
-        removeButtonFn();
-      } catch (e) {
-        console.error('Erro ao remover botão:', e);
-      }
-    }
-    
-    // Restaurar estilo do body
-    document.body.style.overflow = '';
-    
-    // Restaurar controles de vídeo escondidos
-    setTimeout(() => {
-      const possibleButtonSelectors = [
-        'button[aria-label="Sair da sessão"]',
-        'button[aria-label="Sair da Sessão"]',
-        'button[aria-label="Leave"]',
-        'button[aria-label="Hang up"]',
-        'button[data-testid="hangup-button"]',
-        '.toolbox-button.hangup',
-        '.toolbox-button-wth-dialog.hangup',
-        'button.red',
-        'button.hangup'
-      ];
       
-      possibleButtonSelectors.forEach(selector => {
-        const buttons = document.querySelectorAll(selector);
-        buttons.forEach(btn => {
-          if (btn) {
-            btn.style.visibility = '';
-            btn.style.pointerEvents = '';
-            btn.style.zIndex = '';
-          }
-        });
-      });
-    }, 200);
-    
-    // Também forçar o document.body a remover qualquer estilo relacionado
-    document.body.querySelectorAll('[id^="ai-results"], [class^="ai-results"]').forEach(el => {
-      el.remove();
-    });
-    
-    // Limpar qualquer intervalo pendente
-    if (window._aiResultsIntervals) {
-      window._aiResultsIntervals.forEach(intervalId => clearInterval(intervalId));
-      window._aiResultsIntervals = [];
+      // Restaurar o overflow do body se houver sido alterado
+      document.body.style.overflow = '';
+    } catch (error) {
+      console.error('Erro ao fechar o painel:', error);
+      
+      // Falhar com segurança - só alterar os estados do React
+      setVisible(false);
+      setResultData(null);
     }
     
-    toast.info('Painel de resultados fechado', { autoClose: 2000 });
+    // Notificar o usuário sem causar problemas adicionais
+    try {
+      toast.info('Painel fechado');
+    } catch (e) {
+      console.log('Não foi possível mostrar toast');
+    }
   }, [removeButtonFn]);
   
   const togglePinMode = () => {
