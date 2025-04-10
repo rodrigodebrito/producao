@@ -65,9 +65,22 @@ export const MicButton = ({ transcriptionMode = 'auto' }) => {
   const [isPaused, setIsPaused] = useState(false);
   const [reconnectAttempts, setReconnectAttempts] = useState(0);
   const [currentMode, setCurrentMode] = useState(transcriptionMode);
+  const [captureMode, setCaptureMode] = useState('mic'); // 'mic' ou 'system'
   const recordingTimerRef = useRef(null);
   const reconnectTimerRef = useRef(null);
   const selectedModeRef = useRef(transcriptionMode);
+  
+  // Função para alternar entre modos de captura (microfone vs. sistema)
+  const toggleCaptureMode = useCallback(() => {
+    if (isRecording) return; // Não permitir alteração durante gravação
+    
+    const newMode = captureMode === 'mic' ? 'system' : 'mic';
+    setCaptureMode(newMode);
+    console.log(`Modo de captura alterado para: ${newMode}`);
+    
+    // Mostrar toast para feedback ao usuário
+    toast.info(`Modo de captura alterado: ${newMode === 'mic' ? 'Apenas Microfone' : 'Microfone + Áudio da Chamada'}`);
+  }, [captureMode, isRecording]);
   
   // Função para parar todas as gravações ativas
   const stopAllRecordings = useCallback(() => {
@@ -90,7 +103,17 @@ export const MicButton = ({ transcriptionMode = 'auto' }) => {
         console.error('❌ Erro ao parar whisperService:', e);
       }
     }
-  }, []);
+    
+    // Se estiver no modo de captura do sistema, parar captura de áudio do sistema
+    if (captureMode === 'system' && window.systemAudioCaptureService) {
+      try {
+        console.log('🛑 Parando serviço de captura de áudio do sistema');
+        window.systemAudioCaptureService.stopCapture();
+      } catch (e) {
+        console.error('❌ Erro ao parar systemAudioCaptureService:', e);
+      }
+    }
+  }, [captureMode]);
   
   // Função de iniciar gravação com um modo específico
   const startRecordingWithMode = useCallback((mode) => {
@@ -102,6 +125,57 @@ export const MicButton = ({ transcriptionMode = 'auto' }) => {
       clearTimeout(reconnectTimerRef.current);
     }
     
+    // Verificar modo de captura (mic ou system)
+    if (captureMode === 'system') {
+      console.log('Iniciando captura com áudio do sistema + microfone');
+      
+      // Iniciar captura combinada usando systemAudioCaptureService
+      if (window.systemAudioCaptureService) {
+        try {
+          window.systemAudioCaptureService.startCapture().then(success => {
+            if (success) {
+              setIsRecording(true);
+              toast.info('Gravação de áudio do sistema iniciada');
+            } else {
+              toast.error('Falha ao iniciar captura de áudio do sistema');
+            }
+          });
+          
+          return true;
+        } catch (e) {
+          console.error('Erro ao iniciar captura de áudio do sistema:', e);
+          toast.error('Erro ao acessar áudio do sistema');
+          return false;
+        }
+      } else {
+        // Se o serviço não está disponível, tentar criá-lo
+        console.log('Serviço de captura de áudio do sistema não disponível, tentando criar...');
+        
+        // Importar o serviço dinamicamente
+        import('../services/systemAudioCapture.service').then(module => {
+          window.systemAudioCaptureService = module.default;
+          
+          // Tentar iniciar novamente
+          window.systemAudioCaptureService.startCapture().then(success => {
+            if (success) {
+              setIsRecording(true);
+              toast.info('Gravação de áudio do sistema iniciada');
+            } else {
+              toast.error('Falha ao iniciar captura de áudio do sistema');
+            }
+          });
+        }).catch(err => {
+          console.error('Erro ao importar systemAudioCaptureService:', err);
+          toast.error('Não foi possível carregar o serviço de captura de áudio');
+          
+          // Fallback para o modo de microfone
+          setCaptureMode('mic');
+          return false;
+        });
+      }
+    }
+    
+    // Continuar com o fluxo normal para mic
     if (effectiveMode === 'whisper') {
       if (window.whisperService) {
         console.log('▶️ Iniciando APENAS o serviço Whisper');
@@ -155,7 +229,7 @@ export const MicButton = ({ transcriptionMode = 'auto' }) => {
         return false;
       }
     }
-  }, []);
+  }, [currentMode, captureMode]);
   
   // Função para reiniciar gravação
   const restartRecording = useCallback(() => {
@@ -314,15 +388,46 @@ export const MicButton = ({ transcriptionMode = 'auto' }) => {
     />;
   };
   
+  // Componente renderizado dentro do MicButton 
   return (
-    <button 
-      onClick={toggleMicrophone}
-      className={`mic-button ${isRecording ? 'recording' : ''}`}
-      title={isRecording ? `Parar gravação (${currentMode})` : `Iniciar gravação (${currentMode})`}
-      data-mode={currentMode}
-    >
-      {renderIcon()}
-    </button>
+    <div className="mic-button-wrapper">
+      <div className="capture-mode-selector">
+        <button 
+          onClick={toggleCaptureMode}
+          className={`mode-selector-button ${captureMode === 'system' ? 'system-mode' : 'mic-mode'} ${isRecording ? 'disabled' : ''}`}
+          disabled={isRecording}
+          title={captureMode === 'mic' ? 'Capturar áudio do microfone e da chamada' : 'Capturar apenas o microfone'}
+        >
+          {captureMode === 'mic' ? (
+            <>
+              <span className="icon">🎙️</span>
+              <span className="text">Apenas Microfone</span>
+            </>
+          ) : (
+            <>
+              <span className="icon">🔊</span>
+              <span className="text">Microfone + Chamada</span>
+            </>
+          )}
+        </button>
+      </div>
+      
+      <button 
+        onClick={toggleMicrophone} 
+        className={`mic-button ${isRecording ? 'recording' : ''} ${isPaused ? 'paused' : ''}`}
+        title={isRecording ? 'Parar gravação' : 'Iniciar gravação'}
+      >
+        <FontAwesomeIcon icon={isRecording ? faMicrophoneSlash : faMicrophone} />
+      </button>
+      
+      {isRecording && (
+        <div className="recording-info">
+          <div className="recording-status">
+            {captureMode === 'system' ? 'Gravando Microfone + Chamada' : 'Gravando Microfone'}
+          </div>
+        </div>
+      )}
+    </div>
   );
 };
 
