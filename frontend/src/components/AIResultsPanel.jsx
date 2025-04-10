@@ -972,33 +972,69 @@ const AIResultsPanel = () => {
     }
   }, [visible]);
 
-  // Função super simplificada para fechar o painel de resultados
+  // Função para fechar o painel de resultados com implementação robusta
   const handleClose = useCallback(() => {
-    console.log('AIResultsPanel: Fechando painel com implementação ultra-simplificada');
+    console.log('AIResultsPanel: Fechando painel versão robusta');
     
-    // Apenas desativar visibilidade imediatamente, sem tentar manipular DOM
+    // Primeiro: alterar visibilidade imediatamente
     setVisible(false);
     
-    // Usar setTimeout para limpar dados após a renderização
+    // Segundo: limpar elementos da DOM de forma segura
     setTimeout(() => {
-      // Ocultar elementos específicos sem tentar remover
       try {
-        // Técnica segura: esconder em vez de remover
-        ['ai-results-portal', 'ai-results-overlay-panel', 'floating-report-buttons', 
-         'backup-report-buttons', 'direct-report-actions'].forEach(id => {
-          const el = document.getElementById(id);
-          if (el) {
-            el.style.display = 'none';
-            el.style.visibility = 'hidden';
-            el.style.opacity = '0';
-            el.style.pointerEvents = 'none';
+        // Limpar todos os elementos possíveis pelo ID
+        const elementsToClean = [
+          'ai-results-portal',
+          'ai-results-overlay-panel',
+          'floating-report-buttons',
+          'backup-report-buttons',
+          'direct-report-actions',
+          'ai-results-priority-styles'
+        ];
+        
+        elementsToClean.forEach(id => {
+          const element = document.getElementById(id);
+          if (element) {
+            try {
+              // Ocultar o elemento primeiro (abordagem não destrutiva)
+              element.style.display = 'none';
+              element.style.visibility = 'hidden';
+              element.style.opacity = '0';
+              element.style.pointerEvents = 'none';
+              
+              // Tentar remover o elemento
+              if (element.parentNode) {
+                element.parentNode.removeChild(element);
+              } else {
+                element.remove();
+              }
+            } catch (err) {
+              console.log(`Não foi possível remover ${id}:`, err);
+            }
           }
         });
         
-        // Restaurar interatividade da sessão
+        // Limpar estilos adicionados
+        document.querySelectorAll('style').forEach(style => {
+          if (style && style.innerHTML && 
+             (style.innerHTML.includes('#ai-results-portal') || 
+              style.innerHTML.includes('#ai-results-overlay-panel'))) {
+            try {
+              if (style.parentNode) {
+                style.parentNode.removeChild(style);
+              } else {
+                style.remove();
+              }
+            } catch (err) {
+              console.log('Erro ao remover estilo:', err);
+            }
+          }
+        });
+        
+        // Garantir que o body esteja com comportamento normal
         document.body.style.overflow = '';
         
-        // Restaurar elementos do Jitsi
+        // Restaurar interatividade dos elementos da sessão
         document.querySelectorAll('#jitsiConferenceFrame0, #new-toolbox, .filmstrip, .subject, .watermark, .tOQNJSLwCYnxUY3bW0zj, button[aria-label="Sair da sessão"], button[aria-label="Sair da Sessão"], button[aria-label="Leave"], button[aria-label="Hang up"]')
           .forEach(el => {
             if (el) {
@@ -1007,13 +1043,24 @@ const AIResultsPanel = () => {
               el.style.zIndex = 'auto';
             }
           });
+        
+        // Limpar funções de remoção
+        if (typeof removeButtonFn === 'function') {
+          try {
+            removeButtonFn();
+            setRemoveButtonFn(null);
+          } catch (err) {
+            console.log('Erro na função removeButtonFn:', err);
+          }
+        }
       } catch (err) {
-        console.log('Erro ao limpar elementos:', err);
+        console.log('Erro global ao limpar elementos:', err);
       }
       
-      // Limpar dados somente depois de processar elementos
+      // Por último: limpar o estado de dados
       setResultData(null);
-    }, 300);
+      setPinnedMode(false);
+    }, 200);
     
     // Notificar o usuário
     try {
@@ -1021,7 +1068,7 @@ const AIResultsPanel = () => {
     } catch (err) {
       console.log('Não foi possível mostrar toast');
     }
-  }, []);
+  }, [removeButtonFn]);
   
   const togglePinMode = () => {
     setPinnedMode(!pinnedMode);
