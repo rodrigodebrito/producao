@@ -202,14 +202,21 @@ const openAIService = {
             const transcriptionOptions = {
                 file: file,
                 model: 'whisper-1',
-                temperature: 0, // Reduzir temperatura para maior precisão
+                temperature: 0.1, // Temperatura leve para evitar padrões repetitivos
                 response_format: 'verbose_json', // Formato detalhado com informações de segmentos e confiança
-                prompt: "Esta é uma transcrição de uma sessão de terapia. Pode conter áudio em volume baixo.", // Contexto para guiar a transcrição
+                prompt: "Esta é uma sessão de terapia sendo transcrita. Transcreva exatamente o que é dito, mesmo se forem apenas algumas palavras. Ignore qualquer texto padrão como 'Legendas pela comunidade' ou 'Amara.org' - esses não são parte da fala real.", // Instrução explícita para evitar texto padrão
             };
             
             // Adicionar o idioma se for especificado
             if (language) {
                 transcriptionOptions.language = language;
+            }
+            
+            // Tentar suprimir tokens específicos conhecidos por gerar texto de legendas
+            try {
+                transcriptionOptions.suppress_tokens = [50364, 50519, 50518, 50020, 1499];
+            } catch (err) {
+                logger.warn('Parâmetro suppress_tokens não suportado, continuando sem ele');
             }
             
             // Realizar a transcrição
@@ -225,14 +232,60 @@ const openAIService = {
                 transcribedText = response.segments.map(segment => segment.text).join(' ');
             }
             
+            // Limpar qualquer texto de legenda ou artefatos conhecidos
+            transcribedText = this._cleanTranscribedText(transcribedText);
+            
             logger.info(`Transcrição concluída para arquivo: ${filePath}`);
-            logger.info(`Texto transcrito: "${transcribedText.substring(0, 100)}${transcribedText.length > 100 ? '...' : ''}"`);
+            logger.info(`Texto transcrito (após limpeza): "${transcribedText.substring(0, 100)}${transcribedText.length > 100 ? '...' : ''}"`);
             
             return transcribedText || '';
         } catch (error) {
             logger.error(`Erro ao transcrever áudio/vídeo: ${filePath}`, error);
             throw new Error(`Falha na transcrição: ${error.message}`);
         }
+    },
+
+    /**
+     * Limpa texto transcrito de artefatos conhecidos como legendas automáticas
+     * @private
+     * @param {string} text - Texto original da transcrição
+     * @returns {string} - Texto limpo
+     */
+    _cleanTranscribedText(text) {
+        if (!text) return '';
+        
+        // Filtrar frases específicas de legendas
+        const phrasesToFilter = [
+            'Legendas pela comunidade Amara.org',
+            'legendas pela comunidade',
+            'legendas pela',
+            'legendas por',
+            'Amara.org',
+            'Amara',
+            'Legendas',
+            'legendas',
+            'Legenda',
+            'legenda',
+            'comunidade',
+            'Comunidade'
+        ];
+        
+        let cleanedText = text;
+        
+        // Remover frases conhecidas
+        phrasesToFilter.forEach(phrase => {
+            cleanedText = cleanedText.replace(new RegExp(phrase, 'gi'), '');
+        });
+        
+        // Remover múltiplos espaços
+        cleanedText = cleanedText.replace(/\s+/g, ' ').trim();
+        
+        // Verificar se ficou algo significativo após a limpeza
+        if (cleanedText.length < 3) {
+            return '';
+        }
+        
+        return cleanedText;
     },
 
     /**

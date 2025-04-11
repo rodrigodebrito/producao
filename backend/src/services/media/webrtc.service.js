@@ -1015,16 +1015,21 @@ class WebRTCSession {
       
       logger.info(`Transcrição concluída com sucesso, tamanho: ${transcription.length} caracteres`);
       
-      // Se a transcrição estiver vazia, retornar um texto padrão
-      if (!transcription || transcription.trim() === '') {
-        logger.info('Transcrição vazia recebida, gerando texto de resposta padrão');
+      // Se a transcrição contém texto de legendas, consideramos como uma falha de detecção
+      const legendasTexts = ['Legendas pela comunidade', 'Amara.org', 'Legendas', 'legenda'];
+      const hasLegendaText = legendasTexts.some(text => transcription.toLowerCase().includes(text.toLowerCase()));
+      
+      if (!transcription || transcription.trim() === '' || hasLegendaText) {
+        logger.info(`Transcrição inválida detectada: "${transcription}". Gerando texto de resposta padrão`);
         
         const defaultText = "Nenhuma fala detectada. A gravação pode conter apenas silêncio ou ruído de fundo. " + 
-                           "Tente falar mais próximo do microfone ou aumentar o volume.";
+                           "Tente falar mais próximo do microfone ou verificar se seu microfone está funcionando corretamente.";
         
         return defaultText;
       }
       
+      // Se chegou aqui, temos uma transcrição válida
+      logger.info(`Transcrição válida detectada: "${transcription.substring(0, 50)}..."`);
       return transcription;
     } catch (error) {
       logger.error(`Erro ao transcrever áudio: ${error.message}`);
