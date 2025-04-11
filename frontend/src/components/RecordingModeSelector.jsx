@@ -1,62 +1,34 @@
 import React from 'react';
-import './MicButton.css';
+import './RecordingModeSelector.css';
 
 /**
- * Componente para seleção do modo de gravação de áudio
- * @param {Object} props Propriedades do componente
- * @param {string} props.mode Modo de gravação atual
- * @param {Function} props.onChange Função chamada quando o modo é alterado
+ * Componente para selecionar o modo de gravação
+ * @param {Object} props Component props
+ * @param {string} props.selectedMode Modo selecionado ('webspeech', 'webrtc', 'daily')
+ * @param {Function} props.onModeChange Função para tratar mudança de modo
  * @param {boolean} props.disabled Se o seletor está desabilitado
  */
-const RecordingModeSelector = ({ mode, onChange, disabled = false }) => {
-  const handleChange = (e) => {
-    if (onChange) {
-      onChange(e.target.value);
+const RecordingModeSelector = ({ selectedMode, onModeChange, disabled = false }) => {
+  const handleModeChange = (e) => {
+    if (onModeChange) {
+      onModeChange(e.target.value);
     }
   };
-  
+
   return (
-    <div className="mic-mode-selector">
-      <div className="mic-mode-title">Modo de Gravação:</div>
-      
-      <label className="mic-mode-option">
-        <input
-          type="radio"
-          name="recording-mode"
-          value="webspeech"
-          checked={mode === 'webspeech'}
-          onChange={handleChange}
-          disabled={disabled}
-        />
-        <span className="mode-indicator mode-webspeech"></span>
-        Microfone Local (Web Speech API)
-      </label>
-      
-      <label className="mic-mode-option">
-        <input
-          type="radio"
-          name="recording-mode"
-          value="webrtc"
-          checked={mode === 'webrtc'}
-          onChange={handleChange}
-          disabled={disabled}
-        />
-        <span className="mode-indicator mode-webrtc"></span>
-        Conversa Completa (WebRTC)
-      </label>
-      
-      <label className="mic-mode-option">
-        <input
-          type="radio"
-          name="recording-mode"
-          value="daily"
-          checked={mode === 'daily'}
-          onChange={handleChange}
-          disabled={disabled}
-        />
-        <span className="mode-indicator mode-daily"></span>
-        Chamada (Daily)
-      </label>
+    <div className="recording-mode-selector">
+      <label htmlFor="recording-mode">Modo de Transcrição:</label>
+      <select 
+        id="recording-mode" 
+        value={selectedMode} 
+        onChange={handleModeChange}
+        disabled={disabled}
+        className="recording-mode-select"
+      >
+        <option value="webspeech">Browser (Tempo real)</option>
+        <option value="webrtc">WebRTC (Conversa completa)</option>
+        <option value="daily">Daily (Legado)</option>
+      </select>
     </div>
   );
 };

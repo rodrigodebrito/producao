@@ -1,45 +1,45 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import MicButton from './MicButton';
 import RecordingModeSelector from './RecordingModeSelector';
-import './AIComponents.css';
+import './TranscriptionControls.css';
 import aiService from '../services/aiService';
 
 /**
- * Componente que renderiza os controles de transcrição
+ * Componente para controle de transcrição de áudio
  * 
- * @param {string} sessionId - ID da sessão
- * @param {function} onTranscriptionComplete - Função para completar a transcrição
- * @param {boolean} disabled - Se o componente está desabilitado
- * @param {boolean} syncRecording - Se deve sincronizar gravação com outros participantes
- * @param {Object} socket - Objeto Socket.IO para comunicação em tempo real
+ * @param {Object} props
+ * @param {Function} props.onTranscriptionComplete - Callback quando a transcrição estiver completa
+ * @param {string} props.sessionId - ID da sessão atual
+ * @param {boolean} props.syncRecording - Se deve sincronizar a gravação entre dispositivos
+ * @param {Object} props.socket - Socket.IO para comunicação
  */
 const TranscriptionControls = ({ 
-  sessionId, 
   onTranscriptionComplete, 
-  disabled, 
-  syncRecording = true,
-  socket = null
+  sessionId, 
+  syncRecording = false,
+  socket 
 }) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState(null);
   const [recordingMode, setRecordingMode] = useState('webspeech'); // webspeech, webrtc, daily
-
-  // Use socket provided as prop or try to get it from window
-  const socketInstance = useMemo(() => {
-    return socket || window.socket || window.constellationSocket;
-  }, [socket]);
+  const [dailyStatus, setDailyStatus] = useState({ connected: false });
+  const [showRecordingModeSelector, setShowRecordingModeSelector] = useState(true);
+  const [isRecording, setIsRecording] = useState(false);
+  const [syncBetweenDevices, setSyncBetweenDevices] = useState(syncRecording);
 
   useEffect(() => {
-    // Armazenar o sessionId globalmente para uso nos componentes que emitem eventos
-    if (sessionId) {
-      window.sessionId = sessionId;
-      console.log(`TranscriptionControls: Armazenando sessionId globalmente: ${sessionId}`);
+    // Verificar status do Daily se disponível
+    if (window.dailyAudioCapture && typeof window.dailyAudioCapture.isConnected === 'function') {
+      setDailyStatus({
+        connected: window.dailyAudioCapture.isConnected()
+      });
     }
-  }, [sessionId]);
+  }, []);
 
   const handleRecordingStart = () => {
     console.log(`TranscriptionControls: Iniciando gravação no modo: ${recordingMode}`);
     setError(null);
+    setIsRecording(true);
   };
 
   const handleRecordingStop = async (audioBlob) => {
@@ -89,14 +89,15 @@ const TranscriptionControls = ({
       } else {
         throw new Error('No transcript received from the server');
       }
-    } catch (err) {
-      console.error('TranscriptionControls: Erro de transcrição:', err);
-      setError('Failed to transcribe audio. Please try again.');
+    } catch (error) {
+      console.error('TranscriptionControls: Erro ao processar áudio:', error);
+      setError(`Erro ao processar áudio: ${error.message}`);
     } finally {
       setIsProcessing(false);
+      setIsRecording(false);
     }
   };
-
+  
   const handlePartialTranscription = (transcription, options = {}) => {
     console.log(`TranscriptionControls: Transcrição parcial recebida (tempo: ${options.timestamp || 'desconhecido'})`);
     
@@ -116,60 +117,37 @@ const TranscriptionControls = ({
     }
   };
 
-  // Verificar se o socket está disponível
-  useEffect(() => {
-    if (syncRecording) {
-      if (!socketInstance) {
-        console.warn('TranscriptionControls: Socket.IO não encontrado. A sincronização pode não funcionar.');
-      } else {
-        console.log(`TranscriptionControls: Socket.IO disponível (ID: ${socketInstance.id || 'não conectado'})`);
-        
-        // Garantir que o socket esteja na sala correta
-        if (sessionId && socketInstance.connected) {
-          console.log(`TranscriptionControls: Entrando na sala: ${sessionId}`);
-          socketInstance.emit('join-session', { sessionId });
-        }
-      }
-    }
-  }, [syncRecording, sessionId, socketInstance]);
-
-  // Função para mudar o modo de gravação
-  const handleModeChange = (newMode) => {
-    console.log(`TranscriptionControls: Mudando modo de gravação: ${recordingMode} -> ${newMode}`);
-    setRecordingMode(newMode);
-  };
-
   return (
     <div className="transcription-controls">
-      {/* Seletor de modo de gravação */}
-      <RecordingModeSelector 
-        mode={recordingMode} 
-        onChange={handleModeChange} 
-        disabled={disabled || isProcessing}
-      />
+      <div className="transcription-controls-options">
+        {showRecordingModeSelector && (
+          <RecordingModeSelector 
+            selectedMode={recordingMode} 
+            onModeChange={setRecordingMode} 
+            disabled={isRecording || isProcessing} 
+          />
+        )}
+        
+        <MicButton 
+          onStart={handleRecordingStart} 
+          onStop={handleRecordingStop}
+          onPartialTranscription={handlePartialTranscription}
+          disabled={isProcessing || (recordingMode === 'daily' && !dailyStatus.connected)} 
+          mode={recordingMode}
+          syncRecording={syncBetweenDevices}
+          sessionId={sessionId}
+          socket={socket}
+        />
+      </div>
       
-      {/* MicButton com sessionId explícito para garantir sincronização */}
-      <MicButton 
-        onStart={handleRecordingStart} 
-        onStop={handleRecordingStop} 
-        onPartialTranscription={handlePartialTranscription}
-        disabled={disabled || isProcessing}
-        syncRecording={syncRecording}
-        sessionId={sessionId}
-        mode={recordingMode}
-        socket={socketInstance}
-      />
-      
-      {isProcessing && (
-        <div className="ai-processing">
-          <div className="ai-processing-indicator"></div>
-          <span>Processando áudio...</span>
+      {isProcessing && 
+        <div className="processing-indicator">
+          <div className="spinner"></div>
+          <span>Processando transcrição...</span>
         </div>
-      )}
+      }
       
-      {error && (
-        <div className="ai-error">{error}</div>
-      )}
+      {error && <div className="error-message">{error}</div>}
     </div>
   );
 };

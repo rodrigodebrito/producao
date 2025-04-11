@@ -286,6 +286,7 @@ const MicButton = ({
 
   const showRTCStatus = mode === 'webrtc';
   const isRTCActive = webrtcStatus.initialized && webrtcStatus.connected;
+  const showTranscribeNowButton = isRecording && mode === 'webrtc' && webrtcStatus.initialized;
 
   return (
     <div className="mic-button-container">
@@ -309,7 +310,7 @@ const MicButton = ({
         {buttonText}
       </button>
       
-      {isRecording && mode === 'webrtc' && webrtcStatus.initialized && (
+      {showTranscribeNowButton && (
         <button 
           className={`transcribe-now-button ${isRequesting ? 'requesting' : ''}`}
           onClick={requestPartialTranscription}
