@@ -260,17 +260,19 @@ class DailyService {
       const properties = {
         privacy: 'public',
         properties: {
-          exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60), // 24 horas
-          enable_chat: true,
-          enable_screenshare: true,
-          start_video_off: false,
-          start_audio_off: false,
-          enable_knocking: false, // Desativar sala de espera
-          enable_prejoin_ui: false, // Desativar interface de pré-entrada
+          exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60), // 24 horas de expiração
+          enable_chat: true, // Habilitar chat
+          enable_screenshare: true, // Habilitar compartilhamento de tela
+          start_video_off: false, // Iniciar com vídeo ligado
+          start_audio_off: false, // Iniciar com áudio ligado
+          enable_knocking: false, // Desativar sala de espera (knock)
+          enable_prejoin_ui: false, // Desativar tela de pré-entrada
+          enable_waiting_room: false, // Desativar sala de espera explicitamente
+          owner_only_broadcast: false, // Permitir que todos transmitam (não só o dono)
           enable_pip_ui: true, // Habilitar Picture-in-Picture
           enable_network_ui: true, // Mostrar indicador de qualidade de rede
           enable_new_call_ui: true, // Usar a nova interface
-          lang: 'pt-br' // Definir idioma para português
+          lang: 'pt' // Definir idioma para português
         }
       };
       
