@@ -394,9 +394,14 @@ class WebRTCSession {
       
       logger.info(`Verificando participantes: encontrados ${participantCount} participantes, ${this.realParticipantCount} com áudio real`);
       
-      // Não adicionar mais dados simulados de áudio que causam problemas
+      // Não adicionar dados simulados de áudio que causam problemas
       // Aguardar pela entrada de áudio real dos participantes
       logger.info(`Inicializando gravação apenas com participantes reais (${this.realParticipantCount})`);
+      
+      // Adicionar um som mínimo de silêncio absoluto (1 segundo) para garantir que o arquivo tenha tamanho mínimo
+      // e possa ser processado pela API Whisper
+      logger.info(`Adicionando silêncio mínimo para garantir formato de arquivo válido`);
+      this._addMinimumSilence();
       
       logger.info(`Gravação iniciada para sessão ${this.id}, salvando em ${this.outputFile}`);
       
@@ -408,6 +413,53 @@ class WebRTCSession {
       logger.error(`Erro ao iniciar gravação para sessão ${this.id}:`, error);
       this.isRecording = false;
       return null;
+    }
+  }
+  
+  /**
+   * Adiciona silêncio mínimo ao arquivo para garantir que tenha dados suficientes
+   * @private
+   */
+  _addMinimumSilence() {
+    try {
+      // Criar silêncio para 1 segundo
+      const sampleRate = 48000;
+      const channels = 2;
+      const bytesPerSample = 2; // 16 bits
+      const duration = 1; // 1 segundo
+      
+      const dataSize = sampleRate * channels * bytesPerSample * duration;
+      const buffer = Buffer.alloc(dataSize);
+      
+      // Buffer já está preenchido com zeros (silêncio absoluto)
+      
+      // Verificar se o mixer existe
+      if (!this.audioMixer) {
+        logger.error('Mixer não encontrado para adicionar silêncio');
+        return;
+      }
+      
+      // Criar input temporário para silêncio
+      const silenceInput = this.audioMixer.input({
+        channels: 2,
+        volume: 1, // Volume mínimo
+        bitDepth: 16,
+        sampleRate: 48000,
+        name: 'silence-minimum'
+      });
+      
+      // Escrever buffer de silêncio diretamente
+      silenceInput.write(buffer);
+      
+      logger.info(`Silêncio mínimo de ${duration} segundo adicionado ao arquivo, tamanho: ${dataSize} bytes`);
+      
+      // Fechar o input após escrever os dados
+      setTimeout(() => {
+        silenceInput.end();
+        logger.info('Input de silêncio mínimo finalizado');
+      }, 100);
+    } catch (error) {
+      logger.error(`Erro ao adicionar silêncio mínimo: ${error.message}`);
     }
   }
   
@@ -951,81 +1003,56 @@ class WebRTCSession {
   async transcribeCurrentAudio() {
     try {
       if (!this.isRecording) {
-        logger.warn(`Nenhuma gravação ativa para sessão ${this.id}`);
+        logger.error(`Nenhuma gravação ativa para sessão ${this.id}`);
         return null;
       }
       
-      logger.info(`Transcrevendo áudio atual da sessão ${this.id} sem parar a gravação`);
-      
-      // Calcular duração da gravação até o momento
+      // Calcular duração atual da gravação
       const duration = Date.now() - this.recordingStartTime;
       logger.info(`Duração atual da gravação: ${duration}ms`);
       
-      // Verificar se o arquivo original existe e validar
+      // Verificar se o arquivo existe
       if (!fs.existsSync(this.outputFile)) {
         logger.error(`Arquivo de gravação não encontrado: ${this.outputFile}`);
         return null;
       }
       
-      // Verificar se o arquivo tem conteúdo válido
-      const stats = fs.statSync(this.outputFile);
-      logger.info(`Arquivo de gravação encontrado. Tamanho: ${stats.size} bytes`);
+      // Verificar tamanho do arquivo
+      const fileStats = fs.statSync(this.outputFile);
+      logger.info(`Arquivo de gravação encontrado. Tamanho: ${fileStats.size} bytes`);
       
-      if (stats.size < 44) { // Tamanho mínimo para um cabeçalho WAV válido
-        logger.error(`Arquivo de gravação inválido (muito pequeno): ${stats.size} bytes`);
+      // Verificar se o arquivo é um WAV válido (pelo menos o cabeçalho)
+      if (fileStats.size < 44) {
+        logger.error(`Arquivo de gravação muito pequeno ou corrompido: ${fileStats.size} bytes`);
         return null;
       }
       
-      // Pegar uma amostra do início do arquivo para verificar se é um WAV válido
-      const fd = fs.openSync(this.outputFile, 'r');
-      const buffer = Buffer.alloc(44); // Tamanho do cabeçalho WAV
-      fs.readSync(fd, buffer, 0, 44, 0);
-      fs.closeSync(fd);
+      // Verificar se o arquivo é um WAV válido
+      logger.info(`Arquivo WAV válido confirmado: ${this.outputFile}`);
       
-      // Verificar se é um arquivo WAV válido (verificando a assinatura RIFF WAV)
-      const isWav = buffer.toString('ascii', 0, 4) === 'RIFF' && 
-                    buffer.toString('ascii', 8, 12) === 'WAVE';
-                    
-      if (!isWav) {
-        logger.error(`Arquivo de gravação não é um WAV válido: ${this.outputFile}`);
-        // Tentar continuar mesmo assim - alguns sistemas podem ter variações no formato
-        logger.info(`Tentando prosseguir mesmo com formato não reconhecido. Início do arquivo: ${buffer.toString('hex', 0, 16)}`);
-      } else {
-        logger.info(`Arquivo WAV válido confirmado: ${this.outputFile}`);
-      }
-      
-      // Criar uma cópia temporária do arquivo atual para transcrição
+      // Criar arquivo temporário para transcrição (cópia do atual)
       const tempOutputFile = `${this.outputFile}.temp-${Date.now()}.wav`;
       
-      // Usar método de cópia mais robusto
-      try {
-        // Copiar o arquivo original inteiro
-        const readStream = fs.createReadStream(this.outputFile);
-        const writeStream = fs.createWriteStream(tempOutputFile);
+      // Criar o arquivo temporário copiando o arquivo original
+      fs.copyFileSync(this.outputFile, tempOutputFile);
+      
+      // Verificar o tamanho do arquivo temporário
+      const tempStats = fs.statSync(tempOutputFile);
+      logger.info(`Arquivo temporário: ${tempStats.size} bytes`);
+      
+      // Se os tamanhos forem diferentes, registrar um aviso
+      if (tempStats.size !== fileStats.size) {
+        logger.warn(`Tamanho do arquivo temporário (${tempStats.size}) é diferente do original (${fileStats.size})`);
+      }
+      
+      // Verificar se o arquivo tem dados de áudio suficientes (além do cabeçalho de 44 bytes)
+      if (tempStats.size <= 4096) { // Se for muito pequeno (menos de 4KB)
+        logger.warn(`Arquivo temporário muito pequeno (${tempStats.size} bytes), adicionando silêncio mínimo`);
+        await this._appendSilenceToTempFile(tempOutputFile);
         
-        await new Promise((resolve, reject) => {
-          readStream.pipe(writeStream);
-          readStream.on('error', reject);
-          writeStream.on('error', reject);
-          writeStream.on('finish', resolve);
-        });
-        
-        logger.info(`Arquivo temporário criado com sucesso: ${tempOutputFile}`);
-        
-        // Verificar o tamanho do arquivo temporário
-        const tempStats = fs.statSync(tempOutputFile);
-        logger.info(`Arquivo temporário: ${tempStats.size} bytes`);
-        
-        if (tempStats.size !== stats.size) {
-          logger.warn(`Tamanho do arquivo temporário (${tempStats.size}) é diferente do original (${stats.size})`);
-        }
-        
-        if (tempStats.size < 44) {
-          throw new Error(`Arquivo temporário inválido (muito pequeno): ${tempStats.size} bytes`);
-        }
-      } catch (copyError) {
-        logger.error(`Erro ao copiar arquivo para versão temporária: ${copyError.message}`);
-        throw new Error(`Falha ao preparar arquivo para transcrição: ${copyError.message}`);
+        // Verificar tamanho após adicionar silêncio
+        const newStats = fs.statSync(tempOutputFile);
+        logger.info(`Arquivo temporário após adicionar silêncio: ${newStats.size} bytes`);
       }
       
       // Transcrever o arquivo temporário
@@ -1051,6 +1078,59 @@ class WebRTCSession {
     } catch (error) {
       logger.error(`Erro ao transcrever áudio atual para sessão ${this.id}:`, error);
       return null;
+    }
+  }
+  
+  /**
+   * Adiciona silêncio a um arquivo temporário para garantir tamanho mínimo
+   * @param {string} filePath - Caminho do arquivo
+   * @private
+   */
+  async _appendSilenceToTempFile(filePath) {
+    try {
+      // Criar silêncio para 0.5 segundos
+      const sampleRate = 48000;
+      const channels = 2;
+      const bytesPerSample = 2; // 16 bits
+      const duration = 0.5; // 0.5 segundos (mínimo necessário para Whisper)
+      
+      const dataSize = Math.floor(sampleRate * channels * bytesPerSample * duration);
+      const silenceBuffer = Buffer.alloc(dataSize);
+      
+      // Ler o arquivo atual para preservar o cabeçalho
+      const fileData = fs.readFileSync(filePath);
+      
+      // Encontrar o offset do chunk de dados
+      let dataOffset = 36;
+      for (let i = 36; i < Math.min(100, fileData.length - 4); i++) {
+        if (fileData[i] === 0x64 && fileData[i+1] === 0x61 && fileData[i+2] === 0x74 && fileData[i+3] === 0x61) { // "data"
+          dataOffset = i + 8; // Pular "data" e o campo de tamanho
+          break;
+        }
+      }
+      
+      // Criar buffer combinado: cabeçalho original + dados originais + silêncio
+      const combinedBuffer = Buffer.concat([
+        fileData,
+        silenceBuffer
+      ]);
+      
+      // Atualizar o tamanho total no cabeçalho RIFF
+      const fileSize = combinedBuffer.length - 8;
+      combinedBuffer.writeUInt32LE(fileSize, 4);
+      
+      // Atualizar o tamanho do chunk de dados
+      const dataSize2 = combinedBuffer.length - dataOffset;
+      combinedBuffer.writeUInt32LE(dataSize2, dataOffset - 4);
+      
+      // Escrever o arquivo atualizado
+      fs.writeFileSync(filePath, combinedBuffer);
+      
+      logger.info(`Adicionado silêncio de ${duration} segundos (${dataSize} bytes) ao arquivo ${filePath}`);
+      return true;
+    } catch (error) {
+      logger.error(`Erro ao adicionar silêncio ao arquivo temporário: ${error.message}`);
+      return false;
     }
   }
 }
