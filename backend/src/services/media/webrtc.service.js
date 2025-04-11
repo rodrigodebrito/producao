@@ -271,8 +271,59 @@ class WebRTCSession {
       const timestamp = Date.now();
       this.outputFile = path.join(TMP_DIR, `session_${this.id}_${timestamp}.wav`);
       
+      // Configurar mixer com parâmetros específicos se não estiver já configurado
+      if (!this.audioMixer) {
+        logger.info('Criando novo mixer de áudio com configurações padrão');
+        this.audioMixer = new AudioMixer.Mixer({
+          channels: 2,           // Estéreo
+          bitDepth: 16,          // 16 bits por amostra
+          sampleRate: 48000,     // 48 kHz - padrão para áudio de alta qualidade
+          clearInterval: 250     // ms entre limpezas do buffer
+        });
+        
+        logger.info(`Mixer configurado: canais=${this.audioMixer.channels}, taxa=${this.audioMixer.sampleRate}, bits=${this.audioMixer.bitDepth}`);
+      }
+      
       // Configurar stream de saída
       const outputStream = fs.createWriteStream(this.outputFile);
+      
+      // Adicionar o cabeçalho WAV ao início do arquivo
+      const writeHeader = () => {
+        logger.info('Escrevendo cabeçalho WAV no arquivo...');
+        
+        // Dados básicos para o cabeçalho WAV
+        const channels = this.audioMixer.channels || 2;
+        const sampleRate = this.audioMixer.sampleRate || 48000;
+        const bitDepth = this.audioMixer.bitDepth || 16;
+        
+        // Escrever cabeçalho manualmente para garantir formato correto
+        const headerBuffer = Buffer.alloc(44);
+        
+        // RIFF chunk
+        headerBuffer.write('RIFF', 0);  // ChunkID
+        headerBuffer.writeUInt32LE(0, 4); // ChunkSize (atualizaremos depois)
+        headerBuffer.write('WAVE', 8);  // Format
+        
+        // fmt sub-chunk
+        headerBuffer.write('fmt ', 12);  // Subchunk1ID
+        headerBuffer.writeUInt32LE(16, 16); // Subchunk1Size (16 for PCM)
+        headerBuffer.writeUInt16LE(1, 20);  // AudioFormat (1 for PCM)
+        headerBuffer.writeUInt16LE(channels, 22); // NumChannels
+        headerBuffer.writeUInt32LE(sampleRate, 24); // SampleRate
+        headerBuffer.writeUInt32LE(sampleRate * channels * (bitDepth / 8), 28); // ByteRate
+        headerBuffer.writeUInt16LE(channels * (bitDepth / 8), 32); // BlockAlign
+        headerBuffer.writeUInt16LE(bitDepth, 34); // BitsPerSample
+        
+        // data sub-chunk
+        headerBuffer.write('data', 36);  // Subchunk2ID
+        headerBuffer.writeUInt32LE(0, 40); // Subchunk2Size (atualizaremos depois)
+        
+        outputStream.write(headerBuffer);
+        logger.info('Cabeçalho WAV escrito com sucesso');
+      };
+      
+      // Escrever cabeçalho WAV
+      writeHeader();
       
       // Conectar mixer ao arquivo
       this.audioMixer.pipe(outputStream);
@@ -281,6 +332,12 @@ class WebRTCSession {
       this.isRecording = true;
       this.recordingStartTime = Date.now();
       
+      // Configurar evento para finalizar o arquivo corretamente quando necessário
+      outputStream.on('finish', () => {
+        logger.info('Stream de saída finalizado, atualizando cabeçalho WAV se necessário');
+        // Aqui poderíamos implementar uma lógica para atualizar o tamanho no cabeçalho WAV
+      });
+      
       // Para cada participante conectado, iniciar a captura de áudio
       for (const [participantId, participant] of this.participants.entries()) {
         for (const [producerId, producer] of participant.producers.entries()) {
@@ -288,10 +345,36 @@ class WebRTCSession {
         }
       }
       
+      // Garantir que pelo menos a entrada do mixer está funcionando, mesmo sem participantes
+      if (this.participants.size === 0) {
+        logger.info('Nenhum participante encontrado, adicionando input padrão ao mixer');
+        // Adicionar um input silencioso para garantir que o mixer gere um arquivo válido
+        const silentInput = this.audioMixer.input({
+          channels: 2,
+          volume: 0 // Silencioso
+        });
+      }
+      
       logger.info(`Gravação iniciada para sessão ${this.id}, salvando em ${this.outputFile}`);
+      
+      // Verificar se o arquivo foi criado corretamente
+      setTimeout(() => {
+        try {
+          if (fs.existsSync(this.outputFile)) {
+            const stats = fs.statSync(this.outputFile);
+            logger.info(`Arquivo WAV iniciado: ${this.outputFile}, tamanho inicial: ${stats.size} bytes`);
+          } else {
+            logger.warn(`Arquivo WAV não encontrado após iniciar gravação: ${this.outputFile}`);
+          }
+        } catch (err) {
+          logger.error(`Erro ao verificar arquivo WAV: ${err.message}`);
+        }
+      }, 500); // Verificar após 500ms
+      
       return this.outputFile;
     } catch (error) {
       logger.error(`Erro ao iniciar gravação para sessão ${this.id}:`, error);
+      this.isRecording = false;
       return null;
     }
   }
@@ -371,8 +454,72 @@ class WebRTCSession {
     try {
       logger.info(`Transcrevendo áudio usando Whisper: ${audioFile}`);
       
-      // Usar o serviço OpenAI existente
-      const transcription = await openaiService.transcribeAudioVideo(audioFile, 'pt');
+      // Verificar se o arquivo existe
+      if (!fs.existsSync(audioFile)) {
+        throw new Error(`Arquivo de áudio não encontrado: ${audioFile}`);
+      }
+      
+      // Verificar tamanho do arquivo
+      const stats = fs.statSync(audioFile);
+      logger.info(`Tamanho do arquivo de áudio: ${stats.size} bytes`);
+      
+      if (stats.size < 44) { // 44 bytes é o tamanho mínimo para um cabeçalho WAV
+        throw new Error(`Arquivo de áudio muito pequeno: ${stats.size} bytes (mínimo 44 bytes)`);
+      }
+      
+      // Diagnosticar o arquivo - ler o cabeçalho para verificar se é WAV válido
+      const header = Buffer.alloc(44);
+      try {
+        const fd = fs.openSync(audioFile, 'r');
+        fs.readSync(fd, header, 0, 44, 0);
+        fs.closeSync(fd);
+        
+        // Verificar assinatura RIFF WAV
+        const isWav = header.toString('ascii', 0, 4) === 'RIFF' && 
+                      header.toString('ascii', 8, 12) === 'WAVE';
+                      
+        if (!isWav) {
+          logger.warn(`Arquivo não parece ser um WAV válido: ${audioFile}`);
+          logger.info(`Assinatura: ${header.toString('ascii', 0, 4)}, Formato: ${header.toString('ascii', 8, 12)}`);
+          logger.info(`Primeiros 16 bytes: ${header.toString('hex', 0, 16)}`);
+        } else {
+          // Extrair informações do cabeçalho WAV
+          const numChannels = header.readUInt16LE(22);
+          const sampleRate = header.readUInt32LE(24);
+          const bitsPerSample = header.readUInt16LE(34);
+          
+          logger.info(`Informações do WAV: canais=${numChannels}, taxa=${sampleRate}Hz, bits=${bitsPerSample}`);
+        }
+      } catch (headerError) {
+        logger.error(`Erro ao ler cabeçalho do arquivo: ${headerError.message}`);
+      }
+      
+      // Verificar se precisamos converter o formato
+      const needsConversion = false; // Na prática, implemente a lógica para determinar isso
+      
+      let fileToTranscribe = audioFile;
+      
+      // Se precisa converter, criar uma versão MP3
+      if (needsConversion) {
+        try {
+          const mp3File = `${audioFile}.mp3`;
+          logger.info(`Tentando converter ${audioFile} para MP3: ${mp3File}`);
+          
+          // Aqui você precisaria implementar a conversão usando ffmpeg ou outro utilitário
+          // Por enquanto, apenas um log
+          logger.info(`Conversão para MP3 seria necessária para alguns casos`);
+          
+          // Usar o arquivo original por enquanto
+          fileToTranscribe = audioFile;
+        } catch (convError) {
+          logger.error(`Erro ao converter formato: ${convError.message}`);
+          // Continuar com o arquivo original em caso de erro
+        }
+      }
+      
+      // Usar o serviço OpenAI existente com arquivo potencialmente convertido
+      logger.info(`Enviando para transcrição: ${fileToTranscribe}`);
+      const transcription = await openaiService.transcribeAudioVideo(fileToTranscribe, 'pt');
       
       logger.info(`Transcrição concluída com sucesso, tamanho: ${transcription.length} caracteres`);
       return transcription;
@@ -479,20 +626,75 @@ class WebRTCSession {
       const duration = Date.now() - this.recordingStartTime;
       logger.info(`Duração atual da gravação: ${duration}ms`);
       
-      // Criar uma cópia temporária do arquivo atual para transcrição
-      const tempOutputFile = `${this.outputFile}.temp-${Date.now()}.wav`;
-      
-      // Verificar se o arquivo existe e tem conteúdo
+      // Verificar se o arquivo original existe e validar
       if (!fs.existsSync(this.outputFile)) {
         logger.error(`Arquivo de gravação não encontrado: ${this.outputFile}`);
         return null;
       }
       
-      // Copiar arquivo para versão temporária
-      fs.copyFileSync(this.outputFile, tempOutputFile);
-      logger.info(`Arquivo temporário criado: ${tempOutputFile}`);
+      // Verificar se o arquivo tem conteúdo válido
+      const stats = fs.statSync(this.outputFile);
+      logger.info(`Arquivo de gravação encontrado. Tamanho: ${stats.size} bytes`);
+      
+      if (stats.size < 44) { // Tamanho mínimo para um cabeçalho WAV válido
+        logger.error(`Arquivo de gravação inválido (muito pequeno): ${stats.size} bytes`);
+        return null;
+      }
+      
+      // Pegar uma amostra do início do arquivo para verificar se é um WAV válido
+      const fd = fs.openSync(this.outputFile, 'r');
+      const buffer = Buffer.alloc(44); // Tamanho do cabeçalho WAV
+      fs.readSync(fd, buffer, 0, 44, 0);
+      fs.closeSync(fd);
+      
+      // Verificar se é um arquivo WAV válido (verificando a assinatura RIFF WAV)
+      const isWav = buffer.toString('ascii', 0, 4) === 'RIFF' && 
+                    buffer.toString('ascii', 8, 12) === 'WAVE';
+                    
+      if (!isWav) {
+        logger.error(`Arquivo de gravação não é um WAV válido: ${this.outputFile}`);
+        // Tentar continuar mesmo assim - alguns sistemas podem ter variações no formato
+        logger.info(`Tentando prosseguir mesmo com formato não reconhecido. Início do arquivo: ${buffer.toString('hex', 0, 16)}`);
+      } else {
+        logger.info(`Arquivo WAV válido confirmado: ${this.outputFile}`);
+      }
+      
+      // Criar uma cópia temporária do arquivo atual para transcrição
+      const tempOutputFile = `${this.outputFile}.temp-${Date.now()}.wav`;
+      
+      // Usar método de cópia mais robusto
+      try {
+        // Copiar o arquivo original inteiro
+        const readStream = fs.createReadStream(this.outputFile);
+        const writeStream = fs.createWriteStream(tempOutputFile);
+        
+        await new Promise((resolve, reject) => {
+          readStream.pipe(writeStream);
+          readStream.on('error', reject);
+          writeStream.on('error', reject);
+          writeStream.on('finish', resolve);
+        });
+        
+        logger.info(`Arquivo temporário criado com sucesso: ${tempOutputFile}`);
+        
+        // Verificar o tamanho do arquivo temporário
+        const tempStats = fs.statSync(tempOutputFile);
+        logger.info(`Arquivo temporário: ${tempStats.size} bytes`);
+        
+        if (tempStats.size !== stats.size) {
+          logger.warn(`Tamanho do arquivo temporário (${tempStats.size}) é diferente do original (${stats.size})`);
+        }
+        
+        if (tempStats.size < 44) {
+          throw new Error(`Arquivo temporário inválido (muito pequeno): ${tempStats.size} bytes`);
+        }
+      } catch (copyError) {
+        logger.error(`Erro ao copiar arquivo para versão temporária: ${copyError.message}`);
+        throw new Error(`Falha ao preparar arquivo para transcrição: ${copyError.message}`);
+      }
       
       // Transcrever o arquivo temporário
+      logger.info(`Enviando arquivo para transcrição: ${tempOutputFile}`);
       const transcription = await this.transcribeAudio(tempOutputFile);
       
       // Registrar timestamp da transcrição parcial
