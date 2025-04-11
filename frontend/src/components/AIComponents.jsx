@@ -726,11 +726,32 @@ export const resetTranscriptionServices = () => {
 // Componente principal que contém todas as ferramentas de IA
 export const AIToolsContainer = () => {
   const [transcriptionMode, setTranscriptionMode] = useState('auto');
+  const [isRecording, setIsRecording] = useState(false);
   const containerRef = useRef(null);
   const previousModeRef = useRef('auto');
   
   // Obter funções de IA do contexto para que possam ser passadas aos botões
   const { analyze, suggest, report } = useAI();
+
+  // Verificar periodicamente o status da gravação para atualizar a interface
+  useEffect(() => {
+    const checkRecordingStatus = () => {
+      const webrtcRecording = window.webrtcTranscriptionService?.getStatus()?.isRecording || false;
+      const hybridRecording = window.hybridAIService?.isRecording || false;
+      const newIsRecording = webrtcRecording || hybridRecording;
+      
+      if (newIsRecording !== isRecording) {
+        setIsRecording(newIsRecording);
+      }
+    };
+    
+    // Verificar a cada 500ms
+    const interval = setInterval(checkRecordingStatus, 500);
+    
+    return () => {
+      clearInterval(interval);
+    };
+  }, [isRecording]);
 
   // Verificar se container existe e criar se necessário
   useEffect(() => {
@@ -885,51 +906,107 @@ export const AIToolsContainer = () => {
       
       // Injetamos diretamente os componentes simples e os handlers definidos acima
       ReactDOM.render(
-        <div className="ai-simple-toolbar">
-          <button 
-            onClick={handleAnalyze}
-            className="ai-button analyze-button"
-            title="Analisar conversa atual"
-          >
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM13 17H11V15H13V17ZM13 13H11V7H13V13Z" fill="white"/>
-            </svg>
-            <span className="button-text">Analisar</span>
-          </button>
-          
-          <button 
-            onClick={handleSuggest}
-            className="ai-button suggest-button"
-            title="Obter sugestões"
-          >
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM12 20C7.59 20 4 16.41 4 12C4 7.59 7.59 4 12 4C16.41 4 20 7.59 20 12C20 16.41 16.41 20 12 20ZM11 16H13V18H11ZM12.61 6.04C10.55 5.79 8.73 7.13 8.27 9.17C8.05 10.3 9.03 10.99 10.1 10.68C10.65 10.5 11.25 10.07 11.36 9.5C11.78 7.83 14.08 8.2 14.08 10.25C14.08 11.28 13.47 11.8 12.69 12.5C11.91 13.2 11 14.09 11 15.25V15.5H13V15.25C13 14.58 13.67 14.11 14.45 13.41C15.23 12.71 16 11.8 16 10.25C16 7.92 14.57 6.29 12.61 6.04Z" fill="white"/>
-            </svg>
-            <span className="button-text">Sugestões</span>
-          </button>
-          
-          <button 
-            onClick={handleReport}
-            className="ai-button report-button"
-            title="Gerar relatório"
-          >
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M14 2H6C4.9 2 4 2.9 4 4V20C4 21.1 4.9 22 6 22H18C19.1 22 20 21.1 20 20V8L14 2ZM18 20H6V4H13V9H18V20ZM8 14H16V16H8V14ZM8 18H13V20H8V18ZM8 10H16V12H8V10Z" fill="white"/>
-            </svg>
-            <span className="button-text">Relatório</span>
-          </button>
-          
-          <MicButton transcriptionMode={transcriptionMode} />
-          
-          <TranscriptionSelector 
-            mode={transcriptionMode} 
-            onChange={handleTranscriptionModeChange} 
-          />
-        </div>,
+        <>
+          <div className="ai-simple-toolbar">
+            <button 
+              onClick={handleAnalyze}
+              className="ai-button analyze-button"
+              title="Analisar conversa atual"
+            >
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM13 17H11V15H13V17ZM13 13H11V7H13V13Z" fill="white"/>
+              </svg>
+              <span className="button-text">Analisar</span>
+            </button>
+            
+            <button 
+              onClick={handleSuggest}
+              className="ai-button suggest-button"
+              title="Obter sugestões"
+            >
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM12 20C7.59 20 4 16.41 4 12C4 7.59 7.59 4 12 4C16.41 4 20 7.59 20 12C20 16.41 16.41 20 12 20ZM11 16H13V18H11ZM12.61 6.04C10.55 5.79 8.73 7.13 8.27 9.17C8.05 10.3 9.03 10.99 10.1 10.68C10.65 10.5 11.25 10.07 11.36 9.5C11.78 7.83 14.08 8.2 14.08 10.25C14.08 11.28 13.47 11.8 12.69 12.5C11.91 13.2 11 14.09 11 15.25V15.5H13V15.25C13 14.58 13.67 14.11 14.45 13.41C15.23 12.71 16 11.8 16 10.25C16 7.92 14.57 6.29 12.61 6.04Z" fill="white"/>
+              </svg>
+              <span className="button-text">Sugestões</span>
+            </button>
+            
+            <button 
+              onClick={handleReport}
+              className="ai-button report-button"
+              title="Gerar relatório"
+            >
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M14 2H6C4.9 2 4 2.9 4 4V20C4 21.1 4.9 22 6 22H18C19.1 22 20 21.1 20 20V8L14 2ZM18 20H6V4H13V9H18V20ZM8 14H16V16H8V14ZM8 18H13V20H8V18ZM8 10H16V12H8V10Z" fill="white"/>
+              </svg>
+              <span className="button-text">Relatório</span>
+            </button>
+            
+            <div className="mic-controls">
+              <button 
+                onClick={() => {
+                  // Verificar se existe o serviço de WebRTC
+                  if (window.webrtcTranscriptionService) {
+                    // Verificar se está gravando
+                    const status = window.webrtcTranscriptionService.getStatus();
+                    
+                    if (status.isRecording) {
+                      // Parar gravação
+                      window.webrtcTranscriptionService.stopRecording();
+                    } else {
+                      // Iniciar gravação
+                      window.webrtcTranscriptionService.startRecording();
+                    }
+                  } else if (window.hybridAIService) {
+                    if (window.hybridAIService.isRecording) {
+                      window.hybridAIService.stopRecording();
+                    } else {
+                      window.hybridAIService.startRecording();
+                    }
+                  }
+                }}
+                className={`mic-button ${isRecording ? 'recording' : ''}`}
+                title="Iniciar/Parar gravação"
+              >
+                <FontAwesomeIcon icon={isRecording ? faMicrophoneSlash : faMicrophone} />
+              </button>
+              
+              {isRecording && transcriptionMode === 'webrtc' && window.webrtcTranscriptionService && (
+                <button 
+                  onClick={async () => {
+                    if (window.webrtcTranscriptionService) {
+                      try {
+                        toast.info("Solicitando transcrição parcial...");
+                        const result = await window.webrtcTranscriptionService.transcribeCurrentAudio();
+                        if (result && result.transcription) {
+                          toast.success("Transcrição parcial recebida!");
+                        } else {
+                          toast.warning("Nenhuma transcrição parcial disponível");
+                        }
+                      } catch (error) {
+                        toast.error("Erro ao solicitar transcrição parcial");
+                        console.error("Erro na transcrição parcial:", error);
+                      }
+                    }
+                  }}
+                  className="transcribe-now-button"
+                  title="Transcrever áudio atual sem parar a gravação"
+                >
+                  <FontAwesomeIcon icon={faFileAlt} />
+                  <span className="button-text">Transcrever Agora</span>
+                </button>
+              )}
+            </div>
+            
+            <TranscriptionSelector 
+              mode={transcriptionMode} 
+              onChange={handleTranscriptionModeChange} 
+            />
+          </div>
+        </>,
         containerRef.current
       );
     }
-  }, [transcriptionMode, handleAnalyze, handleSuggest, handleReport, handleTranscriptionModeChange]);
+  }, [transcriptionMode, handleAnalyze, handleSuggest, handleReport, handleTranscriptionModeChange, isRecording]);
 
   // Este componente não renderiza nada no seu local original
   return null;
