@@ -209,6 +209,39 @@ headerBuffer.writeUInt32LE(0, 40); // Tamanho dos dados (atualizado depois)
 
 Esta mudança garante que o sistema apenas transcreva áudio real dos participantes e não adicione texto simulado ou pré-definido nas transcrições.
 
+### 8. Problema: Não detecção de participantes sem áudio ativo
+
+**Problema**: O sistema não estava reconhecendo participantes conectados como "reais" se eles não enviassem áudio ativo, mesmo estando conectados à sessão.
+
+**Solução**: Implementamos uma lógica melhorada para marcar participantes como reais assim que eles produzem áudio (mesmo sem falar), não apenas quando dados de áudio são detectados:
+
+1. **Identificação imediata como participante real**:
+   ```javascript
+   // Marcar como participante "real" assim que um producer de áudio é criado
+   async produceAudio(participantId, rtpParameters) {
+     // ... código existente ...
+     
+     // Marcar este participante como "real" imediatamente
+     participant.isReal = true;
+     this.realParticipantCount = (this.realParticipantCount || 0) + 1;
+     logger.info(`Participante ${participantId} marcado como real. Total: ${this.realParticipantCount}`);
+     
+     // ... resto do código ...
+   }
+   ```
+
+2. **Consistência na contagem de participantes reais**:
+   ```javascript
+   // Verificar se o participante já está marcado como real antes de incrementar
+   if (!participant.isReal) {
+     participant.isReal = true;
+     // Incrementar contador apenas se não foi incrementado antes
+     this.realParticipantCount = (this.realParticipantCount || 0) + 1;
+   }
+   ```
+
+Estas mudanças garantem que todos os participantes conectados sejam considerados válidos para transcrição, mesmo sem falar ativamente, eliminando a necessidade de gerar áudio simulado e permitindo que o sistema funcione corretamente com múltiplas janelas abertas.
+
 ## Fluxo de Funcionamento
 
 1. **Criação da sessão**: Uma sessão WebRTC é criada quando os participantes se conectam à sala de terapia.
