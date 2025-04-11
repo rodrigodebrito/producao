@@ -143,18 +143,37 @@ app.get('/', (req, res) => {
 io.on('connection', (socket) => {
   console.log('Novo cliente conectado:', socket.id);
   
-  // Manipular entrada em uma sala de sessão
-  socket.on('join-session', (data) => {
-    if (data && data.sessionId) {
-      console.log(`Cliente ${socket.id} entrou na sala: ${data.sessionId}`);
-      socket.join(data.sessionId);
+  // Evento quando um cliente entra numa sala
+  socket.on('join-room', async (roomId) => {
+    try {
+      // Validar o ID da sala
+      if (!roomId) {
+        console.error('Tentativa de entrar em sala com ID nulo');
+        return;
+      }
       
-      // Notificar outros na sala que um novo cliente entrou
-      socket.to(data.sessionId).emit('user-joined', {
+      console.log(`Cliente ${socket.id} entrou na sala: ${roomId}`);
+      
+      // Adicionar o cliente à sala
+      socket.join(roomId);
+      
+      // Emitir evento para informar que um usuário entrou
+      socket.to(roomId).emit('user-joined', { 
         socketId: socket.id,
-        sessionId: data.sessionId,
         timestamp: Date.now()
       });
+      
+      // NOVO: Registrar o participante explicitamente no WebRTC
+      try {
+        const webRTCService = require('./services/media/webrtc.service');
+        await webRTCService.registerParticipant(roomId, socket.id);
+        console.log(`Cliente ${socket.id} registrado como participante na sessão WebRTC ${roomId}`);
+      } catch (webrtcError) {
+        console.error(`Erro ao registrar participante no WebRTC: ${webrtcError.message}`);
+        // Não interrompemos o fluxo se falhar o registro no WebRTC
+      }
+    } catch (error) {
+      console.error(`Erro ao processar entrada na sala: ${error.message}`);
     }
   });
   
@@ -388,6 +407,36 @@ io.on('connection', (socket) => {
   // Manipular desconexão do cliente
   socket.on('disconnect', () => {
     console.log('Cliente desconectado:', socket.id);
+  });
+
+  // Manipular entrada em uma sala de sessão
+  socket.on('join-session', async (data) => {
+    try {
+      if (data && data.sessionId) {
+        const sessionId = data.sessionId;
+        console.log(`Cliente ${socket.id} entrou na sala: ${sessionId}`);
+        socket.join(sessionId);
+        
+        // Notificar outros na sala que um novo cliente entrou
+        socket.to(sessionId).emit('user-joined', {
+          socketId: socket.id,
+          sessionId: sessionId,
+          timestamp: Date.now()
+        });
+        
+        // NOVO: Registrar o participante explicitamente no WebRTC
+        try {
+          const webRTCService = require('./services/media/webrtc.service');
+          await webRTCService.registerParticipant(sessionId, socket.id);
+          console.log(`Cliente ${socket.id} registrado como participante na sessão WebRTC ${sessionId}`);
+        } catch (webrtcError) {
+          console.error(`Erro ao registrar participante no WebRTC: ${webrtcError.message}`);
+          // Não interrompemos o fluxo se falhar o registro no WebRTC
+        }
+      }
+    } catch (error) {
+      console.error(`Erro ao processar entrada na sala: ${error.message}`);
+    }
   });
 });
 

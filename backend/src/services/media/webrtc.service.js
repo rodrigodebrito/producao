@@ -379,24 +379,58 @@ class WebRTCSession {
         // Aqui poderíamos implementar uma lógica para atualizar o tamanho no cabeçalho WAV
       });
       
-      // Para cada participante conectado, iniciar a captura de áudio
+      // Lógica corrigida para contagem de participantes
       let participantCount = 0;
       this.realParticipantCount = 0; // Resetar contador de participantes reais
       
+      // Primeiro, verificar participantes com producers ativos
+      let participantsWithProducers = 0;
       for (const [participantId, participant] of this.participants.entries()) {
-        for (const [producerId, producer] of participant.producers.entries()) {
-          this.captureAudioFromProducer(participantId, producer);
-          participantCount++;
-          this.realParticipantCount++; // Incrementar contador de participantes reais
-          participant.isReal = true; // Marcar como participante real
+        participantCount++; // Contar todos os participantes conectados
+        
+        // Se tiver producers, processar como antes
+        if (participant.producers && participant.producers.size > 0) {
+          participantsWithProducers++;
+          for (const [producerId, producer] of participant.producers.entries()) {
+            this.captureAudioFromProducer(participantId, producer);
+          }
+          
+          // Marcar como participante real
+          participant.isReal = true;
+          this.realParticipantCount++;
+        } 
+        // Mesmo sem producers, vamos marcar como real para garantir a contagem
+        else {
+          logger.info(`Participante ${participantId} sem producers, marcando como real mesmo assim`);
+          participant.isReal = true;
+          this.realParticipantCount++;
+          
+          // Criar um input para este participante no mixer
+          if (!participant.mixerInput) {
+            participant.mixerInput = this.audioMixer.input({
+              channels: 2,
+              volume: 100,
+              bitDepth: 16,
+              sampleRate: 48000,
+              name: `participant-${participantId}-no-producer`
+            });
+            logger.info(`Input de fallback criado para participante ${participantId} sem producer`);
+          }
         }
       }
       
       logger.info(`Verificando participantes: encontrados ${participantCount} participantes, ${this.realParticipantCount} com áudio real`);
+      logger.info(`Destes, ${participantsWithProducers} têm producers ativos e ${participantCount - participantsWithProducers} estão em modo passivo`);
+      
+      // Garantir que temos pelo menos um input no mixer para áudio
+      if (this.realParticipantCount === 0) {
+        logger.info(`Não foram encontrados participantes reais. Verificando conexões no mediasoup...`);
+        // Adicione lógica de diagnóstico aqui se necessário
+      }
       
       // Não adicionar dados simulados de áudio que causam problemas
       // Aguardar pela entrada de áudio real dos participantes
-      logger.info(`Inicializando gravação apenas com participantes reais (${this.realParticipantCount})`);
+      logger.info(`Inicializando gravação com ${this.realParticipantCount} participantes reais`);
       
       // Adicionar um som mínimo de silêncio absoluto (1 segundo) para garantir que o arquivo tenha tamanho mínimo
       // e possa ser processado pela API Whisper
@@ -1248,6 +1282,55 @@ const webRTCService = {
     } catch (error) {
       logger.error(`Erro ao transcrever áudio atual para sessão ${sessionId}:`, error);
       return null;
+    }
+  },
+  
+  /**
+   * Registra um participante na sessão WebRTC mesmo sem producer
+   * @param {string} sessionId - ID da sessão
+   * @param {string} participantId - ID do participante
+   * @returns {Promise<boolean>} Sucesso ou falha
+   */
+  async registerParticipant(sessionId, participantId) {
+    try {
+      const session = await this.getSession(sessionId);
+      if (!session) {
+        logger.error(`Sessão WebRTC ${sessionId} não encontrada para registrar participante ${participantId}`);
+        return false;
+      }
+      
+      // Verificar se o participante já existe
+      if (!session.participants.has(participantId)) {
+        // Criar novo participante
+        logger.info(`Registrando participante ${participantId} na sessão ${sessionId} explicitamente`);
+        session.participants.set(participantId, {
+          id: participantId,
+          producerTransport: null,
+          consumerTransport: null,
+          producers: new Map(),
+          consumers: new Map(),
+          inputStream: null,
+          isReal: true // Marcar como real mesmo sem producer
+        });
+        
+        // Incrementar contador de participantes reais
+        session.realParticipantCount = (session.realParticipantCount || 0) + 1;
+        
+        logger.info(`Participante ${participantId} registrado com sucesso. Total de participantes: ${session.participants.size}, reais: ${session.realParticipantCount}`);
+        return true;
+      } else {
+        // Participante já registrado
+        const participant = session.participants.get(participantId);
+        if (!participant.isReal) {
+          participant.isReal = true;
+          session.realParticipantCount = (session.realParticipantCount || 0) + 1;
+          logger.info(`Participante ${participantId} já registrado, marcado como real agora`);
+        }
+        return true;
+      }
+    } catch (error) {
+      logger.error(`Erro ao registrar participante ${participantId} na sessão ${sessionId}:`, error);
+      return false;
     }
   }
 };
