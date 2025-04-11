@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { toast } from 'react-toastify';
 import { useAI } from '../contexts/AIContext';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faMicrophone, faMicrophoneSlash } from '@fortawesome/free-solid-svg-icons';
+import { faMicrophone, faMicrophoneSlash, faFileAlt } from '@fortawesome/free-solid-svg-icons';
 import hybridAIService from '../services/hybridAI.service';
 import WhisperTranscriptionService from '../services/whisperTranscriptionService';
 import AIResultsPanel from './AIResultsPanel';
@@ -66,6 +66,7 @@ export const MicButton = ({ transcriptionMode = 'auto' }) => {
   const [reconnectAttempts, setReconnectAttempts] = useState(0);
   const [currentMode, setCurrentMode] = useState(transcriptionMode);
   const [captureMode, setCaptureMode] = useState('mic'); // 'mic' ou 'system'
+  const [isRequesting, setIsRequesting] = useState(false);
   const recordingTimerRef = useRef(null);
   const reconnectTimerRef = useRef(null);
   const selectedModeRef = useRef(transcriptionMode);
@@ -271,6 +272,57 @@ export const MicButton = ({ transcriptionMode = 'auto' }) => {
     }
   }, [isRecording, stopAllRecordings, startRecordingWithMode]);
   
+  // Nova função para solicitar transcrição parcial
+  const requestPartialTranscription = async () => {
+    if (!isRecording) {
+      console.log('MicButton: Não é possível solicitar transcrição parcial (não está gravando)');
+      return;
+    }
+
+    try {
+      setIsRequesting(true);
+      console.log('MicButton: Solicitando transcrição parcial');
+      
+      // Solicitar transcrição via WebRTC se estiver disponível
+      if (window.webrtcTranscriptionService && currentMode === 'webrtc') {
+        const result = await window.webrtcTranscriptionService.transcribeCurrentAudio();
+        
+        if (result && result.transcription) {
+          console.log('MicButton: Transcrição parcial recebida:', result.transcription);
+          toast.success('Transcrição parcial recebida');
+        } else {
+          console.warn('MicButton: Nenhuma transcrição parcial recebida');
+          toast.warning('Não foi possível obter transcrição parcial');
+        }
+      } 
+      // Tentar solicitar transcrição via Whisper
+      else if (window.whisperService && (currentMode === 'whisper' || currentMode === 'auto')) {
+        // Simular uma transcrição parcial solicitando o fim da gravação atual
+        // e reiniciando uma nova sem interromper a interface
+        try {
+          const currentAudio = window.whisperService.getCurrentAudio();
+          if (currentAudio) {
+            // Processar o áudio atual para transcrição
+            window.whisperService.processAudioChunk(currentAudio, true);
+            toast.info('Processando transcrição parcial...');
+          } else {
+            toast.warning('Sem áudio disponível para transcrição parcial');
+          }
+        } catch (e) {
+          console.error('Erro ao solicitar transcrição parcial via Whisper:', e);
+          toast.error('Erro ao processar transcrição parcial');
+        }
+      } else {
+        toast.warning('Transcrição parcial não disponível no modo atual');
+      }
+    } catch (error) {
+      console.error('MicButton: Erro ao solicitar transcrição parcial:', error);
+      toast.error('Erro ao solicitar transcrição parcial');
+    } finally {
+      setIsRequesting(false);
+    }
+  };
+  
   // Inicializar os serviços de transcrição
   useEffect(() => {
     // Verificar se os serviços já foram inicializados globalmente
@@ -412,13 +464,27 @@ export const MicButton = ({ transcriptionMode = 'auto' }) => {
         </button>
       </div>
       
-      <button 
-        onClick={toggleMicrophone} 
-        className={`mic-button ${isRecording ? 'recording' : ''} ${isPaused ? 'paused' : ''}`}
-        title={isRecording ? 'Parar gravação' : 'Iniciar gravação'}
-      >
-        <FontAwesomeIcon icon={isRecording ? faMicrophoneSlash : faMicrophone} />
-      </button>
+      <div className="mic-controls">
+        <button 
+          onClick={toggleMicrophone} 
+          className={`mic-button ${isRecording ? 'recording' : ''} ${isPaused ? 'paused' : ''}`}
+          title={isRecording ? 'Parar gravação' : 'Iniciar gravação'}
+        >
+          <FontAwesomeIcon icon={isRecording ? faMicrophoneSlash : faMicrophone} />
+        </button>
+        
+        {isRecording && currentMode === 'webrtc' && (
+          <button 
+            onClick={requestPartialTranscription}
+            className={`transcribe-now-button ${isRequesting ? 'requesting' : ''}`}
+            disabled={isRequesting || !isRecording}
+            title="Solicitar transcrição do áudio gravado até o momento"
+          >
+            <FontAwesomeIcon icon={faFileAlt} />
+            <span className="button-text">{isRequesting ? 'Processando...' : 'Transcrever Agora'}</span>
+          </button>
+        )}
+      </div>
       
       {isRecording && (
         <div className="recording-info">
