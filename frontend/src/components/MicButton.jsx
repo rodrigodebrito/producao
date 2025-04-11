@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faMicrophone, faMicrophoneSlash } from '@fortawesome/free-solid-svg-icons';
 import './MicButton.css';
+import webrtcTranscriptionService from '../services/webrtcTranscriptionService';
 
 /**
  * MicButton component for controlling audio recording
@@ -9,22 +10,51 @@ import './MicButton.css';
  * @param {Function} props.onStart Function to call when recording starts
  * @param {Function} props.onStop Function to call when recording stops
  * @param {boolean} props.disabled Whether the button is disabled
- * @param {string} props.mode Recording mode ('daily' or 'local')
+ * @param {string} props.mode Recording mode ('webspeech', 'webrtc', or other)
  * @param {boolean} props.syncRecording Whether to sync recording state via Socket.IO
  * @param {string} props.sessionId Session ID for synchronization
+ * @param {Object} props.socket Socket.IO instance for WebRTC
  */
 const MicButton = ({ 
   onStart, 
   onStop, 
   disabled = false, 
-  mode = 'daily', 
+  mode = 'webspeech', 
   syncRecording = false,
-  sessionId: propSessionId
+  sessionId: propSessionId,
+  socket
 }) => {
   const [isRecording, setIsRecording] = useState(false);
   const [participantCount, setParticipantCount] = useState(0);
   const [remoteTriggered, setRemoteTriggered] = useState(false);
   const [socketConnected, setSocketConnected] = useState(false);
+  const [webrtcStatus, setWebrtcStatus] = useState({ initialized: false, connected: false });
+
+  // Initialize WebRTC if mode is 'webrtc'
+  useEffect(() => {
+    if (mode === 'webrtc' && socket && propSessionId) {
+      console.log('MicButton: Inicializando serviço WebRTC');
+      
+      // Initialize WebRTC service
+      webrtcTranscriptionService.initialize(propSessionId, socket, (transcription) => {
+        console.log('MicButton: Transcrição recebida via WebRTC:', transcription);
+        // If there's a callback for transcription, call it
+        if (typeof onStop === 'function') {
+          onStop(transcription);
+        }
+      }).then(success => {
+        console.log(`MicButton: Serviço WebRTC ${success ? 'inicializado com sucesso' : 'falhou ao inicializar'}`);
+        setWebrtcStatus(prev => ({ ...prev, initialized: success, connected: success }));
+      });
+      
+      // Cleanup when component unmounts or mode changes
+      return () => {
+        console.log('MicButton: Limpando serviço WebRTC');
+        webrtcTranscriptionService.cleanup();
+        setWebrtcStatus({ initialized: false, connected: false });
+      };
+    }
+  }, [mode, socket, propSessionId, onStop]);
 
   // Get the socket instance and monitor connection status
   useEffect(() => {
@@ -73,6 +103,9 @@ const MicButton = ({
     const updateParticipantCount = () => {
       if (window.dailyAudioCapture && mode === 'daily') {
         setParticipantCount(window.dailyAudioCapture.getParticipantCount() || 0);
+      } else if (mode === 'webrtc' && webrtcStatus.initialized) {
+        const status = webrtcTranscriptionService.getStatus();
+        setParticipantCount(status.participantCount || 0);
       }
     };
 
@@ -84,7 +117,7 @@ const MicButton = ({
     return () => {
       clearInterval(interval);
     };
-  }, [mode]);
+  }, [mode, webrtcStatus.initialized]);
 
   // Set up socket event listeners for recording synchronization
   useEffect(() => {
@@ -105,7 +138,12 @@ const MicButton = ({
         console.log('MicButton: Iniciando gravação remotamente');
         setRemoteTriggered(true);
         setIsRecording(true);
-        if (onStart) onStart();
+        
+        if (mode === 'webrtc' && webrtcStatus.initialized) {
+          webrtcTranscriptionService.startRecording();
+        } else if (onStart) {
+          onStart();
+        }
       }
     };
     
@@ -116,7 +154,12 @@ const MicButton = ({
         console.log('MicButton: Parando gravação remotamente');
         setRemoteTriggered(true);
         setIsRecording(false);
-        if (onStop) onStop();
+        
+        if (mode === 'webrtc' && webrtcStatus.initialized) {
+          webrtcTranscriptionService.stopRecording();
+        } else if (onStop) {
+          onStop();
+        }
       }
     };
     
@@ -128,7 +171,7 @@ const MicButton = ({
       socket.off('recording-start', handleStartRecording);
       socket.off('recording-stop', handleStopRecording);
     };
-  }, [syncRecording, isRecording, disabled, onStart, onStop]);
+  }, [syncRecording, isRecording, disabled, onStart, onStop, mode, webrtcStatus.initialized]);
 
   const toggleRecording = useCallback(() => {
     // Prevent double-triggering when handling remote events
@@ -143,7 +186,18 @@ const MicButton = ({
     if (isRecording) {
       console.log('MicButton: Parando gravação localmente');
       setIsRecording(false);
-      if (onStop) onStop();
+      
+      // Handle WebRTC mode
+      if (mode === 'webrtc' && webrtcStatus.initialized) {
+        webrtcTranscriptionService.stopRecording()
+          .then(result => {
+            if (result && result.transcription && onStop) {
+              onStop(result.transcription);
+            }
+          });
+      } else if (onStop) {
+        onStop();
+      }
       
       // Emit stop recording event via socket if syncing is enabled
       if (syncRecording && socket && socket.connected && sessionId) {
@@ -159,7 +213,13 @@ const MicButton = ({
     } else {
       console.log('MicButton: Iniciando gravação localmente');
       setIsRecording(true);
-      if (onStart) onStart();
+      
+      // Handle WebRTC mode
+      if (mode === 'webrtc' && webrtcStatus.initialized) {
+        webrtcTranscriptionService.startRecording();
+      } else if (onStart) {
+        onStart();
+      }
       
       // Emit start recording event via socket if syncing is enabled
       if (syncRecording && socket && socket.connected && sessionId) {
@@ -173,23 +233,42 @@ const MicButton = ({
         console.warn(`MicButton: Não foi possível emitir evento de início. Socket conectado: ${socket?.connected}, sessionId: ${sessionId}`);
       }
     }
-  }, [isRecording, onStart, onStop, syncRecording, remoteTriggered, propSessionId]);
+  }, [isRecording, onStart, onStop, syncRecording, remoteTriggered, propSessionId, mode, webrtcStatus.initialized]);
+
+  const getModeLabel = () => {
+    switch (mode) {
+      case 'daily':
+        return 'conversa';
+      case 'webrtc':
+        return 'WebRTC';
+      case 'webspeech':
+        return 'microfone';
+      default:
+        return mode;
+    }
+  };
 
   const buttonText = isRecording 
-    ? `Parar Gravação${mode === 'daily' ? ` (${participantCount} participantes)` : ''}` 
+    ? `Parar Gravação${(mode === 'daily' || mode === 'webrtc') ? ` (${participantCount} participantes)` : ''}` 
     : 'Iniciar Gravação';
+
+  const showRTCStatus = mode === 'webrtc';
+  const isRTCActive = webrtcStatus.initialized && webrtcStatus.connected;
 
   return (
     <button
-      className={`mic-button ${isRecording ? 'recording' : ''} ${syncRecording && socketConnected ? 'sync-enabled' : ''}`}
+      className={`mic-button ${isRecording ? 'recording' : ''} ${syncRecording && socketConnected ? 'sync-enabled' : ''} ${showRTCStatus && isRTCActive ? 'webrtc-enabled' : ''}`}
       onClick={toggleRecording}
-      disabled={disabled}
+      disabled={disabled || (mode === 'webrtc' && !webrtcStatus.initialized)}
       aria-label={isRecording ? 'Parar gravação' : 'Iniciar gravação'}
-      title={`${isRecording ? 'Parar' : 'Iniciar'} gravação${syncRecording ? ' (sincronizada)' : ''}`}
+      title={`${isRecording ? 'Parar' : 'Iniciar'} gravação de ${getModeLabel()}${syncRecording ? ' (sincronizada)' : ''}${mode === 'webrtc' ? ' (alta qualidade)' : ''}`}
     >
       {isRecording && <div className="recording-indicator" />}
       {syncRecording && socketConnected && (
         <div className="sync-indicator" title="Sincronização ativa" />
+      )}
+      {showRTCStatus && isRTCActive && (
+        <div className="webrtc-indicator" title="WebRTC ativo (captura completa)" />
       )}
       <span className="mic-icon">
         <FontAwesomeIcon icon={isRecording ? faMicrophoneSlash : faMicrophone} />

@@ -33,6 +33,7 @@ const insightRoutes = require('./routes/insight.routes');
 const meetingRoutes = require('./routes/meeting.routes');
 const trainingRoutes = require('./routes/training.routes');
 const transcriptionRoutes = require('./routes/transcription.routes');
+const webrtcRoutes = require('./routes/webrtc.routes');
 
 // Carregar explicitamente o serviço OpenAI no início
 const openaiService = require('./services/ai/openai.service');
@@ -105,6 +106,7 @@ app.use('/api/insights', insightRoutes);
 app.use('/api/meetings', meetingRoutes);
 app.use('/api/training', trainingRoutes);
 app.use('/api/transcription', transcriptionRoutes);
+app.use('/api/webrtc', webrtcRoutes);
 
 // Rota padrão
 app.get('/', (req, res) => {
@@ -147,6 +149,58 @@ io.on('connection', (socket) => {
           timestamp: data.timestamp || Date.now()
         });
       }
+    }
+  });
+  
+  // Manipular sinalização WebRTC
+  socket.on('webrtc-signal', (data) => {
+    if (data && data.sessionId) {
+      console.log(`[${socket.id}] Sinalização WebRTC para sessão ${data.sessionId}: ${data.type}`);
+      
+      // Repassar a sinalização para todos os outros na sala
+      if (data.targetId) {
+        // Sinalização direcionada para um cliente específico
+        socket.to(data.targetId).emit('webrtc-signal', {
+          ...data,
+          sourceId: socket.id,
+          timestamp: Date.now()
+        });
+      } else {
+        // Broadcast para todos na sala exceto o remetente
+        socket.to(data.sessionId).emit('webrtc-signal', {
+          ...data,
+          sourceId: socket.id,
+          timestamp: Date.now()
+        });
+      }
+    }
+  });
+  
+  // Evento para informar estado de WebRTC
+  socket.on('webrtc-ready', (data) => {
+    if (data && data.sessionId) {
+      console.log(`[${socket.id}] Cliente WebRTC pronto na sessão ${data.sessionId}`);
+      
+      // Informar outros na sala
+      socket.to(data.sessionId).emit('webrtc-peer-ready', {
+        peerId: socket.id,
+        sessionId: data.sessionId,
+        timestamp: Date.now()
+      });
+    }
+  });
+  
+  // Evento para solicitação de transcrição via WebRTC
+  socket.on('webrtc-transcribe-request', (data) => {
+    if (data && data.sessionId) {
+      console.log(`[${socket.id}] Solicitação de transcrição WebRTC para sessão ${data.sessionId}`);
+      
+      // Informar outros na sala
+      socket.to(data.sessionId).emit('webrtc-transcribe-request', {
+        peerId: socket.id,
+        sessionId: data.sessionId,
+        timestamp: Date.now()
+      });
     }
   });
   

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import MicButton from './MicButton';
+import RecordingModeSelector from './RecordingModeSelector';
 import './AIComponents.css';
 import aiService from '../services/aiService';
 
@@ -10,10 +11,23 @@ import aiService from '../services/aiService';
  * @param {function} onTranscriptionComplete - Função para completar a transcrição
  * @param {boolean} disabled - Se o componente está desabilitado
  * @param {boolean} syncRecording - Se deve sincronizar gravação com outros participantes
+ * @param {Object} socket - Objeto Socket.IO para comunicação em tempo real
  */
-const TranscriptionControls = ({ sessionId, onTranscriptionComplete, disabled, syncRecording = true }) => {
+const TranscriptionControls = ({ 
+  sessionId, 
+  onTranscriptionComplete, 
+  disabled, 
+  syncRecording = true,
+  socket = null
+}) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState(null);
+  const [recordingMode, setRecordingMode] = useState('webspeech'); // webspeech, webrtc, daily
+
+  // Use socket provided as prop or try to get it from window
+  const socketInstance = useMemo(() => {
+    return socket || window.socket || window.constellationSocket;
+  }, [socket]);
 
   useEffect(() => {
     // Armazenar o sessionId globalmente para uso nos componentes que emitem eventos
@@ -24,12 +38,29 @@ const TranscriptionControls = ({ sessionId, onTranscriptionComplete, disabled, s
   }, [sessionId]);
 
   const handleRecordingStart = () => {
-    console.log('TranscriptionControls: Iniciando gravação');
+    console.log(`TranscriptionControls: Iniciando gravação no modo: ${recordingMode}`);
     setError(null);
   };
 
   const handleRecordingStop = async (audioBlob) => {
-    console.log('TranscriptionControls: Gravação finalizada, processando áudio');
+    console.log(`TranscriptionControls: Gravação finalizada (modo: ${recordingMode})`);
+    
+    // Se o modo for WebRTC, o próprio serviço já processa a transcrição
+    // e o áudio pode ser null, porque o MicButton recebe a transcrição diretamente
+    if (recordingMode === 'webrtc') {
+      console.log('TranscriptionControls: Modo WebRTC, transcrição gerenciada pelo serviço WebRTC');
+      
+      // Se audioBlob for string, é a transcrição já processada
+      if (typeof audioBlob === 'string') {
+        console.log('TranscriptionControls: Transcrição recebida via WebRTC');
+        if (onTranscriptionComplete) {
+          onTranscriptionComplete(audioBlob);
+        }
+        return;
+      }
+    }
+    
+    // Para os outros modos, processa o audioBlob normalmente
     try {
       if (!audioBlob) {
         console.error('TranscriptionControls: Erro: audioBlob é undefined ou null');
@@ -69,23 +100,35 @@ const TranscriptionControls = ({ sessionId, onTranscriptionComplete, disabled, s
   // Verificar se o socket está disponível
   useEffect(() => {
     if (syncRecording) {
-      const socket = window.socket || window.constellationSocket;
-      if (!socket) {
-        console.warn('TranscriptionControls: Socket.IO não encontrado na janela. A sincronização pode não funcionar.');
+      if (!socketInstance) {
+        console.warn('TranscriptionControls: Socket.IO não encontrado. A sincronização pode não funcionar.');
       } else {
-        console.log(`TranscriptionControls: Socket.IO disponível (ID: ${socket.id || 'não conectado'})`);
+        console.log(`TranscriptionControls: Socket.IO disponível (ID: ${socketInstance.id || 'não conectado'})`);
         
         // Garantir que o socket esteja na sala correta
-        if (sessionId && socket.connected) {
+        if (sessionId && socketInstance.connected) {
           console.log(`TranscriptionControls: Entrando na sala: ${sessionId}`);
-          socket.emit('join-session', { sessionId });
+          socketInstance.emit('join-session', { sessionId });
         }
       }
     }
-  }, [syncRecording, sessionId]);
+  }, [syncRecording, sessionId, socketInstance]);
+
+  // Função para mudar o modo de gravação
+  const handleModeChange = (newMode) => {
+    console.log(`TranscriptionControls: Mudando modo de gravação: ${recordingMode} -> ${newMode}`);
+    setRecordingMode(newMode);
+  };
 
   return (
     <div className="transcription-controls">
+      {/* Seletor de modo de gravação */}
+      <RecordingModeSelector 
+        mode={recordingMode} 
+        onChange={handleModeChange} 
+        disabled={disabled || isProcessing}
+      />
+      
       {/* MicButton com sessionId explícito para garantir sincronização */}
       <MicButton 
         onStart={handleRecordingStart} 
@@ -93,6 +136,8 @@ const TranscriptionControls = ({ sessionId, onTranscriptionComplete, disabled, s
         disabled={disabled || isProcessing}
         syncRecording={syncRecording}
         sessionId={sessionId}
+        mode={recordingMode}
+        socket={socketInstance}
       />
       
       {isProcessing && (

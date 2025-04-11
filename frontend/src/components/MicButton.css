@@ -33,6 +33,10 @@
   border-left: 3px solid #2196f3;
 }
 
+.mic-button.webrtc-enabled {
+  border-right: 3px solid #4caf50;
+}
+
 .recording-indicator {
   display: inline-block;
   width: 10px;
@@ -52,6 +56,17 @@
   border-radius: 50%;
   background-color: #2196f3;
   animation: pulse-blue 2s infinite;
+}
+
+.webrtc-indicator {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: #4caf50;
+  animation: pulse-green 2s infinite;
 }
 
 @keyframes pulse {
@@ -88,6 +103,66 @@
   }
 }
 
+@keyframes pulse-green {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.7);
+  }
+  
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 4px rgba(76, 175, 80, 0);
+  }
+  
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(76, 175, 80, 0);
+  }
+}
+
 .mic-icon {
   margin-right: 6px;
+}
+
+/* Mode selector for MicButton */
+.mic-mode-selector {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 10px;
+  font-size: 14px;
+}
+
+.mic-mode-selector .mic-mode-option {
+  display: flex;
+  align-items: center;
+  margin-bottom: 4px;
+  cursor: pointer;
+}
+
+.mic-mode-selector .mic-mode-option input {
+  margin-right: 8px;
+}
+
+.mic-mode-selector .mic-mode-option label {
+  display: flex;
+  align-items: center;
+}
+
+.mic-mode-selector .mic-mode-option .mode-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+}
+
+.mic-mode-selector .mic-mode-option .mode-webspeech {
+  background-color: #ff9800;
+}
+
+.mic-mode-selector .mic-mode-option .mode-webrtc {
+  background-color: #4caf50;
+}
+
+.mic-mode-selector .mic-mode-option .mode-daily {
+  background-color: #2196f3;
 }
