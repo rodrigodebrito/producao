@@ -242,6 +242,49 @@ Esta mudança garante que o sistema apenas transcreva áudio real dos participan
 
 Estas mudanças garantem que todos os participantes conectados sejam considerados válidos para transcrição, mesmo sem falar ativamente, eliminando a necessidade de gerar áudio simulado e permitindo que o sistema funcione corretamente com múltiplas janelas abertas.
 
+### 9. Problema: Arquivos de áudio vazios ou muito pequenos
+
+**Problema**: Quando não havia áudio real sendo capturado, os arquivos WAV permaneciam com apenas 44 bytes (tamanho do cabeçalho) e a API Whisper rejeitava esses arquivos com o erro "Audio file is too short. Minimum audio length is 0.1 seconds."
+
+**Solução**: Implementamos duas melhorias complementares:
+
+1. **Adição automática de silêncio mínimo ao iniciar a gravação**:
+   ```javascript
+   // Adicionar um som mínimo de silêncio (1 segundo) para garantir que o arquivo tenha tamanho mínimo
+   logger.info(`Adicionando silêncio mínimo para garantir formato de arquivo válido`);
+   this._addMinimumSilence();
+   
+   // Função que adiciona silêncio
+   _addMinimumSilence() {
+     // Criar silêncio para 1 segundo
+     const dataSize = sampleRate * channels * bytesPerSample * duration;
+     const buffer = Buffer.alloc(dataSize);
+     
+     // Criar input temporário para silêncio
+     const silenceInput = this.audioMixer.input({
+       channels: 2,
+       volume: 1, // Volume mínimo
+       bitDepth: 16,
+       sampleRate: 48000,
+       name: 'silence-minimum'
+     });
+     
+     // Escrever buffer de silêncio
+     silenceInput.write(buffer);
+   }
+   ```
+
+2. **Verificação e correção de arquivos temporários para transcrição**:
+   ```javascript
+   // Verificar se o arquivo tem dados de áudio suficientes
+   if (tempStats.size <= 4096) { // Se for muito pequeno (menos de 4KB)
+     logger.warn(`Arquivo temporário muito pequeno, adicionando silêncio mínimo`);
+     await this._appendSilenceToTempFile(tempOutputFile);
+   }
+   ```
+
+Estas alterações garantem que, mesmo quando não há áudio real sendo captado, o sistema sempre gera um arquivo de tamanho suficiente para ser processado pela API Whisper, permitindo que o fluxo de transcrição continue funcionando corretamente.
+
 ## Fluxo de Funcionamento
 
 1. **Criação da sessão**: Uma sessão WebRTC é criada quando os participantes se conectam à sala de terapia.
