@@ -549,7 +549,7 @@ class WebRTCSession {
       // Programar gravação por intervalo para verificar o estado
       // do arquivo RAW e criar WAV periodicamente para prevenir perda de dados
       this._scheduledWavConversion = setInterval(() => {
-        this._convertRawToWav();
+        this._convertRawToWav(false);
       }, 5000); // Converter a cada 5 segundos
       
       // Marcar como gravando
@@ -557,7 +557,7 @@ class WebRTCSession {
       this.recordingStartTime = Date.now();
       
       // Garantir que um arquivo WAV exista imediatamente
-      this._convertRawToWav();
+      this._convertRawToWav(false);
       
       logger.info(`[webrtc-service] Gravação iniciada para sessão ${this.id} com ${this.realParticipantCount} participantes reais, salvando em ${this.outputFile}`);
       
@@ -570,17 +570,29 @@ class WebRTCSession {
   
   /**
    * Converte o arquivo de áudio bruto para formato WAV válido
+   * @param {boolean} isFinal Se verdadeiro, esta é a conversão final antes de encerrar
    * @private
    */
-  _convertRawToWav() {
+  _convertRawToWav(isFinal = false) {
     try {
-      // Se a gravação estiver inativa, cancelar o timer
-      if (!this.isRecording || !this.rawOutputFile) {
+      // Verificação ampliada: se a sessão não estiver gravando e não for conversão final, interromper processo
+      if (!isFinal && (!this.isRecording || !this.rawOutputFile)) {
         if (this._scheduledWavConversion) {
           clearInterval(this._scheduledWavConversion);
           this._scheduledWavConversion = null;
           logger.info(`[webrtc-service] Cancelando conversão WAV pois a gravação está inativa`);
         }
+        return;
+      }
+
+      // Verificação de timeout para evitar loops infinitos
+      const now = Date.now();
+      const recordingDuration = now - (this.recordingStartTime || now);
+      const MAX_RECORDING_TIME = 4 * 60 * 60 * 1000; // 4 horas, tempo máximo razoável para uma sessão
+      
+      if (!isFinal && recordingDuration > MAX_RECORDING_TIME) {
+        logger.warn(`[webrtc-service] Sessão ${this.id} gravando há ${Math.floor(recordingDuration/60000)} minutos, excedeu limite. Parando gravação.`);
+        this.stopRecording();
         return;
       }
       
@@ -596,7 +608,7 @@ class WebRTCSession {
         logger.warn(`[webrtc-service] Arquivo raw está vazio, nada para converter`);
         return;
       }
-      
+
       logger.info(`[webrtc-service] Convertendo arquivo raw para WAV: ${this.rawOutputFile} (${stats.size} bytes)`);
       
       // Ler os dados brutos
@@ -670,15 +682,35 @@ class WebRTCSession {
       
       // Validar o arquivo WAV
       this._validateWavFile(this.outputFile);
+      
+      // Se for conversão final, realizar limpeza
+      if (isFinal) {
+        // Limpar arquivo raw se a conversão for bem-sucedida
+        try {
+          if (this.rawOutputFile && fs.existsSync(this.rawOutputFile)) {
+            fs.unlinkSync(this.rawOutputFile);
+            logger.info(`[webrtc-service] Arquivo raw removido após conversão final: ${this.rawOutputFile}`);
+          }
+        } catch (cleanupError) {
+          logger.warn(`[webrtc-service] Erro ao remover arquivo raw: ${cleanupError.message}`);
+        }
+      }
+      
+      // Atualizar timestamp de atividade
+      this.updateActivity();
+      
+      return true;
     } catch (error) {
       logger.error(`[webrtc-service] Erro ao converter raw para WAV: ${error.message}, stack: ${error.stack}`);
       
       // Em caso de erro, também limpar o timer para evitar loops infinitos
-      if (this._scheduledWavConversion) {
+      if (!isFinal && this._scheduledWavConversion) {
         clearInterval(this._scheduledWavConversion);
         this._scheduledWavConversion = null;
         logger.info(`[webrtc-service] Cancelando conversão WAV devido a erros`);
       }
+      
+      return false;
     }
   }
   
@@ -1220,13 +1252,14 @@ class WebRTCSession {
   
   /**
    * Para a gravação e processa o áudio
-   * @returns {Object} Resultado da transcrição
+   * @returns {Promise<string>} Caminho do arquivo de saída WAV
    */
   async stopRecording() {
     try {
       // Atualizar timestamp de atividade
       this.updateActivity();
       
+      // Verificar se há gravação ativa
       if (!this.isRecording) {
         logger.info(`[webrtc-service] Nenhuma gravação ativa para sessão ${this.id}`);
         return null;
@@ -1237,11 +1270,11 @@ class WebRTCSession {
       // Marcar como não gravando imediatamente para evitar processamentos adicionais
       this.isRecording = false;
       
-      // Parar o intervalo de conversão
+      // Primeiro cancelamento do timer como precaução (dupla proteção)
       if (this._scheduledWavConversion) {
         clearInterval(this._scheduledWavConversion);
         this._scheduledWavConversion = null;
-        logger.info(`[webrtc-service] Intervalo de conversão WAV interrompido`);
+        logger.info(`[webrtc-service] Primeira etapa: intervalo de conversão WAV interrompido`);
       }
       
       // Fechar mixer
@@ -1269,8 +1302,21 @@ class WebRTCSession {
       // Esperar um pouco para garantir que tudo foi gravado
       await new Promise(resolve => setTimeout(resolve, 500));
       
-      // Realizar uma conversão final do arquivo raw para WAV
-      this._convertRawToWavFinal();
+      // Segunda verificação e cancelamento do timer (garantia dupla)
+      if (this._scheduledWavConversion) {
+        clearInterval(this._scheduledWavConversion);
+        this._scheduledWavConversion = null;
+        logger.info(`[webrtc-service] Segunda etapa: garantindo que intervalo de conversão WAV foi interrompido`);
+      }
+      
+      // Realizar uma conversão final do arquivo raw para WAV com flag isFinal=true
+      const conversionSuccess = this._convertRawToWav(true);
+      
+      if (!conversionSuccess) {
+        logger.warn(`[webrtc-service] Falha na conversão final do WAV. Tentando método alternativo...`);
+        // Tentar método alternativo em caso de falha
+        this._convertRawToWavFinal();
+      }
       
       // Adicionar um tom forte de referência ao WAV final e garantir formato válido
       const result = await this._injectReferenceAudio(this.outputFile);
@@ -1297,9 +1343,12 @@ class WebRTCSession {
       
       // Garantir que a sessão seja marcada como não gravando mesmo em caso de erro
       this.isRecording = false;
+      
+      // Terceira verificação do timer (garantia em caso de erro)
       if (this._scheduledWavConversion) {
         clearInterval(this._scheduledWavConversion);
         this._scheduledWavConversion = null;
+        logger.info(`[webrtc-service] Erro: garantindo que intervalo de conversão WAV foi interrompido`);
       }
       
       return null;
@@ -2387,7 +2436,7 @@ class WebRTCSession {
         // Se o arquivo não existe, mas estamos em gravação, tentar fazer uma conversão
         // de emergência e aguardar um momento para o arquivo ser criado
         logger.info(`[webrtc-service] Tentando criar arquivo WAV de emergência...`);
-        this._convertRawToWav();
+        this._convertRawToWav(false);
         
         // Aguardar um momento para o arquivo ser criado
         await new Promise(resolve => setTimeout(resolve, 500));
