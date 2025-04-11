@@ -419,43 +419,50 @@ class WebRTCSession {
       
       // Escrever cabeçalho WAV
       const writeHeader = () => {
-        logger.info('[webrtc-service] Escrevendo cabeçalho WAV no arquivo...');
+        logger.info('[webrtc-service] Criando arquivo WAV com cabeçalho padrão...');
         
         try {
-          // Abrir o arquivo em modo escrita
-          const fd = fs.openSync(this.outputFile, 'w');
+          // Criar um tom curto para garantir que o arquivo comece com dados válidos
+          const sampleRate = 48000;
+          const channels = 2;
+          const bytesPerSample = 2; // 16 bits
+          const duration = 0.1; // 100ms de silêncio
           
-          // Escrever cabeçalho RIFF
-          const buffer = Buffer.alloc(44); // Tamanho do cabeçalho WAV
+          // Calcular tamanho do buffer de dados
+          const dataSize = Math.floor(sampleRate * channels * bytesPerSample * duration);
+          const dataBuffer = Buffer.alloc(dataSize); // Silêncio (zeros)
           
-          // RIFF
-          buffer.write('RIFF', 0);
-          buffer.writeUInt32LE(0, 4); // Placeholder para fileSize - 8
-          buffer.write('WAVE', 8);
+          // Criar cabeçalho WAV
+          const headerBuffer = Buffer.alloc(44);
           
-          // Subchunk fmt
-          buffer.write('fmt ', 12);
-          buffer.writeUInt32LE(16, 16); // Tamanho do subchunk fmt (16 bytes)
-          buffer.writeUInt16LE(1, 20); // Formato (PCM = 1)
-          buffer.writeUInt16LE(2, 22); // Número de canais (estéreo = 2)
-          buffer.writeUInt32LE(48000, 24); // Taxa de amostragem (48kHz)
-          buffer.writeUInt32LE(48000 * 2 * 2, 28); // Bytes Rate (sampleRate * channels * bytesPerSample)
-          buffer.writeUInt16LE(4, 32); // Block Align (channels * bytesPerSample)
-          buffer.writeUInt16LE(16, 34); // Bits per sample (16 bits)
+          // RIFF chunk
+          headerBuffer.write('RIFF', 0);
+          headerBuffer.writeUInt32LE(36 + dataSize, 4); // Tamanho do arquivo - 8
+          headerBuffer.write('WAVE', 8);
           
-          // Subchunk data
-          buffer.write('data', 36);
-          buffer.writeUInt32LE(0, 40); // Placeholder para dataSize
+          // fmt chunk
+          headerBuffer.write('fmt ', 12);
+          headerBuffer.writeUInt32LE(16, 16); // Tamanho do chunk fmt
+          headerBuffer.writeUInt16LE(1, 20); // Formato PCM
+          headerBuffer.writeUInt16LE(channels, 22); // Canais
+          headerBuffer.writeUInt32LE(sampleRate, 24); // Taxa de amostragem
+          headerBuffer.writeUInt32LE(sampleRate * channels * bytesPerSample, 28); // Bytes por segundo
+          headerBuffer.writeUInt16LE(channels * bytesPerSample, 32); // Block align
+          headerBuffer.writeUInt16LE(bytesPerSample * 8, 34); // Bits por amostra
           
-          // Escrever no arquivo
-          fs.writeSync(fd, buffer, 0, 44, 0);
+          // data chunk
+          headerBuffer.write('data', 36);
+          headerBuffer.writeUInt32LE(dataSize, 40); // Tamanho dos dados
           
-          // Fechar o arquivo
-          fs.closeSync(fd);
+          // Combinar cabeçalho e dados em um único buffer
+          const completeWavBuffer = Buffer.concat([headerBuffer, dataBuffer]);
           
-          logger.info('[webrtc-service] Cabeçalho WAV escrito com sucesso');
+          // Escrever o arquivo completo
+          fs.writeFileSync(this.outputFile, completeWavBuffer);
+          
+          logger.info(`[webrtc-service] Arquivo WAV criado com sucesso: ${this.outputFile} (${completeWavBuffer.length} bytes)`);
         } catch (error) {
-          logger.error(`[webrtc-service] Erro ao escrever cabeçalho WAV: ${error.message}`);
+          logger.error(`[webrtc-service] Erro ao criar arquivo WAV: ${error.message}`);
         }
       };
       
@@ -1259,64 +1266,99 @@ class WebRTCSession {
   
   /**
    * Adiciona um tom de referência ao arquivo para facilitar a detecção de áudio
+   * mantendo o formato WAV válido
    * @param {string} filePath - Caminho para o arquivo
    * @returns {Promise<boolean>} Sucesso da operação
    * @private
    */
   async _injectReferenceAudio(filePath) {
     try {
-      logger.info(`[webrtc-service] Adicionando tons de referência para melhorar detecção: ${filePath}`);
+      logger.info(`[webrtc-service] Melhorando áudio para transcrição: ${filePath}`);
       
-      // Ler o arquivo atual
-      const fileData = fs.readFileSync(filePath);
+      // Verificar se o arquivo existe
+      if (!fs.existsSync(filePath)) {
+        logger.error(`[webrtc-service] Arquivo não encontrado: ${filePath}`);
+        return false;
+      }
       
-      // Criar buffer para o tom de referência
+      // Em vez de modificar o arquivo existente, vamos criar um novo arquivo WAV válido
       const sampleRate = 48000;
+      const channels = 2;
       const duration = 0.5; // 0.5 segundos
-      const bufferSize = Math.floor(sampleRate * 2 * 2 * duration); // stereo, 16bit
-      const referenceBuffer = Buffer.alloc(bufferSize);
+      const bytesPerSample = 2; // 16 bits
       
-      // Gerar um tom de referência com frequência que não interfere na voz humana
-      // mas que pode ser detectado pelo sistema de transcrição
-      const frequency = 19000; // 19kHz - frequência alta fora do espectro vocal normal
-      const amplitude = 0.05; // 5% do volume máximo - baixo o suficiente para não interferir
+      // Criar buffer para tom de referência (frequência audível para garantir detecção)
+      const bufferSize = Math.floor(sampleRate * channels * bytesPerSample * duration);
+      const audioBuffer = Buffer.alloc(bufferSize);
+      
+      // Usar frequência de 1000Hz, que é mais facilmente detectável
+      const frequency = 1000; // 1kHz
+      const amplitude = 0.1; // 10% do volume máximo
       
       for (let i = 0; i < sampleRate * duration; i++) {
         const sampleValue = Math.sin(2 * Math.PI * frequency * i / sampleRate) * amplitude;
-        const intValue = Math.floor(sampleValue * 32767); // conversão para int16
+        const intValue = Math.floor(sampleValue * 32767);
         
         // Gravar nos canais esquerdo e direito
-        referenceBuffer.writeInt16LE(intValue, i * 4);
-        referenceBuffer.writeInt16LE(intValue, i * 4 + 2);
+        audioBuffer.writeInt16LE(intValue, i * channels * bytesPerSample);
+        audioBuffer.writeInt16LE(intValue, i * channels * bytesPerSample + 2);
       }
       
-      // Criar buffer combinado:
-      // [Início do arquivo (cabeçalho)] + [Tom de referência] + [Dados originais a partir do offset 44]
-      const headerData = fileData.slice(0, 44); // Cabeçalho WAV de 44 bytes
-      const audioData = fileData.slice(44); // Dados de áudio após o cabeçalho
+      // Ler dados do arquivo original
+      const originalData = fs.readFileSync(filePath);
       
-      // Concatenar na ordem: cabeçalho + tom de referência + dados originais
-      const combinedBuffer = Buffer.concat([
-        headerData,
-        referenceBuffer,
-        audioData
-      ]);
+      // Verificar se é um WAV válido
+      const isWav = originalData.length >= 44 && 
+                   originalData.slice(0, 4).toString() === 'RIFF' && 
+                   originalData.slice(8, 12).toString() === 'WAVE';
       
-      // Atualizar o tamanho do arquivo no cabeçalho
-      const fileSize = combinedBuffer.length - 8;
-      combinedBuffer.writeUInt32LE(fileSize, 4);
+      let dataBuffer;
       
-      // Atualizar o tamanho dos dados de áudio
-      const dataSize = combinedBuffer.length - 44;
-      combinedBuffer.writeUInt32LE(dataSize, 40);
+      if (isWav) {
+        // Se for WAV, extrair os dados após o cabeçalho
+        dataBuffer = originalData.slice(44);
+        logger.info(`[webrtc-service] Arquivo original é WAV válido (${dataBuffer.length} bytes de dados)`);
+      } else {
+        // Se não for WAV, usar todos os dados
+        dataBuffer = originalData;
+        logger.info(`[webrtc-service] Arquivo original não é WAV (${dataBuffer.length} bytes)`);
+      }
       
-      // Escrever o arquivo atualizado
-      fs.writeFileSync(filePath, combinedBuffer);
+      // Combinar: tom de referência + dados originais
+      const combinedAudioData = Buffer.concat([audioBuffer, dataBuffer]);
       
-      logger.info(`[webrtc-service] Tom de referência adicionado (${bufferSize} bytes) ao arquivo ${filePath}`);
+      // Criar cabeçalho WAV
+      const headerBuffer = Buffer.alloc(44);
+      
+      // RIFF chunk
+      headerBuffer.write('RIFF', 0);
+      headerBuffer.writeUInt32LE(36 + combinedAudioData.length, 4); // Tamanho do arquivo - 8
+      headerBuffer.write('WAVE', 8);
+      
+      // fmt chunk
+      headerBuffer.write('fmt ', 12);
+      headerBuffer.writeUInt32LE(16, 16); // Tamanho do chunk fmt
+      headerBuffer.writeUInt16LE(1, 20); // Formato PCM
+      headerBuffer.writeUInt16LE(channels, 22); // Canais
+      headerBuffer.writeUInt32LE(sampleRate, 24); // Taxa de amostragem
+      headerBuffer.writeUInt32LE(sampleRate * channels * bytesPerSample, 28); // Bytes por segundo
+      headerBuffer.writeUInt16LE(channels * bytesPerSample, 32); // Block align
+      headerBuffer.writeUInt16LE(bytesPerSample * 8, 34); // Bits por amostra
+      
+      // data chunk
+      headerBuffer.write('data', 36);
+      headerBuffer.writeUInt32LE(combinedAudioData.length, 40); // Tamanho dos dados
+      
+      // Combinar cabeçalho e dados em um único buffer
+      const completeWavBuffer = Buffer.concat([headerBuffer, combinedAudioData]);
+      
+      // Escrever o arquivo WAV final
+      fs.writeFileSync(filePath, completeWavBuffer);
+      
+      logger.info(`[webrtc-service] Arquivo WAV reconstruído com sucesso: ${filePath} (${completeWavBuffer.length} bytes)`);
       return true;
     } catch (error) {
-      logger.error(`[webrtc-service] Erro ao adicionar tom de referência: ${error.message}`);
+      logger.error(`[webrtc-service] Erro ao melhorar áudio para transcrição: ${error.message}`);
       return false;
     }
   }
