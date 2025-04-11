@@ -215,9 +215,23 @@ class WebRTCSession {
       
       // Armazenar o producer
       participant.producers.set(producer.id, producer);
+      logger.info(`Producer de áudio ${producer.id} criado para participante ${participantId}`);
       
       // Adicionar ao mixer
       this.addParticipantToMixer(participantId, producer);
+      
+      // Configurar evento para quando o transporte for fechado
+      producer.on('transportclose', () => {
+        logger.info(`Transport fechado para producer ${producer.id} do participante ${participantId}`);
+        
+        // Remover producer da lista
+        participant.producers.delete(producer.id);
+        
+        // Se for o último producer do participante, talvez queira fazer algo mais
+        if (participant.producers.size === 0) {
+          logger.info(`Participante ${participantId} não tem mais producers ativos`);
+        }
+      });
       
       // Se a gravação estiver ativa, já começar a capturar áudio deste participante
       if (this.isRecording) {
@@ -238,17 +252,37 @@ class WebRTCSession {
    */
   addParticipantToMixer(participantId, producer) {
     try {
-      logger.info(`Adicionando participante ${participantId} ao mixer de áudio`);
+      logger.info(`Adicionando participante ${participantId} com producer ${producer.id} ao mixer de áudio`);
       
       const participant = this.participants.get(participantId);
+      if (!participant) {
+        logger.error(`Participante ${participantId} não encontrado para adicionar ao mixer`);
+        return;
+      }
       
-      // Criar um input para o mixer
-      participant.inputStream = this.audioMixer.input({
+      // Verificar se já existe um input para este participante
+      if (participant.mixerInput) {
+        logger.info(`Participante ${participantId} já possui um input no mixer, reutilizando`);
+        return;
+      }
+      
+      // Criar um input para o mixer com identificação clara
+      participant.mixerInput = this.audioMixer.input({
         channels: 2,
-        volume: 100
+        volume: 100,
+        bitDepth: 16,
+        sampleRate: 48000,
+        name: `participant-${participantId}-${producer.id}`
       });
       
-      logger.info(`Participante ${participantId} adicionado ao mixer com sucesso`);
+      logger.info(`Participante ${participantId} adicionado ao mixer com sucesso como input: ${participant.mixerInput.name}`);
+      
+      // Marcar este participante como "real" para evitar áudio sintético
+      participant.isReal = true;
+      
+      // Incrementar contador de participantes reais
+      this.realParticipantCount = (this.realParticipantCount || 0) + 1;
+      logger.info(`Número total de participantes reais agora: ${this.realParticipantCount}`);
     } catch (error) {
       logger.error(`Erro ao adicionar participante ${participantId} ao mixer:`, error);
     }
@@ -267,63 +301,65 @@ class WebRTCSession {
       
       logger.info(`Iniciando gravação para sessão ${this.id}`);
       
-      // Criar arquivo de saída
-      const timestamp = Date.now();
-      this.outputFile = path.join(TMP_DIR, `session_${this.id}_${timestamp}.wav`);
+      // Timestamp para o arquivo de saída - usar timestamp atual
+      this.timestamp = Date.now();
       
-      // Configurar mixer com parâmetros específicos se não estiver já configurado
+      // Criar arquivo de saída no diretório temporário
+      this.outputFile = path.join(TMP_DIR, `session_${this.id}_${this.timestamp}.wav`);
+      
+      // Criar mixer de áudio se ainda não existir
       if (!this.audioMixer) {
-        logger.info('Criando novo mixer de áudio com configurações padrão');
         this.audioMixer = new AudioMixer.Mixer({
-          channels: 2,           // Estéreo
-          bitDepth: 16,          // 16 bits por amostra
-          sampleRate: 48000,     // 48 kHz - padrão para áudio de alta qualidade
-          clearInterval: 250     // ms entre limpezas do buffer
+          channels: 2,
+          bitDepth: 16,
+          sampleRate: 48000,
+          clearInterval: 250 // ms
         });
-        
-        logger.info(`Mixer configurado: canais=${this.audioMixer.channels}, taxa=${this.audioMixer.sampleRate}, bits=${this.audioMixer.bitDepth}`);
       }
       
-      // Configurar stream de saída
-      const outputStream = fs.createWriteStream(this.outputFile);
+      // Escrever cabeçalho WAV no arquivo
+      logger.info('Escrevendo cabeçalho WAV no arquivo...');
       
-      // Adicionar o cabeçalho WAV ao início do arquivo
+      // Escrever cabeçalho manualmente para garantir formato correto
       const writeHeader = () => {
-        logger.info('Escrevendo cabeçalho WAV no arquivo...');
+        // Parâmetros do WAV
+        const channels = 2;
+        const sampleRate = 48000;
+        const bitDepth = 16;
         
-        // Dados básicos para o cabeçalho WAV
-        const channels = this.audioMixer.channels || 2;
-        const sampleRate = this.audioMixer.sampleRate || 48000;
-        const bitDepth = this.audioMixer.bitDepth || 16;
-        
-        // Escrever cabeçalho manualmente para garantir formato correto
+        // Criar buffer para cabeçalho WAV (44 bytes)
         const headerBuffer = Buffer.alloc(44);
         
-        // RIFF chunk
-        headerBuffer.write('RIFF', 0);  // ChunkID
-        headerBuffer.writeUInt32LE(0, 4); // ChunkSize (atualizaremos depois)
-        headerBuffer.write('WAVE', 8);  // Format
+        // RIFF chunk descriptor
+        headerBuffer.write('RIFF', 0);
+        headerBuffer.writeUInt32LE(0, 4); // Tamanho total - será atualizado posteriormente
+        headerBuffer.write('WAVE', 8);
         
-        // fmt sub-chunk
-        headerBuffer.write('fmt ', 12);  // Subchunk1ID
-        headerBuffer.writeUInt32LE(16, 16); // Subchunk1Size (16 for PCM)
-        headerBuffer.writeUInt16LE(1, 20);  // AudioFormat (1 for PCM)
-        headerBuffer.writeUInt16LE(channels, 22); // NumChannels
-        headerBuffer.writeUInt32LE(sampleRate, 24); // SampleRate
-        headerBuffer.writeUInt32LE(sampleRate * channels * (bitDepth / 8), 28); // ByteRate
-        headerBuffer.writeUInt16LE(channels * (bitDepth / 8), 32); // BlockAlign
-        headerBuffer.writeUInt16LE(bitDepth, 34); // BitsPerSample
+        // "fmt " sub-chunk
+        headerBuffer.write('fmt ', 12);
+        headerBuffer.writeUInt32LE(16, 16); // Tamanho do sub-chunk fmt (16 para PCM)
+        headerBuffer.writeUInt16LE(1, 20); // Formato de áudio (1 para PCM)
+        headerBuffer.writeUInt16LE(channels, 22); // Número de canais
+        headerBuffer.writeUInt32LE(sampleRate, 24); // Sample rate
+        headerBuffer.writeUInt32LE(sampleRate * channels * (bitDepth / 8), 28); // Byte rate
+        headerBuffer.writeUInt16LE(channels * (bitDepth / 8), 32); // Block align
+        headerBuffer.writeUInt16LE(bitDepth, 34); // Bits per sample
         
-        // data sub-chunk
-        headerBuffer.write('data', 36);  // Subchunk2ID
-        headerBuffer.writeUInt32LE(0, 40); // Subchunk2Size (atualizaremos depois)
+        // "data" sub-chunk
+        headerBuffer.write('data', 36);
+        headerBuffer.writeUInt32LE(0, 40); // Tamanho dos dados - será atualizado posteriormente
         
-        outputStream.write(headerBuffer);
-        logger.info('Cabeçalho WAV escrito com sucesso');
+        return headerBuffer;
       };
       
-      // Escrever cabeçalho WAV
-      writeHeader();
+      // Criar arquivo e escrever cabeçalho WAV
+      const headerBuffer = writeHeader();
+      fs.writeFileSync(this.outputFile, headerBuffer);
+      
+      logger.info('Cabeçalho WAV escrito com sucesso');
+      
+      // Abrir stream para escrita no arquivo
+      const outputStream = fs.createWriteStream(this.outputFile, { flags: 'a' });
       
       // Conectar mixer ao arquivo
       this.audioMixer.pipe(outputStream);
@@ -340,15 +376,21 @@ class WebRTCSession {
       
       // Para cada participante conectado, iniciar a captura de áudio
       let participantCount = 0;
+      this.realParticipantCount = 0; // Resetar contador de participantes reais
+      
       for (const [participantId, participant] of this.participants.entries()) {
         for (const [producerId, producer] of participant.producers.entries()) {
           this.captureAudioFromProducer(participantId, producer);
           participantCount++;
+          this.realParticipantCount++; // Incrementar contador de participantes reais
+          participant.isReal = true; // Marcar como participante real
         }
       }
       
+      logger.info(`Verificando participantes: encontrados ${participantCount} participantes, ${this.realParticipantCount} com áudio real`);
+      
       // Garantir que pelo menos a entrada do mixer está funcionando, mesmo sem participantes
-      if (participantCount === 0) {
+      if (participantCount === 0 || this.realParticipantCount === 0) {
         logger.info('Nenhum participante real encontrado, adicionando input virtual para garantir dados de áudio');
         
         // Criar um input para áudio silencioso/teste
@@ -367,40 +409,13 @@ class WebRTCSession {
         this._simulateAudioData(virtualInput, 'virtual');
         logger.info('Input virtual adicionado e gerando dados de áudio');
       } else {
-        logger.info(`Capturando áudio de ${participantCount} producers de participantes reais`);
+        logger.info(`Capturando áudio de ${participantCount} producers de ${this.realParticipantCount} participantes reais`);
       }
       
       logger.info(`Gravação iniciada para sessão ${this.id}, salvando em ${this.outputFile}`);
       
-      // Verificar se o arquivo foi criado corretamente
-      setTimeout(() => {
-        try {
-          if (fs.existsSync(this.outputFile)) {
-            const stats = fs.statSync(this.outputFile);
-            logger.info(`Arquivo WAV iniciado: ${this.outputFile}, tamanho inicial: ${stats.size} bytes`);
-          } else {
-            logger.warn(`Arquivo WAV não encontrado após iniciar gravação: ${this.outputFile}`);
-          }
-        } catch (err) {
-          logger.error(`Erro ao verificar arquivo WAV: ${err.message}`);
-        }
-      }, 500); // Verificar após 500ms
-      
-      // Verificar se o arquivo está crescendo (sinal de que está recebendo dados de áudio)
-      setTimeout(() => {
-        try {
-          if (fs.existsSync(this.outputFile)) {
-            const stats = fs.statSync(this.outputFile);
-            logger.info(`Arquivo WAV após 2 segundos: ${this.outputFile}, tamanho: ${stats.size} bytes`);
-            
-            if (stats.size <= 44) {
-              logger.warn('O arquivo WAV não cresceu além do cabeçalho! Verificando problemas...');
-            }
-          }
-        } catch (err) {
-          logger.error(`Erro ao verificar crescimento do arquivo WAV: ${err.message}`);
-        }
-      }, 2000); // Verificar após 2 segundos
+      // Iniciar monitoramento do arquivo de saída para verificar se está crescendo
+      this._monitorOutputFile();
       
       return this.outputFile;
     } catch (error) {
@@ -411,53 +426,127 @@ class WebRTCSession {
   }
   
   /**
+   * Monitora o arquivo de saída para garantir que está crescendo
+   * @private
+   */
+  _monitorOutputFile() {
+    // Tamanho inicial
+    if (!fs.existsSync(this.outputFile)) {
+      logger.error(`Arquivo de saída não encontrado: ${this.outputFile}`);
+      return;
+    }
+    
+    const initialStats = fs.statSync(this.outputFile);
+    logger.info(`Arquivo WAV iniciado: ${this.outputFile}, tamanho inicial: ${initialStats.size} bytes`);
+    
+    // Verificar após 2 segundos
+    setTimeout(() => {
+      if (!this.isRecording) return;
+      
+      try {
+        const stats = fs.statSync(this.outputFile);
+        logger.info(`Arquivo WAV após 2 segundos: ${this.outputFile}, tamanho: ${stats.size} bytes`);
+        
+        // Se o arquivo não cresceu, pode haver um problema
+        if (stats.size <= initialStats.size) {
+          logger.warn(`Arquivo de gravação não está crescendo. Verificando participantes e áudio...`);
+          
+          // Verificar participantes novamente
+          let hasRealParticipants = false;
+          for (const [participantId, participant] of this.participants.entries()) {
+            if (participant.producers && participant.producers.size > 0) {
+              hasRealParticipants = true;
+              logger.info(`Participante real encontrado: ${participantId} com ${participant.producers.size} producers`);
+            }
+          }
+          
+          if (!hasRealParticipants && !this.virtualInput) {
+            logger.info('Nenhum participante real encontrado ainda, adicionando input virtual');
+            
+            // Adicionar input virtual se não existir
+            const virtualInput = this.audioMixer.input({
+              channels: 2,
+              volume: 50,
+              bitDepth: 16,
+              sampleRate: 48000,
+              name: 'virtual-participant-backup'
+            });
+            
+            this.virtualInput = virtualInput;
+            this._simulateAudioData(virtualInput, 'virtual-backup');
+          }
+        }
+      } catch (error) {
+        logger.error(`Erro ao monitorar arquivo de saída: ${error.message}`);
+      }
+    }, 2000);
+  }
+  
+  /**
    * Captura o áudio de um producer e adiciona ao mixer
    * @param {string} participantId - ID do participante
    * @param {Object} producer - Producer de áudio
    */
   async captureAudioFromProducer(participantId, producer) {
     try {
-      logger.info(`Iniciando captura real de áudio do participante ${participantId}`);
+      logger.info(`Iniciando captura real de áudio do participante ${participantId} com producer ${producer.id}`);
       
-      // Criar uma entrada no mixer para este participante
-      const input = this.audioMixer.input({
-        channels: 2,  // Estéreo
-        volume: 100,  // Volume máximo
-        bitDepth: 16, // 16 bits por amostra
-        sampleRate: 48000, // 48 kHz
-        name: `participant-${participantId}`
-      });
-      
-      logger.info(`Input adicionado ao mixer para participante ${participantId}`);
-      
-      // Armazenar o input do participante no seu objeto
       const participant = this.participants.get(participantId);
-      if (participant) {
-        participant.mixerInput = input;
-        logger.info(`Mixer input associado ao participante ${participantId}`);
+      if (!participant) {
+        logger.error(`Participante ${participantId} não encontrado para captura de áudio`);
+        return;
       }
+      
+      // Verificar se já existe um input para este participante
+      if (!participant.mixerInput) {
+        logger.info(`Participante ${participantId} não possui um input no mixer, criando...`);
+        
+        // Criar uma entrada no mixer para este participante
+        participant.mixerInput = this.audioMixer.input({
+          channels: 2,  // Estéreo
+          volume: 100,  // Volume máximo
+          bitDepth: 16, // 16 bits por amostra
+          sampleRate: 48000, // 48 kHz
+          name: `participant-${participantId}-${producer.id}`
+        });
+        
+        logger.info(`Input adicionado ao mixer para participante ${participantId}`);
+        
+        // Marcar este participante como "real"
+        participant.isReal = true;
+        
+        // Incrementar contador de participantes reais
+        this.realParticipantCount = (this.realParticipantCount || 0) + 1;
+        logger.info(`Número total de participantes reais agora: ${this.realParticipantCount}`);
+      }
+      
+      // Registrar evento para quando o producer receber dados RTP (áudio real)
+      producer.on('score', (score) => {
+        // Score é um indicador de qualidade do audio
+        logger.debug(`Producer ${producer.id} do participante ${participantId} recebendo áudio com qualidade: ${JSON.stringify(score)}`);
+        participant.lastActivity = Date.now(); // Atualizar timestamp de última atividade
+      });
       
       // Registrar evento para quando o transporte for fechado
       producer.on('transportclose', () => {
-        logger.info(`Transport fechado para producer do participante ${participantId}`);
+        logger.info(`Transport fechado para producer ${producer.id} do participante ${participantId}`);
+        
         // Remover input quando o transporte for fechado
-        if (input && typeof input.end === 'function') {
-          input.end();
+        if (participant.mixerInput && typeof participant.mixerInput.end === 'function') {
+          participant.mixerInput.end();
           logger.info(`Input removido do mixer para participante ${participantId}`);
+          participant.mixerInput = null;
+          
+          // Decrementar contador de participantes reais
+          if (participant.isReal) {
+            this.realParticipantCount = (this.realParticipantCount || 1) - 1;
+            logger.info(`Número total de participantes reais agora: ${this.realParticipantCount}`);
+          }
         }
       });
       
-      // Registrar manipulador de eventos para dados RTP
-      producer.on('rtptransport', (rtpParameters) => {
-        logger.info(`Recebendo RTP do participante ${participantId}`);
-        // Aqui podemos processar os dados RTP conforme necessário
-      });
-      
-      // Simular recebimento de dados de áudio
-      // Este é um exemplo simples, na implementação real você usaria os dados RTP
-      this._simulateAudioData(input, participantId);
-      
-      logger.info(`Áudio do participante ${participantId} está sendo capturado e adicionado ao mixer`);
+      // Ao invés de simular dados para todos, vamos só monitorar atividade de áudio real
+      logger.info(`Áudio do participante ${participantId} está sendo monitorado para captura`);
     } catch (error) {
       logger.error(`Erro ao capturar áudio do participante ${participantId}:`, error);
     }

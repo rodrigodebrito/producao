@@ -22,6 +22,7 @@ class WebRTCTranscriptionService {
     this.isInitialized = false;
     this.connectionStatus = 'disconnected';
     this.participantIds = new Set();
+    this.localAudioEnabled = false;
     
     // Configuração ICE para WebRTC
     this.iceServers = {
@@ -238,19 +239,111 @@ class WebRTCTranscriptionService {
   async _setupLocalStream() {
     try {
       console.log('WebRTC: Obtendo stream de áudio local');
-      this.localStream = await navigator.mediaDevices.getUserMedia({
+      
+      // Tentar obter o áudio com configurações de alta qualidade para transcrição
+      const constraints = {
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
-          autoGainControl: true
+          autoGainControl: true,
+          // Tentar configurações de áudio de alta qualidade
+          sampleRate: 48000,
+          sampleSize: 16,
+          channelCount: 2
         },
         video: false
-      });
+      };
+      
+      // Solicitar acesso ao microfone
+      this.localStream = await navigator.mediaDevices.getUserMedia(constraints);
+      
+      // Verificar se realmente obteve permissão de áudio
+      const audioTracks = this.localStream.getAudioTracks();
+      if (audioTracks.length === 0) {
+        console.warn('WebRTC: Nenhuma track de áudio encontrada no stream local!');
+        this.localAudioEnabled = false;
+      } else {
+        const track = audioTracks[0];
+        console.log(`WebRTC: Track de áudio obtida: ${track.label}, ativa: ${track.enabled}`);
+        
+        // Verificar e ajustar configurações da track
+        if (track.getSettings) {
+          const settings = track.getSettings();
+          console.log('WebRTC: Configurações da track de áudio:', settings);
+        }
+        
+        // Registrar evento para mudanças de estado
+        track.onended = () => {
+          console.warn('WebRTC: Track de áudio local terminada');
+          this.localAudioEnabled = false;
+        };
+        
+        // Definir flag que indica que o áudio está habilitado
+        this.localAudioEnabled = true;
+      }
       
       console.log('WebRTC: Stream de áudio local obtido com sucesso');
+      
+      // Adicionar o stream em conexões existentes
+      if (this.peerConnections.size > 0) {
+        console.log(`WebRTC: Adicionando stream local a ${this.peerConnections.size} conexões existentes`);
+        
+        for (const [peerId, peerConnection] of this.peerConnections.entries()) {
+          this._addLocalStreamToPeerConnection(peerConnection, peerId);
+        }
+      }
     } catch (error) {
       console.error('WebRTC: Erro ao obter stream de áudio local:', error);
+      this.localAudioEnabled = false;
+      
+      // Informar o usuário sobre a falta de permissão de áudio
+      if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+        console.error('WebRTC: Permissão de acesso ao microfone negada pelo usuário');
+        // Dependendo da UI, você poderia mostrar uma notificação aqui
+      }
+      
       throw error;
+    }
+  }
+  
+  /**
+   * Adiciona stream local a uma conexão peer
+   * @param {RTCPeerConnection} peerConnection - Conexão peer
+   * @param {string} peerId - ID do peer
+   * @private 
+   */
+  _addLocalStreamToPeerConnection(peerConnection, peerId) {
+    try {
+      if (!this.localStream) {
+        console.warn(`WebRTC: Sem stream local para adicionar ao peer ${peerId}`);
+        return;
+      }
+      
+      // Obter tracks de áudio do stream local
+      const audioTracks = this.localStream.getAudioTracks();
+      if (audioTracks.length === 0) {
+        console.warn(`WebRTC: Nenhuma track de áudio disponível para adicionar ao peer ${peerId}`);
+        return;
+      }
+      
+      // Adicionar cada track ao peer connection
+      audioTracks.forEach(track => {
+        try {
+          const sender = peerConnection.addTrack(track, this.localStream);
+          console.log(`WebRTC: Track de áudio adicionada ao peer ${peerId}:`, track.label);
+          
+          // Registrar sender para referência futura se necessário
+          if (!peerConnection.localSenders) {
+            peerConnection.localSenders = [];
+          }
+          peerConnection.localSenders.push(sender);
+        } catch (trackError) {
+          // Pode ocorrer erro se a track já foi adicionada
+          console.warn(`WebRTC: Erro ao adicionar track ao peer ${peerId}:`, trackError.message);
+        }
+      });
+    } catch (error) {
+      console.error(`WebRTC: Erro ao adicionar stream local ao peer ${peerId}:`, error);
     }
   }
   
@@ -291,9 +384,7 @@ class WebRTCTranscriptionService {
       
       // Adicionar streams locais
       if (this.localStream) {
-        this.localStream.getTracks().forEach(track => {
-          peerConnection.addTrack(track, this.localStream);
-        });
+        this._addLocalStreamToPeerConnection(peerConnection, peerId);
       }
       
       // Monitorar candidatos ICE
@@ -303,15 +394,53 @@ class WebRTCTranscriptionService {
         }
       };
       
-      // Monitorar mudanças de estado
+      // Monitorar mudanças de estado ICE
       peerConnection.oniceconnectionstatechange = () => {
         console.log(`WebRTC: Estado da conexão ICE com ${peerId}: ${peerConnection.iceConnectionState}`);
+        
+        // Verificar se a conexão está estabelecida
+        if (peerConnection.iceConnectionState === 'connected' || 
+            peerConnection.iceConnectionState === 'completed') {
+          console.log(`WebRTC: Conexão estabelecida com ${peerId}`);
+          
+          // Atualizar estado de conexão global
+          this.connectionStatus = 'connected';
+        }
+        
+        // Verificar se a conexão foi perdida
+        if (peerConnection.iceConnectionState === 'failed' || 
+            peerConnection.iceConnectionState === 'disconnected' || 
+            peerConnection.iceConnectionState === 'closed') {
+          console.warn(`WebRTC: Conexão perdida com ${peerId}`);
+          
+          // Pode tentar reconectar aqui ou remover o peer
+          // this.peerConnections.delete(peerId);
+        }
       };
       
       // Monitorar streams remotos
       peerConnection.ontrack = (event) => {
         console.log(`WebRTC: Stream remoto recebido de ${peerId}`);
+        
+        // Verificar se é uma track de áudio
+        const audioTracks = event.streams[0].getAudioTracks();
+        if (audioTracks.length > 0) {
+          console.log(`WebRTC: ${audioTracks.length} tracks de áudio recebidas de ${peerId}`);
+          
+          // Registrar metadados das tracks para ajudar na depuração
+          audioTracks.forEach((track, index) => {
+            console.log(`WebRTC: Track de áudio ${index} de ${peerId}: ${track.label}, ativa: ${track.enabled}`);
+          });
+        }
+        
         this.remoteStreams.set(peerId, event.streams[0]);
+        
+        // Emitir evento para notificar que um novo stream foi recebido
+        // Isso pode ser usado para atualizar a UI
+        const streamEvent = new CustomEvent('webrtc-stream-added', {
+          detail: { peerId, stream: event.streams[0] }
+        });
+        window.dispatchEvent(streamEvent);
       };
       
       // Criar e enviar oferta
@@ -394,9 +523,7 @@ class WebRTCTranscriptionService {
         
         // Adicionar streams locais
         if (this.localStream) {
-          this.localStream.getTracks().forEach(track => {
-            peerConnection.addTrack(track, this.localStream);
-          });
+          this._addLocalStreamToPeerConnection(peerConnection, sourceId);
         }
         
         // Monitorar candidatos ICE
@@ -675,13 +802,137 @@ class WebRTCTranscriptionService {
    * @returns {Object} - Estado atual
    */
   getStatus() {
+    // Contar participantes com áudio real
+    let activeAudioCount = 0;
+    for (const [peerId, connection] of this.peerConnections.entries()) {
+      if (connection.iceConnectionState === 'connected' || 
+          connection.iceConnectionState === 'completed') {
+        activeAudioCount++;
+      }
+    }
+    
     return {
       isInitialized: this.isInitialized,
       isRecording: this.isRecording,
       connectionStatus: this.connectionStatus,
       participantCount: this.peerConnections.size,
+      activeAudioCount,
+      localAudioEnabled: this.localAudioEnabled,
       sessionId: this.sessionId
     };
+  }
+  
+  /**
+   * Executa diagnóstico de conexões para ajudar a identificar problemas
+   * @returns {Object} Relatório de diagnóstico
+   */
+  diagnoseConnections() {
+    const report = {
+      overview: {
+        initialized: this.isInitialized,
+        recording: this.isRecording,
+        sessionId: this.sessionId,
+        connectionStatus: this.connectionStatus,
+        peerCount: this.peerConnections.size,
+        localAudio: this.localAudioEnabled
+      },
+      localAudio: {
+        available: !!this.localStream,
+        trackCount: this.localStream ? this.localStream.getAudioTracks().length : 0,
+        tracks: []
+      },
+      connections: []
+    };
+    
+    // Coletar informações sobre tracks locais
+    if (this.localStream) {
+      const audioTracks = this.localStream.getAudioTracks();
+      audioTracks.forEach((track, index) => {
+        let settings = {};
+        if (track.getSettings) {
+          settings = track.getSettings();
+        }
+        
+        report.localAudio.tracks.push({
+          index,
+          label: track.label,
+          enabled: track.enabled,
+          muted: track.muted,
+          settings
+        });
+      });
+    }
+    
+    // Coletar informações sobre conexões peer
+    for (const [peerId, connection] of this.peerConnections.entries()) {
+      const connectionInfo = {
+        peerId,
+        iceConnectionState: connection.iceConnectionState,
+        iceGatheringState: connection.iceGatheringState,
+        signalingState: connection.signalingState,
+        hasRemoteStream: this.remoteStreams.has(peerId),
+        remoteTracks: []
+      };
+      
+      // Informações sobre tracks remotas
+      const remoteStream = this.remoteStreams.get(peerId);
+      if (remoteStream) {
+        const audioTracks = remoteStream.getAudioTracks();
+        audioTracks.forEach((track, index) => {
+          connectionInfo.remoteTracks.push({
+            index,
+            label: track.label,
+            enabled: track.enabled,
+            muted: track.muted
+          });
+        });
+      }
+      
+      report.connections.push(connectionInfo);
+    }
+    
+    console.log('WebRTC: Relatório de diagnóstico gerado:', report);
+    return report;
+  }
+  
+  /**
+   * Tenta reparar as conexões com problemas
+   * @returns {boolean} - true se alguma ação foi tomada
+   */
+  async repairConnections() {
+    let actionsPerformed = false;
+    
+    // Verificar stream local
+    if (!this.localStream || !this.localAudioEnabled) {
+      console.log('WebRTC: Tentando reparar stream local de áudio');
+      try {
+        await this._setupLocalStream();
+        actionsPerformed = true;
+      } catch (error) {
+        console.error('WebRTC: Falha ao reparar stream local:', error);
+      }
+    }
+    
+    // Verificar conexões problemáticas
+    for (const [peerId, connection] of this.peerConnections.entries()) {
+      if (connection.iceConnectionState === 'failed' || 
+          connection.iceConnectionState === 'disconnected') {
+        console.log(`WebRTC: Tentando reparar conexão com peer ${peerId}`);
+        
+        // Remover a conexão antiga
+        this.peerConnections.delete(peerId);
+        
+        // Criar nova conexão
+        try {
+          await this._createPeerConnection(peerId);
+          actionsPerformed = true;
+        } catch (error) {
+          console.error(`WebRTC: Falha ao recriar conexão para peer ${peerId}:`, error);
+        }
+      }
+    }
+    
+    return actionsPerformed;
   }
   
   /**
