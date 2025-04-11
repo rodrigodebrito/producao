@@ -48,6 +48,18 @@ router.post(
 );
 
 /**
+ * @route POST /api/webrtc/record/transcribe/:sessionId
+ * @desc Transcreve o áudio atual sem parar a gravação
+ * @access Autenticado
+ */
+router.post(
+  '/record/transcribe/:sessionId',
+  authMiddleware,
+  flexAuthMiddleware,
+  webRTCController.transcribeCurrentAudio
+);
+
+/**
  * @route GET /api/webrtc/sessions
  * @desc Lista todas as sessões WebRTC ativas
  * @access Autenticado

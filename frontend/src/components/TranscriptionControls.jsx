@@ -54,7 +54,7 @@ const TranscriptionControls = ({
       if (typeof audioBlob === 'string') {
         console.log('TranscriptionControls: Transcrição recebida via WebRTC');
         if (onTranscriptionComplete) {
-          onTranscriptionComplete(audioBlob);
+          onTranscriptionComplete(audioBlob, { isComplete: true });
         }
         return;
       }
@@ -84,7 +84,7 @@ const TranscriptionControls = ({
         console.log('TranscriptionControls: Transcrição recebida com sucesso');
         // Call the callback with the transcription result
         if (onTranscriptionComplete) {
-          onTranscriptionComplete(response.transcript);
+          onTranscriptionComplete(response.transcript, { isComplete: true });
         }
       } else {
         throw new Error('No transcript received from the server');
@@ -94,6 +94,25 @@ const TranscriptionControls = ({
       setError('Failed to transcribe audio. Please try again.');
     } finally {
       setIsProcessing(false);
+    }
+  };
+
+  const handlePartialTranscription = (transcription, options = {}) => {
+    console.log(`TranscriptionControls: Transcrição parcial recebida (tempo: ${options.timestamp || 'desconhecido'})`);
+    
+    if (!transcription) {
+      console.error('TranscriptionControls: Erro: transcrição parcial é undefined ou null');
+      setError('Erro ao processar transcrição parcial: Nenhum texto foi recebido');
+      return;
+    }
+    
+    // Chamar o callback com a transcrição parcial
+    if (onTranscriptionComplete) {
+      onTranscriptionComplete(transcription, { 
+        isPartial: true, 
+        timestamp: options.timestamp,
+        duration: options.duration 
+      });
     }
   };
 
@@ -133,6 +152,7 @@ const TranscriptionControls = ({
       <MicButton 
         onStart={handleRecordingStart} 
         onStop={handleRecordingStop} 
+        onPartialTranscription={handlePartialTranscription}
         disabled={disabled || isProcessing}
         syncRecording={syncRecording}
         sessionId={sessionId}

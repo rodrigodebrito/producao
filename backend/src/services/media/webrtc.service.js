@@ -461,6 +461,61 @@ class WebRTCSession {
       logger.error(`Erro ao remover participante ${participantId} da sessão ${this.id}:`, error);
     }
   }
+  
+  /**
+   * Transcreve o áudio atual sem parar a gravação
+   * @returns {Promise<Object>} Resultado da transcrição parcial
+   */
+  async transcribeCurrentAudio() {
+    try {
+      if (!this.isRecording) {
+        logger.warn(`Nenhuma gravação ativa para sessão ${this.id}`);
+        return null;
+      }
+      
+      logger.info(`Transcrevendo áudio atual da sessão ${this.id} sem parar a gravação`);
+      
+      // Calcular duração da gravação até o momento
+      const duration = Date.now() - this.recordingStartTime;
+      logger.info(`Duração atual da gravação: ${duration}ms`);
+      
+      // Criar uma cópia temporária do arquivo atual para transcrição
+      const tempOutputFile = `${this.outputFile}.temp-${Date.now()}.wav`;
+      
+      // Verificar se o arquivo existe e tem conteúdo
+      if (!fs.existsSync(this.outputFile)) {
+        logger.error(`Arquivo de gravação não encontrado: ${this.outputFile}`);
+        return null;
+      }
+      
+      // Copiar arquivo para versão temporária
+      fs.copyFileSync(this.outputFile, tempOutputFile);
+      logger.info(`Arquivo temporário criado: ${tempOutputFile}`);
+      
+      // Transcrever o arquivo temporário
+      const transcription = await this.transcribeAudio(tempOutputFile);
+      
+      // Registrar timestamp da transcrição parcial
+      const timestamp = new Date().toISOString();
+      
+      // Remover arquivo temporário após transcrição
+      try {
+        fs.unlinkSync(tempOutputFile);
+        logger.info(`Arquivo temporário removido: ${tempOutputFile}`);
+      } catch (err) {
+        logger.warn(`Não foi possível remover arquivo temporário: ${tempOutputFile}`, err);
+      }
+      
+      return {
+        duration,
+        transcription,
+        timestamp
+      };
+    } catch (error) {
+      logger.error(`Erro ao transcrever áudio atual para sessão ${this.id}:`, error);
+      return null;
+    }
+  }
 }
 
 /**
@@ -557,6 +612,26 @@ const webRTCService = {
    */
   getActiveSessions() {
     return Array.from(activeSessions.keys());
+  },
+  
+  /**
+   * Transcreve o áudio atual sem parar a gravação
+   * @param {string} sessionId - ID da sessão
+   * @returns {Promise<Object>} Resultado da transcrição parcial
+   */
+  async transcribeCurrentAudio(sessionId) {
+    try {
+      const session = activeSessions.get(sessionId);
+      if (!session) {
+        logger.error(`Sessão WebRTC ${sessionId} não encontrada`);
+        return null;
+      }
+      
+      return await session.transcribeCurrentAudio();
+    } catch (error) {
+      logger.error(`Erro ao transcrever áudio atual para sessão ${sessionId}:`, error);
+      return null;
+    }
   }
 };
 

@@ -142,6 +142,52 @@ const webRTCController = {
   },
   
   /**
+   * Transcreve o áudio atual sem parar a gravação
+   * @param {Object} req - Requisição Express
+   * @param {Object} res - Resposta Express
+   */
+  async transcribeCurrentAudio(req, res) {
+    try {
+      const { sessionId } = req.params;
+      
+      if (!sessionId) {
+        return res.status(400).json({
+          success: false,
+          message: 'ID da sessão não fornecido'
+        });
+      }
+      
+      logger.info(`Transcrevendo áudio atual da sessão ${sessionId}`);
+      
+      const result = await webRTCService.transcribeCurrentAudio(sessionId);
+      
+      if (!result) {
+        return res.status(404).json({
+          success: false,
+          message: 'Nenhuma gravação ativa encontrada para esta sessão ou erro ao transcrever'
+        });
+      }
+      
+      return res.status(200).json({
+        success: true,
+        message: 'Transcrição concluída com sucesso',
+        data: {
+          duration: result.duration,
+          transcription: result.transcription,
+          timestamp: result.timestamp
+        }
+      });
+    } catch (error) {
+      logger.error(`Erro ao transcrever áudio atual: ${error.message}`);
+      return res.status(500).json({
+        success: false,
+        message: 'Erro interno do servidor',
+        error: error.message
+      });
+    }
+  },
+  
+  /**
    * Lista todas as sessões WebRTC ativas
    * @param {Object} req - Requisição Express
    * @param {Object} res - Resposta Express

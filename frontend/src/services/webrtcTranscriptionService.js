@@ -520,6 +520,52 @@ class WebRTCTranscriptionService {
   }
   
   /**
+   * Solicita transcrição do áudio atual sem parar a gravação
+   * @returns {Promise<Object>} - Resultado da transcrição parcial
+   */
+  async transcribeCurrentAudio() {
+    try {
+      if (!this.isRecording) {
+        console.log('WebRTC: Nenhuma gravação ativa para transcrição parcial');
+        return null;
+      }
+      
+      if (!this.sessionId) {
+        console.error('WebRTC: sessionId não disponível');
+        return null;
+      }
+      
+      console.log(`WebRTC: Solicitando transcrição parcial para sessão ${this.sessionId}`);
+      
+      // Solicitar transcrição parcial no servidor
+      const response = await axios.post(`${API_URL}/api/webrtc/record/transcribe/${this.sessionId}`);
+      
+      if (!response.data.success) {
+        throw new Error('Falha ao solicitar transcrição parcial no servidor');
+      }
+      
+      console.log(`WebRTC: Transcrição parcial concluída com sucesso`);
+      
+      // Processar resultado da transcrição
+      const { data } = response.data;
+      
+      // Chamar callback se disponível, mas com flag para identificar que é uma transcrição parcial
+      if (this.transcriptionCallback && data.transcription) {
+        this.transcriptionCallback(data.transcription, {
+          isPartial: true,
+          timestamp: data.timestamp,
+          duration: data.duration
+        });
+      }
+      
+      return data;
+    } catch (error) {
+      console.error('WebRTC: Erro ao solicitar transcrição parcial:', error);
+      return null;
+    }
+  }
+  
+  /**
    * Retorna o estado atual da conexão WebRTC
    * @returns {Object} - Estado atual
    */

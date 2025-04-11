@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faMicrophone, faMicrophoneSlash } from '@fortawesome/free-solid-svg-icons';
+import { faMicrophone, faMicrophoneSlash, faFileAlt } from '@fortawesome/free-solid-svg-icons';
 import './MicButton.css';
 import webrtcTranscriptionService from '../services/webrtcTranscriptionService';
 
@@ -9,6 +9,7 @@ import webrtcTranscriptionService from '../services/webrtcTranscriptionService';
  * @param {Object} props Component props
  * @param {Function} props.onStart Function to call when recording starts
  * @param {Function} props.onStop Function to call when recording stops
+ * @param {Function} props.onPartialTranscription Function to call when a partial transcription is requested
  * @param {boolean} props.disabled Whether the button is disabled
  * @param {string} props.mode Recording mode ('webspeech', 'webrtc', or other)
  * @param {boolean} props.syncRecording Whether to sync recording state via Socket.IO
@@ -18,6 +19,7 @@ import webrtcTranscriptionService from '../services/webrtcTranscriptionService';
 const MicButton = ({ 
   onStart, 
   onStop, 
+  onPartialTranscription,
   disabled = false, 
   mode = 'webspeech', 
   syncRecording = false,
@@ -29,6 +31,7 @@ const MicButton = ({
   const [remoteTriggered, setRemoteTriggered] = useState(false);
   const [socketConnected, setSocketConnected] = useState(false);
   const [webrtcStatus, setWebrtcStatus] = useState({ initialized: false, connected: false });
+  const [isRequesting, setIsRequesting] = useState(false);
 
   // Initialize WebRTC if mode is 'webrtc'
   useEffect(() => {
@@ -36,10 +39,14 @@ const MicButton = ({
       console.log('MicButton: Inicializando serviço WebRTC');
       
       // Initialize WebRTC service
-      webrtcTranscriptionService.initialize(propSessionId, socket, (transcription) => {
+      webrtcTranscriptionService.initialize(propSessionId, socket, (transcription, options = {}) => {
         console.log('MicButton: Transcrição recebida via WebRTC:', transcription);
         // If there's a callback for transcription, call it
-        if (typeof onStop === 'function') {
+        if (options.isPartial) {
+          if (typeof onPartialTranscription === 'function') {
+            onPartialTranscription(transcription, options);
+          }
+        } else if (typeof onStop === 'function') {
           onStop(transcription);
         }
       }).then(success => {
@@ -54,7 +61,7 @@ const MicButton = ({
         setWebrtcStatus({ initialized: false, connected: false });
       };
     }
-  }, [mode, socket, propSessionId, onStop]);
+  }, [mode, socket, propSessionId, onStop, onPartialTranscription]);
 
   // Get the socket instance and monitor connection status
   useEffect(() => {
@@ -235,6 +242,31 @@ const MicButton = ({
     }
   }, [isRecording, onStart, onStop, syncRecording, remoteTriggered, propSessionId, mode, webrtcStatus.initialized]);
 
+  const requestPartialTranscription = async () => {
+    if (!isRecording || mode !== 'webrtc' || !webrtcStatus.initialized) {
+      console.log('MicButton: Não é possível solicitar transcrição parcial');
+      return;
+    }
+
+    try {
+      setIsRequesting(true);
+      console.log('MicButton: Solicitando transcrição parcial');
+      
+      const result = await webrtcTranscriptionService.transcribeCurrentAudio();
+      
+      if (result && result.transcription) {
+        console.log('MicButton: Transcrição parcial recebida:', result.transcription);
+        // O callback será tratado pelo serviço WebRTC através do callback registrado na inicialização
+      } else {
+        console.warn('MicButton: Nenhuma transcrição parcial recebida');
+      }
+    } catch (error) {
+      console.error('MicButton: Erro ao solicitar transcrição parcial:', error);
+    } finally {
+      setIsRequesting(false);
+    }
+  };
+
   const getModeLabel = () => {
     switch (mode) {
       case 'daily':
@@ -256,25 +288,39 @@ const MicButton = ({
   const isRTCActive = webrtcStatus.initialized && webrtcStatus.connected;
 
   return (
-    <button
-      className={`mic-button ${isRecording ? 'recording' : ''} ${syncRecording && socketConnected ? 'sync-enabled' : ''} ${showRTCStatus && isRTCActive ? 'webrtc-enabled' : ''}`}
-      onClick={toggleRecording}
-      disabled={disabled || (mode === 'webrtc' && !webrtcStatus.initialized)}
-      aria-label={isRecording ? 'Parar gravação' : 'Iniciar gravação'}
-      title={`${isRecording ? 'Parar' : 'Iniciar'} gravação de ${getModeLabel()}${syncRecording ? ' (sincronizada)' : ''}${mode === 'webrtc' ? ' (alta qualidade)' : ''}`}
-    >
-      {isRecording && <div className="recording-indicator" />}
-      {syncRecording && socketConnected && (
-        <div className="sync-indicator" title="Sincronização ativa" />
+    <div className="mic-button-container">
+      <button
+        className={`mic-button ${isRecording ? 'recording' : ''} ${syncRecording && socketConnected ? 'sync-enabled' : ''} ${showRTCStatus && isRTCActive ? 'webrtc-enabled' : ''}`}
+        onClick={toggleRecording}
+        disabled={disabled || (mode === 'webrtc' && !webrtcStatus.initialized)}
+        aria-label={isRecording ? 'Parar gravação' : 'Iniciar gravação'}
+        title={`${isRecording ? 'Parar' : 'Iniciar'} gravação de ${getModeLabel()}${syncRecording ? ' (sincronizada)' : ''}${mode === 'webrtc' ? ' (alta qualidade)' : ''}`}
+      >
+        {isRecording && <div className="recording-indicator" />}
+        {syncRecording && socketConnected && (
+          <div className="sync-indicator" title="Sincronização ativa" />
+        )}
+        {showRTCStatus && isRTCActive && (
+          <div className="webrtc-indicator" title="WebRTC ativo (captura completa)" />
+        )}
+        <span className="mic-icon">
+          <FontAwesomeIcon icon={isRecording ? faMicrophoneSlash : faMicrophone} />
+        </span>
+        {buttonText}
+      </button>
+      
+      {isRecording && mode === 'webrtc' && webrtcStatus.initialized && (
+        <button 
+          className={`transcribe-now-button ${isRequesting ? 'requesting' : ''}`}
+          onClick={requestPartialTranscription}
+          disabled={isRequesting || !isRecording}
+          title="Solicitar transcrição do áudio gravado até o momento"
+        >
+          <FontAwesomeIcon icon={faFileAlt} />
+          {isRequesting ? 'Processando...' : 'Transcrever Agora'}
+        </button>
       )}
-      {showRTCStatus && isRTCActive && (
-        <div className="webrtc-indicator" title="WebRTC ativo (captura completa)" />
-      )}
-      <span className="mic-icon">
-        <FontAwesomeIcon icon={isRecording ? faMicrophoneSlash : faMicrophone} />
-      </span>
-      {buttonText}
-    </button>
+    </div>
   );
 };
 
