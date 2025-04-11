@@ -198,13 +198,13 @@ const openAIService = {
             // Criar um ReadStream do arquivo
             const file = fs.createReadStream(filePath);
             
-            // Configurar o modelo Whisper com o idioma correto e opções otimizadas
+            // Configurar o modelo Whisper com novas opções para maximizar detecção de voz baixa
             const transcriptionOptions = {
                 file: file,
                 model: 'whisper-1',
-                temperature: 0.1, // Temperatura leve para evitar padrões repetitivos
+                temperature: 0.0, // Temperatura zero para maximizar precisão
                 response_format: 'verbose_json', // Formato detalhado com informações de segmentos e confiança
-                prompt: "Esta é uma sessão de terapia sendo transcrita. Transcreva exatamente o que é dito, mesmo se forem apenas algumas palavras. Ignore qualquer texto padrão como 'Legendas pela comunidade' ou 'Amara.org' - esses não são parte da fala real.", // Instrução explícita para evitar texto padrão
+                prompt: "Esta é uma sessão de terapia. Transcreva QUALQUER palavra ou trecho falado, mesmo que seja muito baixo ou pareça ruído de fundo. É importante capturar qualquer fala humana, mesmo sussurros ou voz baixa. Ignore completamente qualquer texto padrão como 'Legendas pela comunidade', 'Amara.org' ou similares - estes nunca são parte da fala real.", // Instrução explícita para detectar voz em volume baixo
             };
             
             // Adicionar o idioma se for especificado
