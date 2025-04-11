@@ -83,7 +83,7 @@ class WebRTCTranscriptionService {
   async _initializeServerSession() {
     try {
       console.log(`WebRTC: Inicializando sessão no servidor para ${this.sessionId}`);
-      const response = await axios.post(`${API_URL}/api/webrtc/session/${this.sessionId}`);
+      const response = await axios.post(`${API_URL}/webrtc/session/${this.sessionId}`);
       
       if (!response.data.success) {
         throw new Error('Falha ao inicializar sessão no servidor');
@@ -449,7 +449,7 @@ class WebRTCTranscriptionService {
       console.log(`WebRTC: Iniciando gravação para sessão ${this.sessionId}`);
       
       // Solicitar início da gravação no servidor
-      const response = await axios.post(`${API_URL}/api/webrtc/record/start/${this.sessionId}`);
+      const response = await axios.post(`${API_URL}/webrtc/record/start/${this.sessionId}`);
       
       if (!response.data.success) {
         throw new Error('Falha ao iniciar gravação no servidor');
@@ -491,7 +491,7 @@ class WebRTCTranscriptionService {
       console.log(`WebRTC: Parando gravação para sessão ${this.sessionId}`);
       
       // Solicitar parada da gravação no servidor
-      const response = await axios.post(`${API_URL}/api/webrtc/record/stop/${this.sessionId}`);
+      const response = await axios.post(`${API_URL}/webrtc/record/stop/${this.sessionId}`);
       
       if (!response.data.success) {
         throw new Error('Falha ao parar gravação no servidor');
@@ -538,7 +538,7 @@ class WebRTCTranscriptionService {
       console.log(`WebRTC: Solicitando transcrição parcial para sessão ${this.sessionId}`);
       
       // Solicitar transcrição parcial no servidor
-      const response = await axios.post(`${API_URL}/api/webrtc/record/transcribe/${this.sessionId}`);
+      const response = await axios.post(`${API_URL}/webrtc/record/transcribe/${this.sessionId}`);
       
       if (!response.data.success) {
         throw new Error('Falha ao solicitar transcrição parcial no servidor');
