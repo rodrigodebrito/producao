@@ -355,7 +355,30 @@ class WebRTCTranscriptionService {
    */
   async _setupLocalStream() {
     try {
-      console.log('WebRTC: Obtendo stream de áudio local');
+      console.log('WebRTC: Iniciando obtenção de stream de áudio local');
+      
+      // Verificar se o navegador suporta getUserMedia
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        console.error('WebRTC: ERRO - getUserMedia não suportado neste navegador!');
+        throw new Error('getUserMedia não suportado neste navegador');
+      }
+      
+      console.log('WebRTC: Verificação de dispositivos de áudio antes de solicitar permissão');
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const audioDevices = devices.filter(device => device.kind === 'audioinput');
+        console.log(`WebRTC: Dispositivos de áudio disponíveis: ${audioDevices.length}`);
+        
+        audioDevices.forEach((device, index) => {
+          console.log(`WebRTC: Dispositivo de áudio ${index + 1}: ID=${device.deviceId}, Label=${device.label || 'Sem nome (permissão não concedida)'}`);
+        });
+        
+        if (audioDevices.length === 0) {
+          console.warn('WebRTC: ALERTA - Nenhum dispositivo de áudio detectado!');
+        }
+      } catch (enumError) {
+        console.warn('WebRTC: Não foi possível enumerar dispositivos:', enumError);
+      }
       
       // Tentar obter o áudio com configurações de alta qualidade para transcrição
       const constraints = {
@@ -371,35 +394,136 @@ class WebRTCTranscriptionService {
         video: false
       };
       
+      console.log('WebRTC: Solicitando permissão de microfone com constraints:', JSON.stringify(constraints));
+      
+      // Verificar se já temos permissão (para navegadores compatíveis)
+      if (navigator.permissions && navigator.permissions.query) {
+        try {
+          const permissionStatus = await navigator.permissions.query({ name: 'microphone' });
+          console.log(`WebRTC: Status de permissão do microfone: ${permissionStatus.state}`);
+          
+          permissionStatus.onchange = () => {
+            console.log(`WebRTC: Permissão do microfone alterada para: ${permissionStatus.state}`);
+          };
+        } catch (permError) {
+          console.warn('WebRTC: Não foi possível verificar permissão:', permError);
+        }
+      }
+      
       // Solicitar acesso ao microfone
+      console.log('WebRTC: Chamando getUserMedia()...');
       this.localStream = await navigator.mediaDevices.getUserMedia(constraints);
+      console.log('WebRTC: getUserMedia() concluído com sucesso');
       
       // Verificar se realmente obteve permissão de áudio
       const audioTracks = this.localStream.getAudioTracks();
+      console.log(`WebRTC: Número de tracks de áudio obtidas: ${audioTracks.length}`);
+      
       if (audioTracks.length === 0) {
-        console.warn('WebRTC: Nenhuma track de áudio encontrada no stream local!');
+        console.error('WebRTC: ERRO CRÍTICO - Nenhuma track de áudio encontrada no stream local!');
         this.localAudioEnabled = false;
       } else {
         const track = audioTracks[0];
-        console.log(`WebRTC: Track de áudio obtida: ${track.label}, ativa: ${track.enabled}`);
+        console.log(`WebRTC: Track de áudio principal: ID=${track.id}, Label=${track.label}, Enabled=${track.enabled}, Muted=${track.muted}, ReadyState=${track.readyState}`);
         
         // Verificar e ajustar configurações da track
         if (track.getSettings) {
           const settings = track.getSettings();
-          console.log('WebRTC: Configurações da track de áudio:', settings);
+          console.log('WebRTC: Configurações detalhadas da track de áudio:', JSON.stringify(settings, null, 2));
+          
+          // Verificar se as configurações são adequadas para transcrição
+          if (settings.sampleRate) {
+            console.log(`WebRTC: Taxa de amostragem real: ${settings.sampleRate}Hz (ideal: 48000Hz)`);
+          }
+          if (settings.channelCount) {
+            console.log(`WebRTC: Número de canais real: ${settings.channelCount} (ideal: 1-2)`);
+          }
+        } else {
+          console.warn('WebRTC: getSettings() não suportado neste navegador');
+        }
+        
+        // Testar se a track está realmente capturando áudio
+        if (typeof AudioContext !== 'undefined' || typeof webkitAudioContext !== 'undefined') {
+          try {
+            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+            const audioContext = new AudioContextClass();
+            const source = audioContext.createMediaStreamSource(this.localStream);
+            
+            // Criar analisador para verificar se há áudio
+            const analyser = audioContext.createAnalyser();
+            analyser.fftSize = 256;
+            source.connect(analyser);
+            
+            const dataArray = new Uint8Array(analyser.frequencyBinCount);
+            
+            // Verificar níveis de áudio
+            const checkAudioLevel = () => {
+              if (!this.localStream) return; // Parar se o stream foi encerrado
+              
+              analyser.getByteFrequencyData(dataArray);
+              
+              // Calcular o nível médio
+              let sum = 0;
+              for (let i = 0; i < dataArray.length; i++) {
+                sum += dataArray[i];
+              }
+              const average = sum / dataArray.length;
+              
+              console.log(`WebRTC: Nível de áudio detectado: ${average.toFixed(2)} (0-255)`);
+              
+              if (average < 1) {
+                console.warn('WebRTC: Nível de áudio muito baixo - possível microfone mudo ou não funcionando');
+              } else if (average < 5) {
+                console.warn('WebRTC: Nível de áudio baixo - possível ruído de fundo apenas');
+              } else {
+                console.log('WebRTC: Áudio detectado com sucesso');
+              }
+            };
+            
+            // Verificar após 1 segundo (tempo para o usuário falar algo)
+            setTimeout(checkAudioLevel, 1000);
+          } catch (audioContextError) {
+            console.warn('WebRTC: Não foi possível analisar o áudio:', audioContextError);
+          }
         }
         
         // Registrar evento para mudanças de estado
         track.onended = () => {
-          console.warn('WebRTC: Track de áudio local terminada');
+          console.error('WebRTC: ERRO - Track de áudio local terminada inesperadamente');
           this.localAudioEnabled = false;
+          
+          // Disparar evento para que a UI possa reagir
+          const event = new CustomEvent('webrtc-audio-track-ended', {
+            detail: { trackId: track.id, timestamp: Date.now() }
+          });
+          window.dispatchEvent(event);
+        };
+        
+        track.onmute = () => {
+          console.warn('WebRTC: Track de áudio silenciada');
+          
+          // Disparar evento
+          const event = new CustomEvent('webrtc-audio-track-muted', {
+            detail: { trackId: track.id, timestamp: Date.now() }
+          });
+          window.dispatchEvent(event);
+        };
+        
+        track.onunmute = () => {
+          console.log('WebRTC: Track de áudio reativada');
+          
+          // Disparar evento
+          const event = new CustomEvent('webrtc-audio-track-unmuted', {
+            detail: { trackId: track.id, timestamp: Date.now() }
+          });
+          window.dispatchEvent(event);
         };
         
         // Definir flag que indica que o áudio está habilitado
         this.localAudioEnabled = true;
       }
       
-      console.log('WebRTC: Stream de áudio local obtido com sucesso');
+      console.log('WebRTC: Setup de áudio local concluído com sucesso, localAudioEnabled =', this.localAudioEnabled);
       
       // Adicionar o stream em conexões existentes
       if (this.peerConnections.size > 0) {
@@ -409,17 +533,79 @@ class WebRTCTranscriptionService {
           this._addLocalStreamToPeerConnection(peerConnection, peerId);
         }
       }
+      
+      // Exibir um elemento de áudio para teste (invisível)
+      this._createDebugAudioElement();
+      
+      return true;
     } catch (error) {
-      console.error('WebRTC: Erro ao obter stream de áudio local:', error);
+      console.error('WebRTC: ERRO ao obter stream de áudio local:', error);
+      console.error('WebRTC: Nome do erro:', error.name);
+      console.error('WebRTC: Mensagem do erro:', error.message);
+      console.error('WebRTC: Stack trace:', error.stack);
+      
       this.localAudioEnabled = false;
       
-      // Informar o usuário sobre a falta de permissão de áudio
+      // Informar o usuário sobre erros específicos
       if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
-        console.error('WebRTC: Permissão de acesso ao microfone negada pelo usuário');
-        // Dependendo da UI, você poderia mostrar uma notificação aqui
+        console.error('WebRTC: Permissão de acesso ao microfone NEGADA pelo usuário');
+        
+        // Disparar evento para que a UI possa mostrar uma mensagem
+        const event = new CustomEvent('webrtc-microphone-permission-denied', {
+          detail: { errorName: error.name, timestamp: Date.now() }
+        });
+        window.dispatchEvent(event);
+      } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
+        console.error('WebRTC: Nenhum dispositivo de áudio encontrado');
+        
+        // Disparar evento
+        const event = new CustomEvent('webrtc-no-audio-device', {
+          detail: { errorName: error.name, timestamp: Date.now() }
+        });
+        window.dispatchEvent(event);
+      } else if (error.name === 'NotReadableError' || error.name === 'TrackStartError') {
+        console.error('WebRTC: Não foi possível acessar o dispositivo de áudio (em uso por outro aplicativo?)');
+        
+        // Disparar evento
+        const event = new CustomEvent('webrtc-audio-device-busy', {
+          detail: { errorName: error.name, timestamp: Date.now() }
+        });
+        window.dispatchEvent(event);
       }
       
       throw error;
+    }
+  }
+  
+  /**
+   * Cria um elemento de áudio para debug
+   * @private
+   */
+  _createDebugAudioElement() {
+    try {
+      // Remover elemento anterior se existir
+      const oldAudio = document.getElementById('webrtc-debug-audio');
+      if (oldAudio) {
+        oldAudio.parentNode.removeChild(oldAudio);
+      }
+      
+      // Criar elemento de áudio para teste
+      const audioElement = document.createElement('audio');
+      audioElement.id = 'webrtc-debug-audio';
+      audioElement.style.display = 'none';
+      audioElement.muted = true; // Para evitar feedback
+      audioElement.autoplay = true;
+      
+      // Adicionar à página
+      document.body.appendChild(audioElement);
+      
+      // Conectar o stream
+      if (this.localStream) {
+        audioElement.srcObject = this.localStream;
+        console.log('WebRTC: Elemento de áudio de debug criado e conectado ao stream local');
+      }
+    } catch (error) {
+      console.warn('WebRTC: Não foi possível criar elemento de áudio para debug:', error);
     }
   }
   
@@ -431,23 +617,57 @@ class WebRTCTranscriptionService {
    */
   _addLocalStreamToPeerConnection(peerConnection, peerId) {
     try {
+      console.log(`WebRTC: Iniciando adição de stream local ao peer ${peerId}`);
+      
       if (!this.localStream) {
-        console.warn(`WebRTC: Sem stream local para adicionar ao peer ${peerId}`);
-        return;
+        console.error(`WebRTC: ERRO - Sem stream local para adicionar ao peer ${peerId}`);
+        return false;
       }
+      
+      // Verificar estado da conexão
+      console.log(`WebRTC: Estado da conexão com ${peerId}: RTCPeerConnection state=${peerConnection.connectionState}, iceConnectionState=${peerConnection.iceConnectionState}, signalingState=${peerConnection.signalingState}`);
+      
+      // Verificar quantos senders já existem
+      const existingSenders = peerConnection.getSenders();
+      console.log(`WebRTC: Conexão com ${peerId} já tem ${existingSenders.length} senders`);
+      
+      existingSenders.forEach((sender, index) => {
+        if (sender.track) {
+          console.log(`WebRTC: Sender ${index} existente: trackId=${sender.track.id}, kind=${sender.track.kind}, enabled=${sender.track.enabled}`);
+        } else {
+          console.log(`WebRTC: Sender ${index} existente sem track associada`);
+        }
+      });
       
       // Obter tracks de áudio do stream local
       const audioTracks = this.localStream.getAudioTracks();
+      console.log(`WebRTC: Stream local tem ${audioTracks.length} tracks de áudio para adicionar ao peer ${peerId}`);
+      
       if (audioTracks.length === 0) {
-        console.warn(`WebRTC: Nenhuma track de áudio disponível para adicionar ao peer ${peerId}`);
-        return;
+        console.error(`WebRTC: ERRO - Nenhuma track de áudio disponível para adicionar ao peer ${peerId}`);
+        return false;
       }
       
       // Adicionar cada track ao peer connection
+      let trackCount = 0;
       audioTracks.forEach(track => {
         try {
+          console.log(`WebRTC: Adicionando track de áudio ${track.id} (${track.label}) ao peer ${peerId}, enabled=${track.enabled}, readyState=${track.readyState}`);
+          
+          // Verificar se a track já foi adicionada à conexão
+          const existingTrack = existingSenders.find(sender => 
+            sender.track && sender.track.id === track.id
+          );
+          
+          if (existingTrack) {
+            console.warn(`WebRTC: Track ${track.id} já adicionada anteriormente ao peer ${peerId}`);
+            trackCount++;
+            return;
+          }
+          
           const sender = peerConnection.addTrack(track, this.localStream);
-          console.log(`WebRTC: Track de áudio adicionada ao peer ${peerId}:`, track.label);
+          console.log(`WebRTC: Track de áudio ${track.id} adicionada com sucesso ao peer ${peerId}`);
+          trackCount++;
           
           // Registrar sender para referência futura se necessário
           if (!peerConnection.localSenders) {
@@ -456,11 +676,46 @@ class WebRTCTranscriptionService {
           peerConnection.localSenders.push(sender);
         } catch (trackError) {
           // Pode ocorrer erro se a track já foi adicionada
-          console.warn(`WebRTC: Erro ao adicionar track ao peer ${peerId}:`, trackError.message);
+          console.error(`WebRTC: ERRO ao adicionar track ao peer ${peerId}:`, trackError);
+          console.error(`WebRTC: Detalhes do erro: ${trackError.name} - ${trackError.message}`);
+          
+          // Tentar contornar alguns erros conhecidos
+          if (trackError.name === 'InvalidAccessError') {
+            console.warn(`WebRTC: A track ${track.id} pode já estar em uso nesta conexão. Tentando alternativa...`);
+            
+            // Tentar substituir a track em um sender existente
+            const audioSender = peerConnection.getSenders().find(s => s.track && s.track.kind === 'audio');
+            if (audioSender) {
+              try {
+                audioSender.replaceTrack(track);
+                console.log(`WebRTC: Track ${track.id} substituída com sucesso usando replaceTrack`);
+                trackCount++;
+              } catch (replaceError) {
+                console.error(`WebRTC: Falha ao substituir track:`, replaceError);
+              }
+            }
+          }
         }
       });
+      
+      // Verificar se alguma track foi adicionada
+      if (trackCount === 0) {
+        console.error(`WebRTC: FALHA TOTAL - Nenhuma track de áudio pôde ser adicionada ao peer ${peerId}`);
+        return false;
+      }
+      
+      // Verificar novamente os senders após adição
+      const updatedSenders = peerConnection.getSenders();
+      console.log(`WebRTC: Após adição, peer ${peerId} tem ${updatedSenders.length} senders`);
+      
+      // Verificar a conexão depois das mudanças
+      console.log(`WebRTC: Estado final da conexão com ${peerId}: connectionState=${peerConnection.connectionState}, iceConnectionState=${peerConnection.iceConnectionState}, signalingState=${peerConnection.signalingState}`);
+      
+      return true;
     } catch (error) {
-      console.error(`WebRTC: Erro ao adicionar stream local ao peer ${peerId}:`, error);
+      console.error(`WebRTC: ERRO CRÍTICO ao adicionar stream local ao peer ${peerId}:`, error);
+      console.error(`WebRTC: Stack trace do erro:`, error.stack);
+      return false;
     }
   }
   
@@ -485,13 +740,40 @@ class WebRTCTranscriptionService {
    */
   async _createPeerConnection(peerId) {
     try {
+      console.log(`WebRTC: -------- INICIANDO CRIAÇÃO DE CONEXÃO COM PEER ${peerId} --------`);
+      
       // Verificar se já existe
       if (this.peerConnections.has(peerId)) {
         console.log(`WebRTC: Conexão com peer ${peerId} já existe`);
-        return;
+        
+        // Verificar estado da conexão existente
+        const existingConnection = this.peerConnections.get(peerId);
+        console.log(`WebRTC: Estado da conexão existente: connectionState=${existingConnection.connectionState}, iceConnectionState=${existingConnection.iceConnectionState}, signalingState=${existingConnection.signalingState}`);
+        
+        // Se a conexão estiver em um estado ruim, podemos fechar e recriar
+        if (existingConnection.connectionState === 'failed' || 
+            existingConnection.connectionState === 'closed' ||
+            existingConnection.iceConnectionState === 'failed' ||
+            existingConnection.iceConnectionState === 'disconnected') {
+          
+          console.log(`WebRTC: A conexão existente com ${peerId} está em mau estado. Fechando para recriar...`);
+          
+          try {
+            existingConnection.close();
+          } catch (closeError) {
+            console.warn(`WebRTC: Erro ao fechar conexão antiga:`, closeError);
+          }
+          
+          this.peerConnections.delete(peerId);
+          console.log(`WebRTC: Conexão antiga com ${peerId} fechada e removida`);
+        } else {
+          // Se estiver em bom estado, apenas retornar
+          return;
+        }
       }
       
-      console.log(`WebRTC: Criando conexão peer-to-peer com ${peerId}`);
+      console.log(`WebRTC: Criando nova conexão peer-to-peer com ${peerId}`);
+      console.log(`WebRTC: Configuração ICE:`, JSON.stringify(this.iceServers));
       
       // Criar conexão
       const peerConnection = new RTCPeerConnection(this.iceServers);
@@ -501,79 +783,324 @@ class WebRTCTranscriptionService {
       
       // Adicionar streams locais
       if (this.localStream) {
-        this._addLocalStreamToPeerConnection(peerConnection, peerId);
+        console.log(`WebRTC: Stream local disponível, adicionando ao peer ${peerId}`);
+        const success = this._addLocalStreamToPeerConnection(peerConnection, peerId);
+        if (!success) {
+          console.error(`WebRTC: FALHA ao adicionar stream local ao peer ${peerId}`);
+        }
+      } else {
+        console.warn(`WebRTC: ALERTA - Criando conexão com ${peerId} sem stream local disponível`);
       }
       
       // Monitorar candidatos ICE
+      console.log(`WebRTC: Configurando handler de candidatos ICE para ${peerId}`);
       peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
+          console.log(`WebRTC: Candidato ICE gerado para peer ${peerId}:`, event.candidate.type || 'tipo desconhecido');
           this._sendIceCandidate(peerId, event.candidate);
+        } else {
+          console.log(`WebRTC: Geração de candidatos ICE finalizada para peer ${peerId}`);
+        }
+      };
+      
+      // Monitorar mudanças de estado de conexão
+      console.log(`WebRTC: Configurando monitor de estado de conexão para ${peerId}`);
+      peerConnection.onconnectionstatechange = () => {
+        console.log(`WebRTC: Mudança no connectionState com ${peerId}: ${peerConnection.connectionState}`);
+        
+        if (peerConnection.connectionState === 'connected') {
+          console.log(`WebRTC: SUCESSO - Conexão estabelecida com ${peerId}`);
+          
+          // Disparar evento para UI
+          const event = new CustomEvent('webrtc-peer-connected', {
+            detail: { peerId, timestamp: Date.now() }
+          });
+          window.dispatchEvent(event);
+        }
+        
+        if (peerConnection.connectionState === 'failed') {
+          console.error(`WebRTC: ERRO - Conexão com ${peerId} falhou`);
+          
+          // Disparar evento
+          const event = new CustomEvent('webrtc-peer-failed', {
+            detail: { peerId, timestamp: Date.now() }
+          });
+          window.dispatchEvent(event);
+        }
+        
+        if (peerConnection.connectionState === 'disconnected') {
+          console.warn(`WebRTC: Conexão com ${peerId} desconectada`);
+        }
+        
+        if (peerConnection.connectionState === 'closed') {
+          console.log(`WebRTC: Conexão com ${peerId} foi fechada`);
         }
       };
       
       // Monitorar mudanças de estado ICE
+      console.log(`WebRTC: Configurando monitor de estado ICE para ${peerId}`);
       peerConnection.oniceconnectionstatechange = () => {
         console.log(`WebRTC: Estado da conexão ICE com ${peerId}: ${peerConnection.iceConnectionState}`);
         
         // Verificar se a conexão está estabelecida
         if (peerConnection.iceConnectionState === 'connected' || 
             peerConnection.iceConnectionState === 'completed') {
-          console.log(`WebRTC: Conexão estabelecida com ${peerId}`);
+          console.log(`WebRTC: SUCESSO - Conexão ICE estabelecida com ${peerId}`);
           
           // Atualizar estado de conexão global
           this.connectionStatus = 'connected';
+          
+          // Disparar evento
+          const event = new CustomEvent('webrtc-ice-connected', {
+            detail: { peerId, timestamp: Date.now() }
+          });
+          window.dispatchEvent(event);
         }
         
         // Verificar se a conexão foi perdida
-        if (peerConnection.iceConnectionState === 'failed' || 
-            peerConnection.iceConnectionState === 'disconnected' || 
-            peerConnection.iceConnectionState === 'closed') {
-          console.warn(`WebRTC: Conexão perdida com ${peerId}`);
+        if (peerConnection.iceConnectionState === 'failed') {
+          console.error(`WebRTC: ERRO - Conexão ICE com ${peerId} falhou`);
           
-          // Pode tentar reconectar aqui ou remover o peer
-          // this.peerConnections.delete(peerId);
+          // Disparar evento
+          const event = new CustomEvent('webrtc-ice-failed', {
+            detail: { peerId, timestamp: Date.now() }
+          });
+          window.dispatchEvent(event);
+          
+          // Tentar reiniciar ICE
+          try {
+            console.log(`WebRTC: Tentando reiniciar ICE para ${peerId}`);
+            peerConnection.restartIce();
+          } catch (restartError) {
+            console.error(`WebRTC: Falha ao reiniciar ICE:`, restartError);
+          }
+        }
+        
+        if (peerConnection.iceConnectionState === 'disconnected') {
+          console.warn(`WebRTC: ALERTA - Conexão ICE com ${peerId} desconectada`);
+        }
+        
+        if (peerConnection.iceConnectionState === 'closed') {
+          console.log(`WebRTC: Conexão ICE com ${peerId} foi fechada`);
+          
+          // Se fechada, remover do mapa
+          this.peerConnections.delete(peerId);
+        }
+      };
+      
+      // Monitorar mudanças de estado de sinalização
+      console.log(`WebRTC: Configurando monitor de estado de sinalização para ${peerId}`);
+      peerConnection.onsignalingstatechange = () => {
+        console.log(`WebRTC: Estado de sinalização com ${peerId}: ${peerConnection.signalingState}`);
+        
+        // Verificar se a negociação está completa
+        if (peerConnection.signalingState === 'stable') {
+          console.log(`WebRTC: Sinalização estável com ${peerId}`);
+        }
+        
+        // Verificar se a conexão foi fechada
+        if (peerConnection.signalingState === 'closed') {
+          console.log(`WebRTC: Sinalização fechada com ${peerId}`);
         }
       };
       
       // Monitorar streams remotos
+      console.log(`WebRTC: Configurando handler de tracks remotas para ${peerId}`);
       peerConnection.ontrack = (event) => {
-        console.log(`WebRTC: Stream remoto recebido de ${peerId}`);
+        console.log(`WebRTC: Stream remoto recebido de ${peerId}:`, event.streams);
         
-        // Verificar se é uma track de áudio
-        const audioTracks = event.streams[0].getAudioTracks();
-        if (audioTracks.length > 0) {
-          console.log(`WebRTC: ${audioTracks.length} tracks de áudio recebidas de ${peerId}`);
-          
-          // Registrar metadados das tracks para ajudar na depuração
-          audioTracks.forEach((track, index) => {
-            console.log(`WebRTC: Track de áudio ${index} de ${peerId}: ${track.label}, ativa: ${track.enabled}`);
-          });
+        if (!event.streams || event.streams.length === 0) {
+          console.warn(`WebRTC: Evento ontrack sem streams para ${peerId}`);
+          return;
         }
         
-        this.remoteStreams.set(peerId, event.streams[0]);
+        const stream = event.streams[0];
+        console.log(`WebRTC: Detalhes do stream remoto: id=${stream.id}, ativo=${stream.active}`);
+        
+        // Verificar se é uma track de áudio
+        const audioTracks = stream.getAudioTracks();
+        console.log(`WebRTC: Stream remoto de ${peerId} tem ${audioTracks.length} tracks de áudio`);
+        
+        if (audioTracks.length > 0) {
+          // Registrar metadados das tracks para ajudar na depuração
+          audioTracks.forEach((track, index) => {
+            console.log(`WebRTC: Track de áudio ${index} de ${peerId}: id=${track.id}, label=${track.label}, enabled=${track.enabled}, muted=${track.muted}, readyState=${track.readyState}`);
+            
+            // Adicionar handlers para monitorar mudanças na track
+            track.onended = () => {
+              console.warn(`WebRTC: Track remota ${track.id} de ${peerId} terminou`);
+            };
+            
+            track.onmute = () => {
+              console.log(`WebRTC: Track remota ${track.id} de ${peerId} foi silenciada`);
+            };
+            
+            track.onunmute = () => {
+              console.log(`WebRTC: Track remota ${track.id} de ${peerId} foi reativada`);
+            };
+          });
+        } else {
+          console.warn(`WebRTC: Stream remoto de ${peerId} não contém tracks de áudio`);
+        }
+        
+        // Armazenar o stream remoto
+        this.remoteStreams.set(peerId, stream);
         
         // Emitir evento para notificar que um novo stream foi recebido
         // Isso pode ser usado para atualizar a UI
         const streamEvent = new CustomEvent('webrtc-stream-added', {
-          detail: { peerId, stream: event.streams[0] }
+          detail: { peerId, stream }
         });
         window.dispatchEvent(streamEvent);
+        
+        // Criar elemento de áudio para debug do stream remoto
+        this._createRemoteDebugAudioElement(stream, peerId);
       };
       
-      // Criar e enviar oferta
-      const offer = await peerConnection.createOffer({
-        offerToReceiveAudio: true,
-        offerToReceiveVideo: false
-      });
+      // Teste adicional para verificar capacidade de estatísticas (ajuda no diagnóstico)
+      if (typeof peerConnection.getStats === 'function') {
+        console.log(`WebRTC: getStats suportado para peer ${peerId}`);
+        
+        // Agendar coleta periódica de estatísticas
+        const statsInterval = setInterval(async () => {
+          if (!this.peerConnections.has(peerId)) {
+            clearInterval(statsInterval);
+            return;
+          }
+          
+          try {
+            const stats = await peerConnection.getStats();
+            let audioLevels = false;
+            let audioPackets = false;
+            
+            stats.forEach(stat => {
+              // Procurando por estatísticas de áudio
+              if (stat.type === 'inbound-rtp' && stat.kind === 'audio') {
+                audioPackets = true;
+                console.log(`WebRTC: Estatísticas de recepção de áudio de ${peerId}: pacotes=${stat.packetsReceived}, perdidos=${stat.packetsLost}, atraso=${stat.jitter?.toFixed(2)}ms`);
+              }
+              
+              if (stat.type === 'outbound-rtp' && stat.kind === 'audio') {
+                console.log(`WebRTC: Estatísticas de envio de áudio para ${peerId}: pacotes=${stat.packetsSent}, bytes=${stat.bytesSent}`);
+              }
+              
+              // Níveis de áudio
+              if (stat.type === 'media-source' && stat.kind === 'audio' && typeof stat.audioLevel !== 'undefined') {
+                audioLevels = true;
+                console.log(`WebRTC: Nível de áudio local: ${(stat.audioLevel * 100).toFixed(2)}%`);
+              }
+            });
+            
+            if (!audioPackets) {
+              console.warn(`WebRTC: Nenhum pacote de áudio detectado na conexão com ${peerId}`);
+            }
+            
+            if (!audioLevels) {
+              console.warn(`WebRTC: Níveis de áudio não disponíveis na conexão com ${peerId}`);
+            }
+          } catch (statsError) {
+            console.warn(`WebRTC: Erro ao obter estatísticas para ${peerId}:`, statsError);
+          }
+        }, 10000); // Coletar a cada 10 segundos
+      } else {
+        console.warn(`WebRTC: getStats não suportado para peer ${peerId}`);
+      }
       
+      console.log(`WebRTC: Criando oferta para peer ${peerId}`);
+      
+      // Criar e enviar oferta
+      const offerOptions = {
+        offerToReceiveAudio: true,
+        offerToReceiveVideo: false,
+        iceRestart: true // Garantir que iniciamos do zero
+      };
+      
+      console.log(`WebRTC: Opções da oferta:`, offerOptions);
+      
+      const offer = await peerConnection.createOffer(offerOptions);
+      console.log(`WebRTC: Oferta criada para ${peerId}:`, offer.sdp.substring(0, 100) + '...');
+      
+      console.log(`WebRTC: Definindo descrição local para ${peerId}`);
       await peerConnection.setLocalDescription(offer);
+      console.log(`WebRTC: Descrição local definida para ${peerId}`);
       
       this._sendOffer(peerId, offer);
+      console.log(`WebRTC: Oferta enviada para ${peerId}`);
       
       console.log(`WebRTC: Conexão peer-to-peer com ${peerId} criada com sucesso`);
+      console.log(`WebRTC: -------- FINALIZADA CRIAÇÃO DE CONEXÃO COM PEER ${peerId} --------`);
+      
+      return true;
     } catch (error) {
-      console.error(`WebRTC: Erro ao criar conexão peer-to-peer com ${peerId}:`, error);
-      this.peerConnections.delete(peerId);
+      console.error(`WebRTC: ERRO CRÍTICO ao criar conexão peer-to-peer com ${peerId}:`, error);
+      console.error(`WebRTC: Detalhes do erro:`, error.message);
+      console.error(`WebRTC: Stack trace:`, error.stack);
+      
+      // Limpar a conexão se existir
+      if (this.peerConnections.has(peerId)) {
+        try {
+          const peerConnection = this.peerConnections.get(peerId);
+          peerConnection.close();
+        } catch (closeError) {
+          console.warn(`WebRTC: Erro ao fechar conexão após falha:`, closeError);
+        }
+        
+        this.peerConnections.delete(peerId);
+      }
+      
+      // Disparar evento de erro
+      const event = new CustomEvent('webrtc-peer-connection-error', {
+        detail: { 
+          peerId, 
+          error: { 
+            name: error.name, 
+            message: error.message 
+          },
+          timestamp: Date.now()
+        }
+      });
+      window.dispatchEvent(event);
+      
+      return false;
+    }
+  }
+  
+  /**
+   * Cria um elemento de áudio de debug para um stream remoto
+   * @param {MediaStream} stream - Stream remoto
+   * @param {string} peerId - ID do peer
+   * @private
+   */
+  _createRemoteDebugAudioElement(stream, peerId) {
+    try {
+      const id = `webrtc-debug-remote-audio-${peerId}`;
+      
+      // Remover elemento anterior se existir
+      const oldAudio = document.getElementById(id);
+      if (oldAudio) {
+        oldAudio.parentNode.removeChild(oldAudio);
+      }
+      
+      // Criar elemento de áudio para teste
+      const audioElement = document.createElement('audio');
+      audioElement.id = id;
+      audioElement.style.display = 'none';
+      audioElement.muted = true; // Para evitar feedback
+      audioElement.autoplay = true;
+      
+      // Adicionar à página
+      document.body.appendChild(audioElement);
+      
+      // Conectar o stream
+      audioElement.srcObject = stream;
+      console.log(`WebRTC: Elemento de áudio de debug criado para stream remoto do peer ${peerId}`);
+      
+      // Monitorar eventos
+      audioElement.onplay = () => console.log(`WebRTC: Áudio remoto de ${peerId} iniciou reprodução`);
+      audioElement.onpause = () => console.log(`WebRTC: Áudio remoto de ${peerId} foi pausado`);
+      audioElement.onerror = (e) => console.error(`WebRTC: Erro no áudio remoto de ${peerId}:`, e);
+    } catch (error) {
+      console.warn(`WebRTC: Não foi possível criar elemento de áudio para stream remoto de ${peerId}:`, error);
     }
   }
   
