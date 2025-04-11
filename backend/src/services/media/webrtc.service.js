@@ -422,15 +422,39 @@ class WebRTCSession {
         logger.info('[webrtc-service] Criando arquivo WAV com cabeçalho padrão...');
         
         try {
-          // Criar um tom curto para garantir que o arquivo comece com dados válidos
+          // Parâmetros para formato de áudio otimizado para transcrição
           const sampleRate = 48000;
-          const channels = 2;
+          const channels = 1;     // Mono é melhor para transcrição de voz
           const bytesPerSample = 2; // 16 bits
-          const duration = 0.1; // 100ms de silêncio
+          const duration = 0.5;   // 500ms de tom inicial
           
           // Calcular tamanho do buffer de dados
           const dataSize = Math.floor(sampleRate * channels * bytesPerSample * duration);
-          const dataBuffer = Buffer.alloc(dataSize); // Silêncio (zeros)
+          
+          // Criar um tom inicial em vez de silêncio para melhorar a detecção
+          const dataBuffer = Buffer.alloc(dataSize);
+          
+          // Gerar um tom sinusoidal (1kHz) com fade in/out para evitar cliques
+          const frequency = 1000; // 1kHz
+          const amplitude = 0.2;  // 20% do volume máximo
+          
+          logger.info(`[webrtc-service] Gerando tom de inicialização: ${duration}s, ${sampleRate}Hz, ${channels} canais`);
+          
+          for (let i = 0; i < sampleRate * duration; i++) {
+            // Aplicar fade in/out para evitar cliques
+            const fadeIn = Math.min(1, i / (sampleRate * 0.05)); // 50ms fade in
+            const fadeOut = Math.min(1, (sampleRate * duration - i) / (sampleRate * 0.05)); // 50ms fade out
+            const fadeFactor = Math.min(fadeIn, fadeOut);
+            
+            // Calcular valor da amostra com a envoltória de fade
+            const sampleValue = Math.sin(2 * Math.PI * frequency * i / sampleRate) * amplitude * fadeFactor;
+            
+            // Converter para int16 e garantir que está nos limites
+            const intValue = Math.max(-32768, Math.min(32767, Math.floor(sampleValue * 32767)));
+            
+            // Gravar amostra (formato mono)
+            dataBuffer.writeInt16LE(intValue, i * bytesPerSample);
+          }
           
           // Criar cabeçalho WAV
           const headerBuffer = Buffer.alloc(44);
@@ -460,9 +484,20 @@ class WebRTCSession {
           // Escrever o arquivo completo
           fs.writeFileSync(this.outputFile, completeWavBuffer);
           
+          // Verificar o tamanho do arquivo final
+          const finalStats = fs.statSync(this.outputFile);
+          const finalSize = finalStats.size;
+          
+          if (finalSize !== completeWavBuffer.length) {
+            logger.error(`[webrtc-service] Inconsistência no tamanho do arquivo: ${finalSize} bytes no disco, ${completeWavBuffer.length} bytes no buffer`);
+          }
+          
           logger.info(`[webrtc-service] Arquivo WAV criado com sucesso: ${this.outputFile} (${completeWavBuffer.length} bytes)`);
+          
+          // Verificar integridade do arquivo
+          this._validateWavFile(this.outputFile);
         } catch (error) {
-          logger.error(`[webrtc-service] Erro ao criar arquivo WAV: ${error.message}`);
+          logger.error(`[webrtc-service] Erro ao criar arquivo WAV: ${error.message}, stack: ${error.stack}`);
         }
       };
       
@@ -975,15 +1010,26 @@ class WebRTCSession {
         return;
       }
       
-      // Ler o cabeçalho atual
-      const headerBuffer = Buffer.alloc(44);
+      // Abrir o arquivo para leitura e escrita
       const fd = fs.openSync(filePath, 'r+');
-      fs.readSync(fd, headerBuffer, 0, 44, 0);
+      
+      // Ler os primeiros 44 bytes (cabeçalho WAV)
+      const headerBuffer = Buffer.alloc(44);
+      const bytesRead = fs.readSync(fd, headerBuffer, 0, 44, 0);
+      
+      if (bytesRead !== 44) {
+        logger.error(`Não foi possível ler o cabeçalho WAV completo: ${bytesRead} bytes lidos`);
+        fs.closeSync(fd);
+        return;
+      }
       
       // Verificar se é um WAV válido
-      if (headerBuffer.toString('ascii', 0, 4) !== 'RIFF' || 
-          headerBuffer.toString('ascii', 8, 12) !== 'WAVE') {
+      const isWav = headerBuffer.toString('ascii', 0, 4) === 'RIFF' && 
+                    headerBuffer.toString('ascii', 8, 12) === 'WAVE';
+                      
+      if (!isWav) {
         logger.error('Arquivo não tem um cabeçalho WAV válido');
+        logger.info(`Cabeçalho encontrado: ${headerBuffer.toString('ascii', 0, 4)}, ${headerBuffer.toString('ascii', 8, 12)}`);
         fs.closeSync(fd);
         return;
       }
@@ -992,17 +1038,28 @@ class WebRTCSession {
       const dataSize = fileSize - 44; // Tamanho dos dados (excluindo o cabeçalho)
       const riffSize = fileSize - 8; // Tamanho do chunk RIFF (excluindo ChunkID e ChunkSize)
       
+      // Log dos valores atuais antes da atualização
+      const currentRiffSize = headerBuffer.readUInt32LE(4);
+      const currentDataSize = headerBuffer.readUInt32LE(40);
+      logger.info(`Valores atuais do cabeçalho: RIFF size=${currentRiffSize}, data size=${currentDataSize}`);
+      logger.info(`Novos valores: RIFF size=${riffSize}, data size=${dataSize}`);
+      
       // Atualizar tamanhos no cabeçalho
       headerBuffer.writeUInt32LE(riffSize, 4); // ChunkSize
       headerBuffer.writeUInt32LE(dataSize, 40); // Subchunk2Size (tamanho dos dados)
       
       // Escrever o cabeçalho atualizado de volta no arquivo
-      fs.writeSync(fd, headerBuffer, 0, 44, 0);
+      const bytesWritten = fs.writeSync(fd, headerBuffer, 0, 44, 0);
       fs.closeSync(fd);
       
-      logger.info(`Cabeçalho WAV atualizado: tamanho total=${fileSize}, dataSize=${dataSize}`);
+      if (bytesWritten !== 44) {
+        logger.error(`Erro ao escrever cabeçalho WAV atualizado: ${bytesWritten} bytes escritos`);
+        return;
+      }
+      
+      logger.info(`Cabeçalho WAV atualizado com sucesso: tamanho total=${fileSize}, dataSize=${dataSize}`);
     } catch (error) {
-      logger.error(`Erro ao atualizar cabeçalho WAV: ${error.message}`);
+      logger.error(`Erro ao atualizar cabeçalho WAV: ${error.message}, stack: ${error.stack}`);
     }
   }
   
@@ -1028,59 +1085,57 @@ class WebRTCSession {
         throw new Error(`Arquivo de áudio muito pequeno: ${stats.size} bytes (mínimo 44 bytes)`);
       }
       
-      // Diagnosticar o arquivo - ler o cabeçalho para verificar se é WAV válido
+      // Ler o cabeçalho para verificar se é um WAV válido
       const header = Buffer.alloc(44);
-      try {
-        const fd = fs.openSync(audioFile, 'r');
-        fs.readSync(fd, header, 0, 44, 0);
-        fs.closeSync(fd);
+      const fd = fs.openSync(audioFile, 'r');
+      const bytesRead = fs.readSync(fd, header, 0, 44, 0);
+      fs.closeSync(fd);
+      
+      if (bytesRead !== 44) {
+        logger.error(`Não foi possível ler cabeçalho completo do arquivo: ${bytesRead} bytes lidos`);
+      }
+      
+      // Verificar assinatura RIFF WAV
+      const isRiff = header.toString('ascii', 0, 4) === 'RIFF';
+      const isWave = header.toString('ascii', 8, 12) === 'WAVE';
+      const isWav = isRiff && isWave;
+                  
+      if (!isWav) {
+        logger.warn(`Arquivo não parece ser um WAV válido: ${audioFile}`);
+        logger.info(`Assinatura: ${header.toString('ascii', 0, 4)}, Formato: ${header.toString('ascii', 8, 12)}`);
+        logger.info(`Primeiros 16 bytes: ${header.toString('hex', 0, 16)}`);
         
-        // Verificar assinatura RIFF WAV
-        const isWav = header.toString('ascii', 0, 4) === 'RIFF' && 
-                      header.toString('ascii', 8, 12) === 'WAVE';
-                      
-        if (!isWav) {
-          logger.warn(`Arquivo não parece ser um WAV válido: ${audioFile}`);
-          logger.info(`Assinatura: ${header.toString('ascii', 0, 4)}, Formato: ${header.toString('ascii', 8, 12)}`);
-          logger.info(`Primeiros 16 bytes: ${header.toString('hex', 0, 16)}`);
+        // Tentar corrigir o arquivo antes de prosseguir
+        logger.info(`Tentando corrigir o arquivo antes de transcrevê-lo...`);
+        const fixedFile = `${audioFile}.fixed.wav`;
+        const success = await this._repairWavFile(audioFile, fixedFile);
+        
+        if (success) {
+          logger.info(`Arquivo corrigido com sucesso. Usando versão corrigida para transcrição.`);
+          audioFile = fixedFile;
         } else {
-          // Extrair informações do cabeçalho WAV
-          const numChannels = header.readUInt16LE(22);
-          const sampleRate = header.readUInt32LE(24);
-          const bitsPerSample = header.readUInt16LE(34);
-          
-          logger.info(`Informações do WAV: canais=${numChannels}, taxa=${sampleRate}Hz, bits=${bitsPerSample}`);
+          logger.warn(`Não foi possível corrigir o arquivo. Tentando transcrever o original.`);
         }
-      } catch (headerError) {
-        logger.error(`Erro ao ler cabeçalho do arquivo: ${headerError.message}`);
-      }
-      
-      // Verificar se precisamos converter o formato
-      const needsConversion = false; // Na prática, implemente a lógica para determinar isso
-      
-      let fileToTranscribe = audioFile;
-      
-      // Se precisa converter, criar uma versão MP3
-      if (needsConversion) {
-        try {
-          const mp3File = `${audioFile}.mp3`;
-          logger.info(`Tentando converter ${audioFile} para MP3: ${mp3File}`);
-          
-          // Aqui você precisaria implementar a conversão usando ffmpeg ou outro utilitário
-          // Por enquanto, apenas um log
-          logger.info(`Conversão para MP3 seria necessária para alguns casos`);
-          
-          // Usar o arquivo original por enquanto
-          fileToTranscribe = audioFile;
-        } catch (convError) {
-          logger.error(`Erro ao converter formato: ${convError.message}`);
-          // Continuar com o arquivo original em caso de erro
+      } else {
+        // Extrair informações do cabeçalho WAV
+        const numChannels = header.readUInt16LE(22);
+        const sampleRate = header.readUInt32LE(24);
+        const bitsPerSample = header.readUInt16LE(34);
+        const dataSize = header.readUInt32LE(40);
+        
+        logger.info(`Informações do WAV: canais=${numChannels}, taxa=${sampleRate}Hz, bits=${bitsPerSample}, dados=${dataSize} bytes`);
+        
+        // Verificar se o formato é adequado para transcrição
+        const needsNormalization = numChannels > 1 || sampleRate < 16000;
+        
+        if (needsNormalization) {
+          logger.info(`Formato de áudio não ideal para transcrição. Considerando normalização em implementações futuras.`);
         }
       }
       
-      // Usar o serviço OpenAI existente com arquivo potencialmente convertido
-      logger.info(`Enviando para transcrição: ${fileToTranscribe}`);
-      const transcription = await openaiService.transcribeAudioVideo(fileToTranscribe, 'pt');
+      // Usar o serviço OpenAI para transcrição
+      logger.info(`Enviando para transcrição: ${audioFile}`);
+      const transcription = await openaiService.transcribeAudioVideo(audioFile, 'pt');
       
       logger.info(`Transcrição concluída com sucesso, tamanho: ${transcription.length} caracteres`);
       
@@ -1097,12 +1152,192 @@ class WebRTCSession {
         return defaultText;
       }
       
+      // Limpar qualquer arquivo temporário criado durante o processo
+      if (audioFile.includes('.fixed.wav')) {
+        try {
+          fs.unlinkSync(audioFile);
+          logger.info(`Arquivo temporário corrigido removido: ${audioFile}`);
+        } catch (err) {
+          logger.warn(`Não foi possível remover arquivo temporário corrigido: ${audioFile}`);
+        }
+      }
+      
       // Se chegou aqui, temos uma transcrição válida
       logger.info(`Transcrição válida detectada: "${transcription.substring(0, 50)}..."`);
       return transcription;
     } catch (error) {
       logger.error(`Erro ao transcrever áudio: ${error.message}`);
       return `Erro na transcrição: ${error.message}`;
+    }
+  }
+  
+  /**
+   * Tenta reparar um arquivo WAV corrompido ou inválido
+   * @param {string} sourceFile - Arquivo de origem
+   * @param {string} destinationFile - Arquivo de destino para a versão corrigida
+   * @returns {Promise<boolean>} - Se a operação foi bem-sucedida
+   * @private
+   */
+  async _repairWavFile(sourceFile, destinationFile) {
+    try {
+      logger.info(`Tentando reparar arquivo WAV: ${sourceFile}`);
+      
+      // Ler todo o conteúdo do arquivo
+      const fileData = fs.readFileSync(sourceFile);
+      
+      // Parâmetros para o WAV corrigido
+      const sampleRate = 48000;
+      const channels = 1; // Mono para melhor transcrição
+      const bytesPerSample = 2; // 16 bits
+      
+      // Usar todo o conteúdo do arquivo como dados de áudio,
+      // assumindo que pode ser algum formato de áudio raw
+      const audioData = fileData;
+      
+      // Criar cabeçalho WAV
+      const headerBuffer = Buffer.alloc(44);
+      
+      // RIFF chunk
+      headerBuffer.write('RIFF', 0);
+      headerBuffer.writeUInt32LE(36 + audioData.length, 4); // Tamanho do arquivo - 8
+      headerBuffer.write('WAVE', 8);
+      
+      // fmt chunk
+      headerBuffer.write('fmt ', 12);
+      headerBuffer.writeUInt32LE(16, 16); // Tamanho do chunk fmt
+      headerBuffer.writeUInt16LE(1, 20); // Formato PCM
+      headerBuffer.writeUInt16LE(channels, 22); // Canais
+      headerBuffer.writeUInt32LE(sampleRate, 24); // Taxa de amostragem
+      headerBuffer.writeUInt32LE(sampleRate * channels * bytesPerSample, 28); // Bytes por segundo
+      headerBuffer.writeUInt16LE(channels * bytesPerSample, 32); // Block align
+      headerBuffer.writeUInt16LE(bytesPerSample * 8, 34); // Bits por amostra
+      
+      // data chunk
+      headerBuffer.write('data', 36);
+      headerBuffer.writeUInt32LE(audioData.length, 40); // Tamanho dos dados
+      
+      // Adicionar um tom de referência para ajudar na detecção
+      const toneLength = sampleRate * channels * bytesPerSample; // 1 segundo
+      const toneBuffer = Buffer.alloc(toneLength);
+      
+      // Gerar um tom de referência
+      const frequency = 1000; // 1kHz
+      const amplitude = 0.3; // 30% do volume máximo
+      
+      for (let i = 0; i < sampleRate; i++) {
+        const sample = Math.sin(2 * Math.PI * frequency * i / sampleRate) * amplitude;
+        const intValue = Math.floor(sample * 32767);
+        toneBuffer.writeInt16LE(intValue, i * bytesPerSample);
+      }
+      
+      // Combinar cabeçalho, tom de referência e dados de áudio em um único buffer
+      const completeWavBuffer = Buffer.concat([headerBuffer, toneBuffer, audioData]);
+      
+      // Escrever o arquivo WAV corrigido
+      fs.writeFileSync(destinationFile, completeWavBuffer);
+      
+      // Validar o arquivo corrigido
+      const isValid = this._validateWavFile(destinationFile);
+      
+      if (!isValid) {
+        logger.error(`Arquivo WAV corrigido ainda não é válido.`);
+        return false;
+      }
+      
+      logger.info(`Arquivo WAV reparado com sucesso: ${destinationFile} (${completeWavBuffer.length} bytes)`);
+      return true;
+    } catch (error) {
+      logger.error(`Erro ao reparar arquivo WAV: ${error.message}`);
+      return false;
+    }
+  }
+  
+  /**
+   * Valida a integridade de um arquivo WAV
+   * @param {string} filePath - Caminho para o arquivo WAV
+   * @returns {boolean} - Se o arquivo é um WAV válido
+   * @private
+   */
+  _validateWavFile(filePath) {
+    try {
+      if (!fs.existsSync(filePath)) {
+        logger.error(`[webrtc-service] Arquivo não encontrado para validação: ${filePath}`);
+        return false;
+      }
+      
+      const stats = fs.statSync(filePath);
+      if (stats.size < 44) {
+        logger.error(`[webrtc-service] Arquivo muito pequeno para ser um WAV válido: ${stats.size} bytes`);
+        return false;
+      }
+      
+      // Ler o cabeçalho do arquivo
+      const headerBuffer = Buffer.alloc(44);
+      const fd = fs.openSync(filePath, 'r');
+      fs.readSync(fd, headerBuffer, 0, 44, 0);
+      fs.closeSync(fd);
+      
+      // Verificar assinatura RIFF WAV
+      const isRiff = headerBuffer.toString('ascii', 0, 4) === 'RIFF';
+      const isWave = headerBuffer.toString('ascii', 8, 12) === 'WAVE';
+      
+      if (!isRiff || !isWave) {
+        logger.error(`[webrtc-service] Arquivo não tem assinatura RIFF WAV válida: RIFF=${isRiff}, WAVE=${isWave}`);
+        logger.debug(`[webrtc-service] Cabeçalho: ${headerBuffer.toString('hex', 0, 44)}`);
+        return false;
+      }
+      
+      // Verificar tamanhos declarados
+      const riffSize = headerBuffer.readUInt32LE(4);
+      const formatSize = headerBuffer.readUInt16LE(16);
+      const dataSize = headerBuffer.readUInt32LE(40);
+      
+      // Verificar se o formato é PCM
+      const audioFormat = headerBuffer.readUInt16LE(20);
+      if (audioFormat !== 1) {
+        logger.warn(`[webrtc-service] Arquivo WAV não usa formato PCM (1): ${audioFormat}`);
+      }
+      
+      // Extrair outros metadados
+      const numChannels = headerBuffer.readUInt16LE(22);
+      const sampleRate = headerBuffer.readUInt32LE(24);
+      const byteRate = headerBuffer.readUInt32LE(28);
+      const blockAlign = headerBuffer.readUInt16LE(32);
+      const bitsPerSample = headerBuffer.readUInt16LE(34);
+      
+      // Verificar consistência de tamanho
+      const expectedFileSize = riffSize + 8; // RIFF chunk size + 8 bytes para ChunkID e ChunkSize
+      if (stats.size !== expectedFileSize) {
+        logger.warn(`[webrtc-service] Inconsistência no tamanho do arquivo WAV: 
+          Tamanho real: ${stats.size} bytes
+          Tamanho declarado: RIFF size=${riffSize}, esperado=${expectedFileSize} bytes
+          DATA size=${dataSize} bytes`);
+      }
+      
+      // Verificar se o formato é válido para o Whisper
+      const isFormatGoodForTranscription = (
+        numChannels <= 2 &&        // Mono ou estéreo
+        sampleRate >= 16000 &&     // 16kHz ou mais
+        bitsPerSample === 16       // 16 bits por amostra
+      );
+      
+      if (!isFormatGoodForTranscription) {
+        logger.warn(`[webrtc-service] Formato do arquivo pode não ser ideal para transcrição:
+          Canais: ${numChannels} (ideal: 1)
+          Taxa de amostragem: ${sampleRate}Hz (ideal: 16000+)
+          Bits por amostra: ${bitsPerSample} (ideal: 16)`);
+      } else {
+        logger.info(`[webrtc-service] Arquivo WAV validado com sucesso: ${filePath}
+          Formato: PCM ${bitsPerSample} bits
+          Canais: ${numChannels}
+          Taxa: ${sampleRate}Hz
+          Tamanho de dados: ${dataSize} bytes`);
+      }
+      
+      return true;
+    } catch (error) {
+      logger.error(`[webrtc-service] Erro ao validar arquivo WAV: ${error.message}`);
+      return false;
     }
   }
   
@@ -1187,6 +1422,137 @@ class WebRTCSession {
   }
   
   /**
+   * Adiciona um tom de referência ao arquivo para facilitar a detecção de áudio
+   * mantendo o formato WAV válido
+   * @param {string} filePath - Caminho para o arquivo
+   * @returns {Promise<boolean>} Sucesso da operação
+   * @private
+   */
+  async _injectReferenceAudio(filePath) {
+    try {
+      logger.info(`[webrtc-service] Melhorando áudio para transcrição: ${filePath}`);
+      
+      // Verificar se o arquivo existe
+      if (!fs.existsSync(filePath)) {
+        logger.error(`[webrtc-service] Arquivo não encontrado: ${filePath}`);
+        return false;
+      }
+      
+      // Parâmetros de áudio - mudando para formatos mais compatíveis com serviços de transcrição
+      const sampleRate = 48000;
+      const channels = 1;  // Mudando para mono para melhor compatibilidade com serviços de transcrição
+      const duration = 1.0; // Aumentando duração para 1 segundo
+      const bytesPerSample = 2; // 16 bits
+      
+      // Criar buffer para tom de referência com múltiplas frequências para melhorar a detecção
+      const bufferSize = Math.floor(sampleRate * channels * bytesPerSample * duration);
+      const audioBuffer = Buffer.alloc(bufferSize);
+      
+      // Usar duas frequências combinadas para melhor detecção (1kHz e 500Hz)
+      const frequency1 = 1000; // 1kHz - boa detecção para voz
+      const frequency2 = 500;  // 500Hz - adicionar uma frequência mais baixa
+      const amplitude = 0.3;  // Aumentado para 30% para melhor detecção
+      
+      logger.info(`[webrtc-service] Gerando tom de referência: ${duration}s, ${sampleRate}Hz, ${channels} canais`);
+      
+      // Gerar um tom de teste com duas frequências combinadas
+      for (let i = 0; i < sampleRate * duration; i++) {
+        // Combinação de duas senoides com fade in/out para evitar cliques
+        const fadeIn = Math.min(1, i / (sampleRate * 0.1)); // 100ms fade in
+        const fadeOut = Math.min(1, (sampleRate * duration - i) / (sampleRate * 0.1)); // 100ms fade out
+        const fadeFactor = Math.min(fadeIn, fadeOut);
+        
+        // Combinação de duas frequências
+        const sample1 = Math.sin(2 * Math.PI * frequency1 * i / sampleRate) * amplitude;
+        const sample2 = Math.sin(2 * Math.PI * frequency2 * i / sampleRate) * (amplitude * 0.7);
+        
+        // Somar as duas senoides e aplicar o fade
+        const combinedSample = (sample1 + sample2) * fadeFactor;
+        
+        // Converter para int16 (garantindo que está dentro dos limites [-32768, 32767])
+        const intValue = Math.max(-32768, Math.min(32767, Math.floor(combinedSample * 32767)));
+        
+        // Gravar amostra (formato mono)
+        audioBuffer.writeInt16LE(intValue, i * bytesPerSample);
+      }
+      
+      // Ler dados do arquivo original
+      const originalData = fs.readFileSync(filePath);
+      
+      // Verificar se é um WAV válido
+      const isWav = originalData.length >= 44 && 
+                   originalData.slice(0, 4).toString() === 'RIFF' && 
+                   originalData.slice(8, 12).toString() === 'WAVE';
+      
+      let dataBuffer;
+      let originalFormat = {};
+      
+      if (isWav) {
+        // Se for WAV, extrair os dados após o cabeçalho e preservar informações de formato
+        dataBuffer = originalData.slice(44);
+        
+        // Preservar informações de formato do arquivo original
+        originalFormat.channels = originalData.readUInt16LE(22);
+        originalFormat.sampleRate = originalData.readUInt32LE(24);
+        originalFormat.bitsPerSample = originalData.readUInt16LE(34);
+        
+        logger.info(`[webrtc-service] Arquivo original é WAV válido (${dataBuffer.length} bytes de dados)`);
+        logger.info(`[webrtc-service] Formato original: ${originalFormat.sampleRate}Hz, ${originalFormat.channels} canais, ${originalFormat.bitsPerSample} bits`);
+      } else {
+        // Se não for WAV, usar todos os dados
+        dataBuffer = originalData;
+        logger.info(`[webrtc-service] Arquivo original não é WAV (${dataBuffer.length} bytes)`);
+      }
+      
+      // Combinar: tom de referência + dados originais
+      const combinedAudioData = Buffer.concat([audioBuffer, dataBuffer]);
+      
+      // Criar cabeçalho WAV otimizado para transcrição
+      const headerBuffer = Buffer.alloc(44);
+      
+      // RIFF chunk
+      headerBuffer.write('RIFF', 0);
+      headerBuffer.writeUInt32LE(36 + combinedAudioData.length, 4); // Tamanho do arquivo - 8
+      headerBuffer.write('WAVE', 8);
+      
+      // fmt chunk
+      headerBuffer.write('fmt ', 12);
+      headerBuffer.writeUInt32LE(16, 16); // Tamanho do chunk fmt
+      headerBuffer.writeUInt16LE(1, 20); // Formato PCM
+      headerBuffer.writeUInt16LE(channels, 22); // Canais
+      headerBuffer.writeUInt32LE(sampleRate, 24); // Taxa de amostragem
+      headerBuffer.writeUInt32LE(sampleRate * channels * bytesPerSample, 28); // Bytes por segundo
+      headerBuffer.writeUInt16LE(channels * bytesPerSample, 32); // Block align
+      headerBuffer.writeUInt16LE(bytesPerSample * 8, 34); // Bits por amostra
+      
+      // data chunk
+      headerBuffer.write('data', 36);
+      headerBuffer.writeUInt32LE(combinedAudioData.length, 40); // Tamanho dos dados
+      
+      // Combinar cabeçalho e dados em um único buffer
+      const completeWavBuffer = Buffer.concat([headerBuffer, combinedAudioData]);
+      
+      // Escrever o arquivo WAV final
+      fs.writeFileSync(filePath, completeWavBuffer);
+      
+      // Verificar o tamanho do arquivo final
+      const finalStats = fs.statSync(filePath);
+      const finalSize = finalStats.size;
+      
+      // Verificar se o arquivo final é consistente
+      if (finalSize !== completeWavBuffer.length) {
+        logger.error(`[webrtc-service] Tamanho do arquivo inconsistente: ${finalSize} bytes no disco, ${completeWavBuffer.length} bytes no buffer`);
+      }
+      
+      logger.info(`[webrtc-service] Arquivo WAV reconstruído com sucesso: ${filePath} (${completeWavBuffer.length} bytes)`);
+      return true;
+    } catch (error) {
+      logger.error(`[webrtc-service] Erro ao melhorar áudio para transcrição: ${error.message}, stack: ${error.stack}`);
+      return false;
+    }
+  }
+  
+  /**
    * Transcreve o áudio atual sem parar a gravação, com otimizações para detecção de voz baixa
    * @returns {Promise<Object>} Resultado da transcrição parcial
    */
@@ -1217,26 +1583,42 @@ class WebRTCSession {
         return null;
       }
       
-      // Verificar se o arquivo é um WAV válido
-      logger.info(`[webrtc-service] Arquivo WAV válido confirmado: ${this.outputFile}`);
+      // Validar o arquivo WAV
+      const isValidWav = this._validateWavFile(this.outputFile);
+      if (!isValidWav) {
+        logger.warn(`[webrtc-service] Arquivo WAV pode estar corrompido. Tentando reconstruir...`);
+      }
       
-      // Criar arquivo temporário para transcrição (cópia do atual)
-      const tempOutputFile = `${this.outputFile}.temp-${Date.now()}.wav`;
+      // Criar arquivo temporário para transcrição com um nome único
+      const tempFileName = `${path.basename(this.outputFile, path.extname(this.outputFile))}_temp_${Date.now()}.wav`;
+      const tempOutputFile = path.join(path.dirname(this.outputFile), tempFileName);
       
-      // Criar o arquivo temporário copiando o arquivo original
+      logger.info(`[webrtc-service] Criando arquivo temporário para transcrição: ${tempOutputFile}`);
+      
+      // Criar uma cópia do arquivo original
       fs.copyFileSync(this.outputFile, tempOutputFile);
       
       // Verificar o tamanho do arquivo temporário
       const tempStats = fs.statSync(tempOutputFile);
-      logger.info(`[webrtc-service] Arquivo temporário: ${tempStats.size} bytes`);
+      logger.info(`[webrtc-service] Arquivo temporário copiado: ${tempOutputFile} (${tempStats.size} bytes)`);
       
-      // Adicionar um tom de referência ao arquivo para ajudar no processamento
-      // e garantir que há conteúdo suficiente para a API
-      await this._injectReferenceAudio(tempOutputFile);
+      // Adicionar tom de referência e reconstruir o WAV para garantir formato válido
+      const audioEnhanced = await this._injectReferenceAudio(tempOutputFile);
       
-      // Verificar o tamanho atualizado
+      if (!audioEnhanced) {
+        logger.error(`[webrtc-service] Falha ao melhorar áudio para transcrição. Tentando transcrever arquivo original.`);
+      }
+      
+      // Verificar o arquivo novamente após aprimoramento
       const updatedStats = fs.statSync(tempOutputFile);
-      logger.info(`[webrtc-service] Arquivo temporário após adição de referência: ${updatedStats.size} bytes`);
+      logger.info(`[webrtc-service] Arquivo temporário após aprimoramento: ${tempOutputFile} (${updatedStats.size} bytes)`);
+      
+      // Validar o arquivo WAV final
+      const isValidEnhancedWav = this._validateWavFile(tempOutputFile);
+      
+      if (!isValidEnhancedWav) {
+        logger.error(`[webrtc-service] Arquivo WAV aprimorado ainda não é válido. A transcrição pode falhar.`);
+      }
       
       // Transcrever o arquivo temporário
       logger.info(`[webrtc-service] Enviando arquivo para transcrição: ${tempOutputFile}`);
@@ -1253,113 +1635,33 @@ class WebRTCSession {
         logger.warn(`[webrtc-service] Não foi possível remover arquivo temporário: ${tempOutputFile}`, err);
       }
       
+      // Verificar se a transcrição foi bem-sucedida
+      if (!transcription || transcription.trim() === '') {
+        logger.warn(`[webrtc-service] Transcrição vazia ou falhou. Verificando informações adicionais.`);
+        
+        // Verificar se temos participantes ativos com áudio
+        let activeParticipants = 0;
+        for (const [participantId, participant] of this.participants.entries()) {
+          if (participant.hasActiveProducer) {
+            activeParticipants++;
+          }
+        }
+        
+        logger.info(`[webrtc-service] Participantes ativos com producer de áudio: ${activeParticipants}`);
+      } else {
+        logger.info(`[webrtc-service] Transcrição bem-sucedida: "${transcription.substring(0, 100)}${transcription.length > 100 ? '...' : ''}"`);
+      }
+      
       return {
         duration,
         transcription,
-        timestamp
+        timestamp,
+        fileSize: fileStats.size,
+        participantsCount: this.realParticipantCount || 0
       };
     } catch (error) {
       logger.error(`[webrtc-service] Erro ao transcrever áudio atual para sessão ${this.id}:`, error);
       return null;
-    }
-  }
-  
-  /**
-   * Adiciona um tom de referência ao arquivo para facilitar a detecção de áudio
-   * mantendo o formato WAV válido
-   * @param {string} filePath - Caminho para o arquivo
-   * @returns {Promise<boolean>} Sucesso da operação
-   * @private
-   */
-  async _injectReferenceAudio(filePath) {
-    try {
-      logger.info(`[webrtc-service] Melhorando áudio para transcrição: ${filePath}`);
-      
-      // Verificar se o arquivo existe
-      if (!fs.existsSync(filePath)) {
-        logger.error(`[webrtc-service] Arquivo não encontrado: ${filePath}`);
-        return false;
-      }
-      
-      // Em vez de modificar o arquivo existente, vamos criar um novo arquivo WAV válido
-      const sampleRate = 48000;
-      const channels = 2;
-      const duration = 0.5; // 0.5 segundos
-      const bytesPerSample = 2; // 16 bits
-      
-      // Criar buffer para tom de referência (frequência audível para garantir detecção)
-      const bufferSize = Math.floor(sampleRate * channels * bytesPerSample * duration);
-      const audioBuffer = Buffer.alloc(bufferSize);
-      
-      // Usar frequência de 1000Hz, que é mais facilmente detectável
-      const frequency = 1000; // 1kHz
-      const amplitude = 0.1; // 10% do volume máximo
-      
-      for (let i = 0; i < sampleRate * duration; i++) {
-        const sampleValue = Math.sin(2 * Math.PI * frequency * i / sampleRate) * amplitude;
-        const intValue = Math.floor(sampleValue * 32767);
-        
-        // Gravar nos canais esquerdo e direito
-        audioBuffer.writeInt16LE(intValue, i * channels * bytesPerSample);
-        audioBuffer.writeInt16LE(intValue, i * channels * bytesPerSample + 2);
-      }
-      
-      // Ler dados do arquivo original
-      const originalData = fs.readFileSync(filePath);
-      
-      // Verificar se é um WAV válido
-      const isWav = originalData.length >= 44 && 
-                   originalData.slice(0, 4).toString() === 'RIFF' && 
-                   originalData.slice(8, 12).toString() === 'WAVE';
-      
-      let dataBuffer;
-      
-      if (isWav) {
-        // Se for WAV, extrair os dados após o cabeçalho
-        dataBuffer = originalData.slice(44);
-        logger.info(`[webrtc-service] Arquivo original é WAV válido (${dataBuffer.length} bytes de dados)`);
-      } else {
-        // Se não for WAV, usar todos os dados
-        dataBuffer = originalData;
-        logger.info(`[webrtc-service] Arquivo original não é WAV (${dataBuffer.length} bytes)`);
-      }
-      
-      // Combinar: tom de referência + dados originais
-      const combinedAudioData = Buffer.concat([audioBuffer, dataBuffer]);
-      
-      // Criar cabeçalho WAV
-      const headerBuffer = Buffer.alloc(44);
-      
-      // RIFF chunk
-      headerBuffer.write('RIFF', 0);
-      headerBuffer.writeUInt32LE(36 + combinedAudioData.length, 4); // Tamanho do arquivo - 8
-      headerBuffer.write('WAVE', 8);
-      
-      // fmt chunk
-      headerBuffer.write('fmt ', 12);
-      headerBuffer.writeUInt32LE(16, 16); // Tamanho do chunk fmt
-      headerBuffer.writeUInt16LE(1, 20); // Formato PCM
-      headerBuffer.writeUInt16LE(channels, 22); // Canais
-      headerBuffer.writeUInt32LE(sampleRate, 24); // Taxa de amostragem
-      headerBuffer.writeUInt32LE(sampleRate * channels * bytesPerSample, 28); // Bytes por segundo
-      headerBuffer.writeUInt16LE(channels * bytesPerSample, 32); // Block align
-      headerBuffer.writeUInt16LE(bytesPerSample * 8, 34); // Bits por amostra
-      
-      // data chunk
-      headerBuffer.write('data', 36);
-      headerBuffer.writeUInt32LE(combinedAudioData.length, 40); // Tamanho dos dados
-      
-      // Combinar cabeçalho e dados em um único buffer
-      const completeWavBuffer = Buffer.concat([headerBuffer, combinedAudioData]);
-      
-      // Escrever o arquivo WAV final
-      fs.writeFileSync(filePath, completeWavBuffer);
-      
-      logger.info(`[webrtc-service] Arquivo WAV reconstruído com sucesso: ${filePath} (${completeWavBuffer.length} bytes)`);
-      return true;
-    } catch (error) {
-      logger.error(`[webrtc-service] Erro ao melhorar áudio para transcrição: ${error.message}`);
-      return false;
     }
   }
 }
