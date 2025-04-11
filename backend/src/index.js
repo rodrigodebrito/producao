@@ -57,11 +57,11 @@ const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
     origin: process.env.NODE_ENV === 'production' 
-      ? ['https://terapiaconect.com', 'https://www.terapiaconect.com', 'https://terapia-conect-frontend.vercel.app'] 
+      ? ['https://terapiaconect.com', 'https://www.terapiaconect.com', 'https://terapia-conect-frontend.vercel.app', 'https://terapia-conect-frontend-git-main-rodrigodebrito.vercel.app'] 
       : ['http://localhost:3001', 'http://localhost:5173', '*'],
-    methods: ['GET', 'POST', 'OPTIONS'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     credentials: true,
-    allowedHeaders: ['Content-Type', 'Authorization', 'Accept']
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With']
   },
   allowEIO3: true, // Compatibilidade com Engine.IO versão 3
   pingTimeout: 60000, // Aumentar timeout para prevenir desconexões
@@ -76,12 +76,38 @@ io.engine.on('connection_error', (err) => {
 // Middleware
 app.use(cors({
   origin: process.env.NODE_ENV === 'production' 
-    ? ['https://terapiaconect.com', 'https://www.terapiaconect.com', 'https://terapia-conect-frontend.vercel.app'] 
+    ? ['https://terapiaconect.com', 'https://www.terapiaconect.com', 'https://terapia-conect-frontend.vercel.app', 'https://terapia-conect-frontend-git-main-rodrigodebrito.vercel.app'] 
     : ['http://localhost:3001', 'http://localhost:5173', '*'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Accept']
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'x-requested-with', 'X-Test-Auth']
 }));
+
+// Adicionar middleware de CORS específico para garantir header cors em todas as respostas
+app.use((req, res, next) => {
+  // Definir cabeçalhos CORS para cada resposta
+  const allowedOrigins = process.env.NODE_ENV === 'production' 
+    ? ['https://terapiaconect.com', 'https://www.terapiaconect.com', 'https://terapia-conect-frontend.vercel.app', 'https://terapia-conect-frontend-git-main-rodrigodebrito.vercel.app'] 
+    : ['http://localhost:3001', 'http://localhost:5173'];
+    
+  const origin = req.headers.origin;
+  
+  // Verificar se a origem está na lista de permitidos ou usar '*' em desenvolvimento
+  if (allowedOrigins.includes(origin) || process.env.NODE_ENV !== 'production') {
+    res.setHeader('Access-Control-Allow-Origin', origin || '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, x-requested-with, X-Test-Auth');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+  }
+  
+  // Handle preflight OPTIONS requests
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
+  }
+  
+  next();
+});
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(bodyParser.json({ limit: '10mb' }));

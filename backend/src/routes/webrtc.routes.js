@@ -5,9 +5,20 @@
 
 const express = require('express');
 const router = express.Router();
+const cors = require('cors');
 const webRTCController = require('../controllers/webrtc.controller');
 const { authMiddleware } = require('../middleware/auth.middleware');
 const flexAuthMiddleware = require('../middleware/flex-auth.middleware');
+
+// Configuração específica de CORS para as rotas WebRTC
+const corsOptions = {
+  origin: process.env.NODE_ENV === 'production' 
+    ? ['https://terapiaconect.com', 'https://www.terapiaconect.com', 'https://terapia-conect-frontend.vercel.app', 'https://terapia-conect-frontend-git-main-rodrigodebrito.vercel.app'] 
+    : ['http://localhost:3001', 'http://localhost:5173', '*'],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'x-requested-with', 'X-Test-Auth']
+};
 
 // API pública para WebRTC
 
@@ -18,6 +29,7 @@ const flexAuthMiddleware = require('../middleware/flex-auth.middleware');
  */
 router.post(
   '/session/:sessionId',
+  cors(corsOptions),
   authMiddleware,
   flexAuthMiddleware,
   webRTCController.initSession
@@ -30,6 +42,7 @@ router.post(
  */
 router.post(
   '/record/start/:sessionId',
+  cors(corsOptions),
   authMiddleware,
   flexAuthMiddleware,
   webRTCController.startRecording
@@ -42,6 +55,7 @@ router.post(
  */
 router.post(
   '/record/stop/:sessionId',
+  cors(corsOptions),
   authMiddleware,
   flexAuthMiddleware,
   webRTCController.stopRecording
@@ -54,6 +68,7 @@ router.post(
  */
 router.post(
   '/record/transcribe/:sessionId',
+  cors(corsOptions),
   authMiddleware,
   flexAuthMiddleware,
   webRTCController.transcribeCurrentAudio
@@ -66,6 +81,7 @@ router.post(
  */
 router.get(
   '/sessions',
+  cors(corsOptions),
   authMiddleware,
   flexAuthMiddleware,
   webRTCController.getActiveSessions
@@ -78,9 +94,13 @@ router.get(
  */
 router.delete(
   '/session/:sessionId',
+  cors(corsOptions),
   authMiddleware,
   flexAuthMiddleware,
   webRTCController.closeSession
 );
+
+// Middleware OPTIONS para preflight em todas as rotas
+router.options('*', cors(corsOptions));
 
 module.exports = router; 
