@@ -62,6 +62,54 @@ const mediasoupOptions = {
 
 // Gerenciamento de sessões ativas
 const activeSessions = new Map();
+// Timeout para sessões inativas em minutos
+const SESSION_TIMEOUT = 30;
+
+// Iniciar verificação periódica de sessões a cada 5 minutos
+setInterval(() => {
+  cleanupInactiveSessions();
+}, 300000);
+
+/**
+ * Limpa sessões inativas para evitar vazamento de recursos
+ */
+async function cleanupInactiveSessions() {
+  try {
+    const now = Date.now();
+    const timeoutMs = SESSION_TIMEOUT * 60 * 1000; // Converter minutos para ms
+    
+    logger.info(`[webrtc-service] Verificando sessões inativas (timeout: ${SESSION_TIMEOUT} minutos)...`);
+    
+    let closedCount = 0;
+    
+    for (const [sessionId, session] of activeSessions.entries()) {
+      try {
+        // Verificar última atividade da sessão
+        const lastActivity = session.lastActivityTime || session.recordingStartTime || 0;
+        const idle = now - lastActivity;
+        
+        // Verificar se a sessão excedeu o timeout
+        if (idle > timeoutMs) {
+          logger.info(`[webrtc-service] Sessão ${sessionId} inativa por ${Math.floor(idle/60000)} minutos, encerrando...`);
+          
+          // Parar gravação e limpar recursos
+          await session.cleanup();
+          closedCount++;
+        } else if (session.isRecording && !session.rawOutputFile) {
+          // Gravação com arquivo inválido - limpar
+          logger.warn(`[webrtc-service] Sessão ${sessionId} está gravando sem arquivo válido, encerrando...`);
+          await session.stopRecording();
+        }
+      } catch (error) {
+        logger.error(`[webrtc-service] Erro ao processar sessão ${sessionId}:`, error);
+      }
+    }
+    
+    logger.info(`[webrtc-service] Verificação de sessões inativas concluída: ${closedCount} sessões encerradas, ${activeSessions.size} ativas`);
+  } catch (error) {
+    logger.error(`[webrtc-service] Erro ao limpar sessões inativas:`, error);
+  }
+}
 
 /**
  * Classe que gerencia uma sessão de captura de áudio WebRTC
@@ -69,25 +117,34 @@ const activeSessions = new Map();
 class WebRTCSession {
   constructor(sessionId) {
     this.id = sessionId;
-    this.participants = new Map();
     this.worker = null;
     this.router = null;
-    this.audioMixer = null;
+    this.participants = new Map();
     this.isRecording = false;
-    this.recordingStream = null;
+    this.recordingStartTime = null;
     this.outputFile = null;
-    this.timestamp = Date.now();
-    
-    logger.info(`Nova sessão WebRTC criada: ${sessionId}`);
+    this.audioMixer = null;
+    this.virtualInput = null;
+    this.realParticipantCount = 0;
+    this.lastActivityTime = Date.now(); // Registrar hora de criação
   }
   
   /**
-   * Inicializa o worker mediasoup e router
+   * Inicializa os recursos de mídia para a sessão
    */
   async initialize() {
     try {
-      logger.info(`Inicializando worker mediasoup para sessão ${this.id}`);
-      this.worker = await mediasoup.createWorker(mediasoupOptions.worker);
+      // Atualizar timestamp de atividade
+      this.updateActivity();
+      
+      logger.info(`Iniciando worker para sessão ${this.id}`);
+      
+      this.worker = await mediasoup.createWorker({
+        logLevel: 'warn',
+        logTags: ['info', 'ice', 'dtls', 'rtp', 'srtp', 'rtcp', 'rtx', 'bwe', 'score', 'simulcast', 'svc', 'sctp'],
+        rtcMinPort: 10000,
+        rtcMaxPort: 59999
+      });
       
       this.worker.on('died', () => {
         logger.error(`Worker mediasoup morreu inesperadamente (sessão ${this.id})`);
@@ -124,6 +181,9 @@ class WebRTCSession {
    */
   async createTransport(participantId, isProducer = true) {
     try {
+      // Atualizar timestamp de atividade
+      this.updateActivity();
+      
       logger.info(`Criando ${isProducer ? 'producer' : 'consumer'} transport para participante ${participantId}`);
       
       const transport = await this.router.createWebRtcTransport(mediasoupOptions.webRtcTransport);
@@ -168,6 +228,11 @@ class WebRTCSession {
    */
   async connectTransport(participantId, isProducer, dtlsParameters) {
     try {
+      // Atualizar timestamp de atividade
+      this.updateActivity();
+      
+      logger.info(`Conectando ${isProducer ? 'producer' : 'consumer'} transport para participante ${participantId}`);
+      
       const participant = this.participants.get(participantId);
       if (!participant) {
         logger.error(`Participante ${participantId} não encontrado`);
@@ -196,10 +261,13 @@ class WebRTCSession {
    */
   async produceAudio(participantId, rtpParameters) {
     try {
+      // Atualizar timestamp de atividade
+      this.updateActivity();
+      
       const participant = this.participants.get(participantId);
       if (!participant) {
-        logger.error(`Participante ${participantId} não encontrado`);
-        return null;
+        logger.error(`Participante ${participantId} não encontrado para produzir áudio`);
+        throw new Error(`Participante ${participantId} não encontrado`);
       }
       
       const transport = participant.producerTransport;
@@ -385,6 +453,9 @@ class WebRTCSession {
    */
   async startRecording() {
     try {
+      // Atualizar timestamp de atividade
+      this.updateActivity();
+      
       if (this.isRecording) {
         logger.info(`[webrtc-service] Gravação já está ativa para sessão ${this.id}`);
         return this.outputFile;
@@ -500,7 +571,13 @@ class WebRTCSession {
    */
   _convertRawToWav() {
     try {
+      // Se a gravação estiver inativa, cancelar o timer
       if (!this.isRecording || !this.rawOutputFile) {
+        if (this._scheduledWavConversion) {
+          clearInterval(this._scheduledWavConversion);
+          this._scheduledWavConversion = null;
+          logger.info(`[webrtc-service] Cancelando conversão WAV pois a gravação está inativa`);
+        }
         return;
       }
       
@@ -592,6 +669,13 @@ class WebRTCSession {
       this._validateWavFile(this.outputFile);
     } catch (error) {
       logger.error(`[webrtc-service] Erro ao converter raw para WAV: ${error.message}, stack: ${error.stack}`);
+      
+      // Em caso de erro, também limpar o timer para evitar loops infinitos
+      if (this._scheduledWavConversion) {
+        clearInterval(this._scheduledWavConversion);
+        this._scheduledWavConversion = null;
+        logger.info(`[webrtc-service] Cancelando conversão WAV devido a erros`);
+      }
     }
   }
   
@@ -955,12 +1039,18 @@ class WebRTCSession {
    */
   async stopRecording() {
     try {
+      // Atualizar timestamp de atividade
+      this.updateActivity();
+      
       if (!this.isRecording) {
         logger.info(`[webrtc-service] Nenhuma gravação ativa para sessão ${this.id}`);
         return null;
       }
       
       logger.info(`[webrtc-service] Parando gravação para sessão ${this.id}`);
+      
+      // Marcar como não gravando imediatamente para evitar processamentos adicionais
+      this.isRecording = false;
       
       // Parar o intervalo de conversão
       if (this._scheduledWavConversion) {
@@ -1011,13 +1101,69 @@ class WebRTCSession {
       const duration = Date.now() - this.recordingStartTime;
       logger.info(`[webrtc-service] Gravação finalizada após ${duration}ms`);
       
-      this.isRecording = false;
       this.recordingStartTime = null;
+      
+      // Remover arquivos temporários
+      this._cleanupTemporaryFiles();
       
       return this.outputFile;
     } catch (error) {
       logger.error(`[webrtc-service] Erro ao parar gravação para sessão ${this.id}:`, error);
+      
+      // Garantir que a sessão seja marcada como não gravando mesmo em caso de erro
+      this.isRecording = false;
+      if (this._scheduledWavConversion) {
+        clearInterval(this._scheduledWavConversion);
+        this._scheduledWavConversion = null;
+      }
+      
       return null;
+    }
+  }
+  
+  /**
+   * Limpa arquivos temporários associados a esta sessão
+   * @private
+   */
+  _cleanupTemporaryFiles() {
+    try {
+      // Lista de arquivos a verificar
+      const files = [];
+      
+      // Adicionar arquivo raw se existir
+      if (this.rawOutputFile && fs.existsSync(this.rawOutputFile)) {
+        files.push(this.rawOutputFile);
+      }
+      
+      // Buscar outros arquivos temporários com padrão semelhante
+      const tempDir = path.join(process.cwd(), 'tmp');
+      if (fs.existsSync(tempDir)) {
+        const sessionPattern = `session_${this.id}_`;
+        
+        fs.readdirSync(tempDir).forEach(file => {
+          // Verificar se é arquivo temporário desta sessão (exceto o output final)
+          if (file.includes(sessionPattern) && 
+              path.join(tempDir, file) !== this.outputFile && 
+              !file.endsWith('.wav')) {
+            files.push(path.join(tempDir, file));
+          }
+        });
+      }
+      
+      // Remover os arquivos encontrados
+      let removedCount = 0;
+      files.forEach(file => {
+        try {
+          fs.unlinkSync(file);
+          removedCount++;
+        } catch (err) {
+          logger.warn(`[webrtc-service] Não foi possível remover arquivo temporário: ${file}`);
+        }
+      });
+      
+      logger.info(`[webrtc-service] Limpeza de arquivos temporários: ${removedCount} arquivos removidos`);
+    } catch (error) {
+      logger.error(`[webrtc-service] Erro ao limpar arquivos temporários: ${error.message}`);
     }
   }
   
@@ -2036,6 +2182,9 @@ class WebRTCSession {
    */
   async transcribeCurrentAudio() {
     try {
+      // Atualizar timestamp de atividade
+      this.updateActivity();
+      
       if (!this.isRecording) {
         logger.error(`[webrtc-service] Nenhuma gravação ativa para sessão ${this.id}`);
         return null;
@@ -2142,6 +2291,13 @@ class WebRTCSession {
       return null;
     }
   }
+  
+  /**
+   * Atualiza o timestamp de última atividade da sessão
+   */
+  updateActivity() {
+    this.lastActivityTime = Date.now();
+  }
 }
 
 /**
@@ -2222,13 +2378,25 @@ const webRTCService = {
     try {
       const session = activeSessions.get(sessionId);
       if (!session) {
-        logger.warn(`Sessão WebRTC ${sessionId} não encontrada para encerramento`);
+        logger.warn(`Sessão ${sessionId} não encontrada ou já encerrada`);
         return;
       }
       
+      logger.info(`Fechando sessão ${sessionId}`);
+      
+      // Limpar recursos da sessão
       await session.cleanup();
+      
+      // Verificar se a sessão foi removida do mapa
+      if (activeSessions.has(sessionId)) {
+        activeSessions.delete(sessionId);
+        logger.info(`Sessão ${sessionId} removida de sessões ativas`);
+      }
+      
+      return true;
     } catch (error) {
-      logger.error(`Erro ao encerrar sessão WebRTC ${sessionId}:`, error);
+      logger.error(`Erro ao fechar sessão ${sessionId}:`, error);
+      return false;
     }
   },
   
