@@ -523,54 +523,13 @@ class WebRTCSession {
         }
       }
       
-      // Se não temos participantes com producers ou o total de participantes é zero,
-      // precisamos criar pelo menos um participante virtual para gerar áudio de teste
-      if (participantsWithProducers === 0 || this.participants.size === 0) {
-        logger.info(`[webrtc-service] Nenhum participante com producer ativo. Criando participante virtual para teste.`);
-        
-        // Criar um participante virtual se não houver nenhum
-        if (this.participants.size === 0) {
-          const virtualParticipantId = `virtual_${Date.now()}`;
-          this.participants.set(virtualParticipantId, {
-            id: virtualParticipantId,
-            isVirtual: true,
-            isReal: true
-          });
-          
-          this.realParticipantCount = (this.realParticipantCount || 0) + 1;
-          
-          logger.info(`[webrtc-service] Participante virtual ${virtualParticipantId} criado`);
-        }
-        
-        // Para cada participante, se ainda não tem input no mixer, criar um e gerar áudio de teste
-        for (const [participantId, participant] of this.participants.entries()) {
-          if (!participant.mixerInput && this.audioMixer) {
-            logger.info(`[webrtc-service] Criando input para participante ${participantId} com geração de áudio de teste`);
-            
-            participant.mixerInput = this.audioMixer.input({
-              channels: 1,
-              volume: 400, // Volume muito alto para garantir detecção
-              bitDepth: 16,
-              sampleRate: 48000,
-              name: `participant-${participantId}-test-audio`
-            });
-            
-            // Gerar áudio de teste que simula voz humana
-            this._generateMockVoiceAudio(participant.mixerInput, participantId);
-            
-            // Marcar que estamos usando áudio de teste
-            participant.usingTestAudio = true;
-          }
-        }
-      }
-      
-      // Sempre criar um input global de fallback com VOLUME EXTREMAMENTE ALTO
+      // Sempre criar um input global de fallback com volume alto
       // para garantir que qualquer áudio, por mais baixo que seja, seja detectado
       logger.info('[webrtc-service] Criando input global de alta sensibilidade');
       
       this.virtualInput = this.audioMixer.input({
         channels: 1,          // Mono para melhor transcrição
-        volume: 400,          // Volume extremamente alto para o input global
+        volume: 300,          // Volume alto para o input global
         bitDepth: 16,
         sampleRate: 48000,
         name: 'global-high-sensitivity'
@@ -578,8 +537,8 @@ class WebRTCSession {
       
       logger.info('[webrtc-service] Input global de alta sensibilidade criado no mixer');
       
-      // Gerar áudio de teste global para garantir que temos algo para transcrever
-      this._generateMockVoiceAudio(this.virtualInput, 'global');
+      // Gerar um tom curto de teste no input global para garantir atividade
+      this._generateStrongReferenceAudio(this.virtualInput, 'global');
       
       // Adicionar silêncio mínimo para garantir que o arquivo tem dados
       this._addMinimumSilence();
@@ -786,40 +745,51 @@ class WebRTCSession {
   async _ensureParticipantsRegistered() {
     try {
       if (!this.router) {
-        logger.warn('Router mediasoup não disponível para verificar participantes');
+        logger.warn('[webrtc-service] Router mediasoup não disponível para verificar participantes');
         return;
       }
       
       // Lista de transports ativos no router
       const routerDump = await this.router.dump();
       
-      logger.info(`[webrtc-service] Router dump obtido para sessão ${this.id}: ${JSON.stringify(routerDump, null, 2)}`);
+      // Não mostremos todo o dump no log, apenas estatísticas importantes
+      const transportCount = routerDump?.transports?.length || 0;
+      const producerCount = routerDump?.transports?.reduce((count, t) => count + (t.producers?.length || 0), 0) || 0;
+      const consumerCount = routerDump?.transports?.reduce((count, t) => count + (t.consumers?.length || 0), 0) || 0;
+      
+      logger.info(`[webrtc-service] Router dump obtido para sessão ${this.id}: ${transportCount} transportes, ${producerCount} producers, ${consumerCount} consumers`);
       
       if (!routerDump || !routerDump.transports || routerDump.transports.length === 0) {
         logger.warn(`[webrtc-service] Nenhum transport ativo encontrado no router mediasoup para sessão ${this.id}`);
         
-        // Se não há transportes mas há participantes registrados, 
-        // vamos garantir que eles continuem presentes
-        if (this.participants.size > 0) {
-          logger.info(`[webrtc-service] Mantendo ${this.participants.size} participante(s) já registrados mesmo sem transports ativos`);
-          
-          // Criar inputs de áudio silenciosos para todos os participantes
-          for (const [participantId, participant] of this.participants.entries()) {
-            if (!participant.mixerInput && this.audioMixer) {
-              logger.info(`[webrtc-service] Criando input silencioso para participante ${participantId}`);
+        // Se não há transportes mas temos Socket.IO, tentar obter participantes
+        if (global.io) {
+          try {
+            const sockets = await global.io.in(this.id).fetchSockets();
+            logger.info(`[webrtc-service] Verificando ${sockets.length} sockets na sala ${this.id}`);
+            
+            for (const socket of sockets) {
+              const participantId = socket.id;
               
-              // Criar input com alta sensibilidade
-              participant.mixerInput = this.audioMixer.input({
-                channels: 1,
-                volume: 400, // Volume extremamente alto para captar som muito baixo
-                bitDepth: 16,
-                sampleRate: 48000,
-                name: `participant-${participantId}-high-sensitivity`
-              });
-              
-              // Gerar um tom de teste para o participante
-              this._generateMockVoiceAudio(participant.mixerInput, participantId);
+              if (!this.participants.has(participantId)) {
+                logger.info(`[webrtc-service] Registrando participante via Socket.IO: ${participantId}`);
+                
+                // Criar registro de participante
+                this.participants.set(participantId, {
+                  id: participantId,
+                  producerTransport: null,
+                  consumerTransport: null,
+                  producers: new Map(),
+                  consumers: new Map(),
+                  inputStream: null,
+                  isReal: true
+                });
+                
+                this.realParticipantCount = (this.realParticipantCount || 0) + 1;
+              }
             }
+          } catch (socketError) {
+            logger.error(`[webrtc-service] Erro ao obter sockets: ${socketError.message}`);
           }
         }
         return;
@@ -835,26 +805,45 @@ class WebRTCSession {
       
       // Analisar todos os transportes para encontrar possíveis IDs de participantes
       for (const transport of routerDump.transports) {
-        // Buscar padrões como 'participant-123' ou similares nos dados do transport
-        const transportData = JSON.stringify(transport);
-        logger.debug(`[webrtc-service] Transport ${transport.id} dados: ${transportData.substring(0, 200)}...`);
+        const transportId = transport.id;
+        logger.info(`[webrtc-service] Analisando transport: ${transportId}, producers: ${transport.producerIds?.length || 0}, consumers: ${transport.consumerIds?.length || 0}`);
         
-        // Tentar extrair o ID do participante de várias fontes
-        // 1. Do appData se disponível
+        // Tentar extrair o ID do participante
+        // 1. Verificar appData
         if (transport.appData && transport.appData.participantId) {
           const potentialId = transport.appData.participantId;
           foundParticipantIds.add(potentialId);
-          logger.info(`[webrtc-service] Participante ${potentialId} encontrado no appData do transport ${transport.id}`);
+          logger.info(`[webrtc-service] Participante ${potentialId} encontrado no appData do transport ${transportId}`);
           continue;
         }
         
-        // 2. Tenta extrair de padrões no transport
+        // 2. Verificar proprietário do transport nos registros existentes
+        let ownerFound = false;
+        for (const [participantId, participant] of this.participants.entries()) {
+          if (participant.producerTransport && participant.producerTransport.id === transportId) {
+            foundParticipantIds.add(participantId);
+            logger.info(`[webrtc-service] Transport ${transportId} pertence ao participante ${participantId}`);
+            ownerFound = true;
+            break;
+          }
+          if (participant.consumerTransport && participant.consumerTransport.id === transportId) {
+            foundParticipantIds.add(participantId);
+            logger.info(`[webrtc-service] Transport ${transportId} pertence ao participante ${participantId}`);
+            ownerFound = true;
+            break;
+          }
+        }
+        
+        if (ownerFound) continue;
+        
+        // 3. Verificar padrões conhecidos em string
+        const transportData = JSON.stringify(transport);
         const patterns = [
           /participant[_\-]([a-zA-Z0-9_\-]+)/,
           /socket[_\-]([a-zA-Z0-9_\-]+)/,
           /client[_\-]([a-zA-Z0-9_\-]+)/,
           /user[_\-]([a-zA-Z0-9_\-]+)/,
-          /([a-zA-Z0-9_\-]{20,})/  // Qualquer string longa que pareça um ID
+          /([a-zA-Z0-9_\-]{20,})/  // IDs longos de Socket.IO
         ];
         
         for (const pattern of patterns) {
@@ -862,21 +851,21 @@ class WebRTCSession {
           if (matches && matches[1]) {
             const potentialId = matches[1];
             foundParticipantIds.add(potentialId);
-            logger.info(`[webrtc-service] Possível participante ${potentialId} encontrado no transport ${transport.id} usando padrão ${pattern}`);
+            logger.info(`[webrtc-service] Participante ${potentialId} detectado no transport ${transportId}`);
             break;
           }
         }
       }
       
-      // Se não encontramos participantes pelos transportes mas temos sockets conectados
+      // Se não encontramos participantes, verificar Socket.IO
       if (foundParticipantIds.size === 0 && global.io) {
         try {
-          const sockets = await global.io.fetchSockets();
-          logger.info(`[webrtc-service] Verificando ${sockets.length} sockets conectados`);
+          const sockets = await global.io.in(this.id).fetchSockets();
+          logger.info(`[webrtc-service] Verificando ${sockets.length} sockets na sala ${this.id}`);
           
           for (const socket of sockets) {
             foundParticipantIds.add(socket.id);
-            logger.info(`[webrtc-service] Adicionando socket ID ${socket.id} como possível participante`);
+            logger.info(`[webrtc-service] Adicionando socket ID ${socket.id} como participante`);
           }
         } catch (socketError) {
           logger.error(`[webrtc-service] Erro ao obter sockets: ${socketError.message}`);
@@ -901,30 +890,11 @@ class WebRTCSession {
             producers: new Map(),
             consumers: new Map(),
             inputStream: null,
-            isReal: true, // Marcar como real para garantir contagem
-            autoRegistered: true // Indicar que foi registrado automaticamente
+            isReal: true, // É um participante real
+            autoRegistered: true
           });
           
           this.realParticipantCount = (this.realParticipantCount || 0) + 1;
-        }
-      }
-      
-      // Garantir que todos os participantes tenham um input no mixer
-      for (const [participantId, participant] of this.participants.entries()) {
-        if (!participant.mixerInput && this.audioMixer) {
-          logger.info(`[webrtc-service] Criando input para participante ${participantId}`);
-          
-          // Criar input com alta sensibilidade
-          participant.mixerInput = this.audioMixer.input({
-            channels: 1,
-            volume: 400, // Volume extremamente alto
-            bitDepth: 16,
-            sampleRate: 48000,
-            name: `participant-${participantId}-high-sensitivity`
-          });
-          
-          // Gerar áudio simulado para o participante
-          this._generateMockVoiceAudio(participant.mixerInput, participantId);
         }
       }
       
@@ -2425,9 +2395,14 @@ class WebRTCSession {
         // Verificar novamente
         if (!fs.existsSync(this.outputFile)) {
           logger.error(`[webrtc-service] Não foi possível criar arquivo WAV de emergência`);
-          
-          // Retornar transcrição simulada
-          return this._createSimulatedTranscription(duration);
+          return {
+            duration,
+            transcription: "Não foi possível gerar o arquivo de áudio. Por favor, verifique se seu microfone está funcionando e permitido no navegador.",
+            timestamp: new Date().toISOString(),
+            fileSize: 0,
+            participantsCount: this.realParticipantCount || 0,
+            error: true
+          };
         }
       }
       
@@ -2438,9 +2413,14 @@ class WebRTCSession {
       // Verificar se o arquivo é um WAV válido (pelo menos o cabeçalho)
       if (fileStats.size < 44) {
         logger.error(`[webrtc-service] Arquivo de gravação muito pequeno ou corrompido: ${fileStats.size} bytes`);
-        
-        // Retornar transcrição simulada
-        return this._createSimulatedTranscription(duration);
+        return {
+          duration,
+          transcription: "O arquivo de gravação está muito pequeno ou corrompido. Por favor, tente novamente falando mais alto.",
+          timestamp: new Date().toISOString(),
+          fileSize: fileStats.size,
+          participantsCount: this.realParticipantCount || 0,
+          error: true
+        };
       }
       
       // Validar o arquivo WAV
@@ -2497,42 +2477,18 @@ class WebRTCSession {
       
       // Verificar se a transcrição foi bem-sucedida
       if (!transcription || transcription.trim() === '') {
-        logger.warn(`[webrtc-service] Transcrição vazia ou falhou. Verificando informações adicionais.`);
+        logger.warn(`[webrtc-service] Transcrição inválida detectada: "${transcription}". Gerando texto de resposta padrão`);
         
-        // Verificar se temos participantes ativos com áudio
-        let activeParticipants = 0;
-        for (const [participantId, participant] of this.participants.entries()) {
-          if (participant.hasActiveProducer) {
-            activeParticipants++;
-          }
-        }
+        const defaultText = "Nenhuma fala detectada. A gravação pode conter apenas silêncio ou ruído de fundo. " + 
+                           "Tente falar mais próximo do microfone ou verificar se seu microfone está funcionando corretamente.";
         
-        logger.info(`[webrtc-service] Participantes ativos com producer de áudio: ${activeParticipants}`);
-        
-        // Verificar se algum participante está usando áudio de teste
-        let participantsWithTestAudio = 0;
-        for (const [, participant] of this.participants.entries()) {
-          if (participant.usingTestAudio) {
-            participantsWithTestAudio++;
-          }
-        }
-        
-        // Se temos participantes com áudio de teste, usar uma transcrição simulada
-        if (participantsWithTestAudio > 0) {
-          logger.info(`[webrtc-service] ${participantsWithTestAudio} participantes estão usando áudio de teste. Gerando transcrição simulada.`);
-          
-          // Criar uma transcrição simulada para demonstração
-          const simulatedResult = this._createSimulatedTranscription(duration);
-          return simulatedResult;
-        }
-        
-        // Caso contrário, retornar a mensagem de "Nenhuma fala detectada"
         return {
           duration,
-          transcription,
+          transcription: defaultText,
           timestamp,
           fileSize: fileStats.size,
-          participantsCount: this.realParticipantCount || 0
+          participantsCount: this.realParticipantCount || 0,
+          isEmptyAudio: true
         };
       } else {
         logger.info(`[webrtc-service] Transcrição bem-sucedida: "${transcription.substring(0, 100)}${transcription.length > 100 ? '...' : ''}"`);
@@ -2547,93 +2503,13 @@ class WebRTCSession {
       };
     } catch (error) {
       logger.error(`[webrtc-service] Erro ao transcrever áudio atual para sessão ${this.id}:`, error);
-      
-      // Em caso de erro, retornar uma transcrição simulada
-      return this._createSimulatedTranscription();
-    }
-  }
-  
-  /**
-   * Cria uma transcrição simulada para fins de demonstração
-   * @param {number} duration - Duração atual da gravação
-   * @returns {Object} Resultado da transcrição simulada
-   * @private
-   */
-  _createSimulatedTranscription(duration = 0) {
-    try {
-      logger.info(`[webrtc-service] Criando transcrição simulada para sessão ${this.id}`);
-      
-      // Calcular a duração da gravação em segundos
-      const seconds = Math.floor((duration || (Date.now() - this.recordingStartTime)) / 1000);
-      const minutes = Math.floor(seconds / 60);
-      
-      // Definir frases aleatórias que poderiam ser transcritas em uma sessão de terapia
-      const therapeuticPhrases = [
-        "Estou começando a entender melhor meus sentimentos sobre essa situação.",
-        "Muitas vezes me sinto sobrecarregado com as expectativas que coloco em mim mesmo.",
-        "Tenho trabalhado para estabelecer limites mais saudáveis nos meus relacionamentos.",
-        "É difícil falar sobre isso, mas sei que é importante para o meu processo.",
-        "Estou tentando praticar mais auto-compaixão nos momentos difíceis.",
-        "Percebo que repito padrões que aprendi na minha infância.",
-        "Quando me sinto ansioso, tenho usado as técnicas de respiração que discutimos.",
-        "Estou notando uma melhora na forma como lido com situações estressantes.",
-        "Esta semana consegui implementar algumas das estratégias que conversamos na última sessão.",
-        "Ainda me pego pensando de forma negativa, mas agora consigo identificar esses pensamentos mais rapidamente."
-      ];
-      
-      // Selecionar frases com base na duração da gravação
-      let transcriptionText = "";
-      const numPhrases = Math.min(Math.floor(seconds / 10) + 1, therapeuticPhrases.length);
-      
-      // Garantir um mínimo de frases para demonstração
-      const phrasesToInclude = Math.max(1, numPhrases);
-      
-      // Construir a transcrição usando frases aleatórias
-      for (let i = 0; i < phrasesToInclude; i++) {
-        // Selecionar uma frase aleatória
-        const randomIndex = Math.floor(Math.random() * therapeuticPhrases.length);
-        const phrase = therapeuticPhrases[randomIndex];
-        
-        // Adicionar a frase à transcrição
-        if (transcriptionText) {
-          transcriptionText += " ";
-        }
-        transcriptionText += phrase;
-        
-        // Remover a frase para não repetir
-        therapeuticPhrases.splice(randomIndex, 1);
-        
-        // Se acabaram as frases, parar
-        if (therapeuticPhrases.length === 0) {
-          break;
-        }
-      }
-      
-      // Adicionar uma indicação de que é uma transcrição simulada
-      transcriptionText = "[Transcrição simulada para facilitar testes] " + transcriptionText;
-      
-      logger.info(`[webrtc-service] Transcrição simulada criada: "${transcriptionText.substring(0, 100)}${transcriptionText.length > 100 ? '...' : ''}"`);
-      
-      // Retornar um objeto semelhante ao da transcrição real
       return {
-        duration,
-        transcription: transcriptionText,
+        duration: Date.now() - this.recordingStartTime,
+        transcription: `Ocorreu um erro ao transcrever o áudio: ${error.message}. Por favor, tente novamente.`,
         timestamp: new Date().toISOString(),
         fileSize: 0,
         participantsCount: this.realParticipantCount || 0,
-        isSimulated: true
-      };
-    } catch (error) {
-      logger.error(`[webrtc-service] Erro ao criar transcrição simulada: ${error.message}`);
-      
-      // Em caso de erro, retornar uma transcrição simples
-      return {
-        duration,
-        transcription: "[Transcrição simulada] Esta é uma sessão de demonstração para testar o sistema de transcrição.",
-        timestamp: new Date().toISOString(),
-        fileSize: 0,
-        participantsCount: this.realParticipantCount || 0,
-        isSimulated: true
+        error: true
       };
     }
   }
