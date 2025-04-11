@@ -8,6 +8,7 @@ import WhisperTranscriptionService from '../services/whisperTranscriptionService
 import AIResultsPanel from './AIResultsPanel';
 import './AITools.css';
 import ReactDOM from 'react-dom';
+import webrtcTranscriptionService from '../services/webrtcTranscriptionService';
 
 /**
  * Componentes de IA extraídos do FallbackMeeting
@@ -28,6 +29,7 @@ export const TranscriptionSelector = ({ mode, onChange }) => {
   
   // Opções disponíveis e seus rótulos
   const options = [
+    { value: 'webrtc', label: 'WebRTC (Recomendado)' },
     { value: 'auto', label: 'Auto' },
     { value: 'whisper', label: 'Whisper (Alta precisão)' },
     { value: 'webspeech', label: 'Browser (Tempo real)' }
@@ -50,7 +52,8 @@ export const TranscriptionSelector = ({ mode, onChange }) => {
       
       <div className="transcription-mode-indicator">
         Modo atual: <span className={`mode-${mode}`}>
-          {mode === 'auto' ? 'Auto' : 
+          {mode === 'webrtc' ? 'WebRTC (Recomendado)' :
+           mode === 'auto' ? 'Auto' : 
            mode === 'whisper' ? 'Whisper (Alta precisão)' : 
            'Browser (Tempo real)'}
         </span>
@@ -466,9 +469,111 @@ export const MicButton = ({ transcriptionMode = 'auto' }) => {
       
       <div className="mic-controls">
         <button 
-          onClick={toggleMicrophone} 
-          className={`mic-button ${isRecording ? 'recording' : ''} ${isPaused ? 'paused' : ''}`}
-          title={isRecording ? 'Parar gravação' : 'Iniciar gravação'}
+          onClick={() => {
+            console.log("Clique no botão de gravação");
+            // Verificar se existe o serviço de WebRTC
+            if (window.webrtcTranscriptionService) {
+              console.log("Usando serviço WebRTC");
+              try {
+                // Verificar se está gravando
+                const status = window.webrtcTranscriptionService.getStatus();
+                console.log("Status do WebRTC:", status);
+                
+                // Verificar se o serviço está inicializado
+                if (!status.isInitialized) {
+                  console.log("WebRTC não inicializado, inicializando agora...");
+                  
+                  // Detectar o sessionId
+                  const sessionId = window.sessionId || 
+                                   new URLSearchParams(window.location.search).get('sessionId') || 
+                                   window.location.pathname.split('/').pop();
+                                   
+                  if (sessionId) {
+                    const socket = window.socket || window.constellationSocket;
+                    if (socket) {
+                      toast.info("Inicializando serviço de transcrição...");
+                      
+                      window.webrtcTranscriptionService.initialize(sessionId, socket, (transcription, options = {}) => {
+                        console.log('Transcrição recebida:', transcription);
+                        if (options && options.isPartial) {
+                          toast.success('Transcrição parcial recebida');
+                        } else {
+                          toast.success('Transcrição completa recebida');
+                        }
+                      }).then(success => {
+                        if (success) {
+                          console.log("WebRTC inicializado com sucesso, iniciando gravação...");
+                          // Iniciar gravação após inicialização bem-sucedida
+                          window.webrtcTranscriptionService.startRecording()
+                            .then((startSuccess) => {
+                              if (startSuccess) {
+                                setIsRecording(true);
+                                toast.success("Gravação iniciada");
+                              } else {
+                                toast.error("Falha ao iniciar gravação");
+                              }
+                            });
+                        } else {
+                          toast.error("Falha ao inicializar WebRTC");
+                        }
+                      });
+                      return; // Sair da função para evitar o código abaixo
+                    } else {
+                      toast.error("Socket não disponível");
+                    }
+                  } else {
+                    toast.error("ID de sessão não disponível");
+                  }
+                }
+                
+                if (status && status.isRecording) {
+                  // Parar gravação
+                  console.log("Parando gravação WebRTC");
+                  window.webrtcTranscriptionService.stopRecording()
+                    .then(() => {
+                      setIsRecording(false);
+                      toast.info("Gravação parada");
+                    });
+                } else {
+                  // Iniciar gravação
+                  console.log("Iniciando gravação WebRTC");
+                  window.webrtcTranscriptionService.startRecording()
+                    .then((success) => {
+                      if (success) {
+                        setIsRecording(true);
+                        toast.info("Gravação iniciada");
+                      } else {
+                        toast.error("Falha ao iniciar gravação");
+                      }
+                    });
+                }
+              } catch (error) {
+                console.error("Erro ao controlar WebRTC:", error);
+                toast.error("Erro ao controlar gravação");
+              }
+            } else if (window.hybridAIService) {
+              console.log("Usando serviço HybridAI");
+              try {
+                if (window.hybridAIService.isRecording) {
+                  window.hybridAIService.stopRecording();
+                  setIsRecording(false);
+                  toast.info("Gravação parada");
+                } else {
+                  window.hybridAIService.startRecording();
+                  setIsRecording(true);
+                  toast.info("Gravação iniciada");
+                }
+              } catch (error) {
+                console.error("Erro ao controlar HybridAI:", error);
+                toast.error("Erro ao controlar gravação");
+              }
+            } else {
+              console.error("Nenhum serviço de gravação disponível");
+              toast.error("Nenhum serviço de gravação disponível");
+            }
+          }}
+          className={`mic-button ${isRecording ? 'recording' : ''}`}
+          title="Iniciar/Parar gravação"
         >
           <FontAwesomeIcon icon={isRecording ? faMicrophoneSlash : faMicrophone} />
         </button>
@@ -725,23 +830,100 @@ export const resetTranscriptionServices = () => {
 
 // Componente principal que contém todas as ferramentas de IA
 export const AIToolsContainer = () => {
-  const [transcriptionMode, setTranscriptionMode] = useState('auto');
+  const [transcriptionMode, setTranscriptionMode] = useState('webrtc');
   const [isRecording, setIsRecording] = useState(false);
   const containerRef = useRef(null);
-  const previousModeRef = useRef('auto');
+  const previousModeRef = useRef('webrtc');
   
   // Obter funções de IA do contexto para que possam ser passadas aos botões
   const { analyze, suggest, report } = useAI();
 
+  // Inicializar o serviço WebRTC uma vez quando o componente for montado
+  useEffect(() => {
+    // Garantir que o serviço WebRTC esteja disponível globalmente
+    if (!window.webrtcTranscriptionService) {
+      console.log('Inicializando serviço WebRTC...');
+      window.webrtcTranscriptionService = webrtcTranscriptionService;
+      
+      // Detectar o sessionId
+      const sessionId = window.sessionId || 
+                        new URLSearchParams(window.location.search).get('sessionId') || 
+                        window.location.pathname.split('/').pop();
+      
+      if (sessionId) {
+        console.log(`Inicializando WebRTC para a sessão: ${sessionId}`);
+        // Inicializar com o socket global (se disponível)
+        const socket = window.socket || window.constellationSocket;
+        
+        if (socket) {
+          webrtcTranscriptionService.initialize(sessionId, socket, (transcription, options = {}) => {
+            console.log('Transcrição recebida:', transcription);
+            // Fornecer feedback com base no tipo de transcrição
+            if (options && options.isPartial) {
+              toast.success('Transcrição parcial recebida');
+            } else {
+              toast.success('Transcrição completa recebida');
+            }
+          }).then(success => {
+            console.log(`Serviço WebRTC inicializado com sucesso: ${success}`);
+            if (success) {
+              // Definir webrtc como modo padrão
+              handleTranscriptionModeChange('webrtc');
+            }
+          }).catch(error => {
+            console.error('Erro ao inicializar WebRTC:', error);
+            toast.error('Erro ao inicializar WebRTC. Tentando modo alternativo.');
+          });
+        } else {
+          console.warn('Socket não disponível, WebRTC pode não funcionar corretamente');
+          toast.warning('Socket não disponível. Alguns recursos podem não funcionar.');
+        }
+      }
+    } else {
+      console.log('Serviço WebRTC já inicializado, verificando status...');
+      const status = window.webrtcTranscriptionService.getStatus();
+      console.log('Status atual do WebRTC:', status);
+      
+      // Se o serviço não estiver inicializado, tentar novamente
+      if (!status.isInitialized) {
+        console.log('WebRTC não inicializado corretamente, tentando reiniciar...');
+        // Detectar o sessionId
+        const sessionId = window.sessionId || 
+                          new URLSearchParams(window.location.search).get('sessionId') || 
+                          window.location.pathname.split('/').pop();
+                            
+        if (sessionId) {
+          const socket = window.socket || window.constellationSocket;
+          if (socket) {
+            webrtcTranscriptionService.initialize(sessionId, socket, (transcription, options = {}) => {
+              console.log('Transcrição recebida:', transcription);
+              if (options && options.isPartial) {
+                toast.success('Transcrição parcial recebida');
+              } else {
+                toast.success('Transcrição completa recebida');
+              }
+            });
+          }
+        }
+      }
+    }
+  }, []);
+
   // Verificar periodicamente o status da gravação para atualizar a interface
   useEffect(() => {
     const checkRecordingStatus = () => {
-      const webrtcRecording = window.webrtcTranscriptionService?.getStatus()?.isRecording || false;
-      const hybridRecording = window.hybridAIService?.isRecording || false;
-      const newIsRecording = webrtcRecording || hybridRecording;
-      
-      if (newIsRecording !== isRecording) {
-        setIsRecording(newIsRecording);
+      try {
+        const webrtcService = window.webrtcTranscriptionService;
+        const webrtcRecording = webrtcService && webrtcService.getStatus().isRecording;
+        const hybridRecording = window.hybridAIService?.isRecording || false;
+        const newIsRecording = webrtcRecording || hybridRecording;
+        
+        if (newIsRecording !== isRecording) {
+          console.log(`Status de gravação alterado para: ${newIsRecording ? 'GRAVANDO' : 'PARADO'}`);
+          setIsRecording(newIsRecording);
+        }
+      } catch (error) {
+        console.error('Erro ao verificar status de gravação:', error);
       }
     };
     
@@ -816,14 +998,14 @@ export const AIToolsContainer = () => {
     });
   }, [report]);
 
-  // Função específica para mudar o modo de transcrição
+  // Função específica para mudar o modo de transcrição, atualizada
   const handleTranscriptionModeChange = useCallback((newMode) => {
     console.log(`🎚️ Alterando modo de transcrição de ${transcriptionMode} para ${newMode}`);
     
     // Garantir que é um modo válido
-    if (!['auto', 'whisper', 'webspeech'].includes(newMode)) {
-      console.error(`❌ Modo inválido: ${newMode}, usando 'auto' como fallback`);
-      newMode = 'auto';
+    if (!['auto', 'whisper', 'webspeech', 'webrtc'].includes(newMode)) {
+      console.error(`❌ Modo inválido: ${newMode}, usando 'webrtc' como fallback`);
+      newMode = 'webrtc';
     }
     
     // Atualizar estado local
@@ -875,7 +1057,7 @@ export const AIToolsContainer = () => {
     toast.info(`Modo de transcrição alterado para: ${
       newMode === 'auto' ? 'Auto (ambos serviços)' : 
       newMode === 'whisper' ? 'Whisper (Alta precisão)' : 
-      'Browser (Tempo real)'
+      newMode === 'webspeech' ? 'Browser (Tempo real)' : 'WebRTC'
     }`);
     
     return newMode;
@@ -884,24 +1066,70 @@ export const AIToolsContainer = () => {
   // Carregar configuração salva na inicialização
   useEffect(() => {
     try {
+      // Definir webrtc como padrão
+      const defaultMode = 'webrtc';
       const savedMode = localStorage.getItem('transcription-mode');
-      if (savedMode && ['auto', 'whisper', 'webspeech'].includes(savedMode)) {
+      
+      if (savedMode && ['auto', 'whisper', 'webspeech', 'webrtc'].includes(savedMode)) {
         console.log(`Carregando modo de transcrição salvo: ${savedMode}`);
         setTranscriptionMode(savedMode);
         previousModeRef.current = savedMode;
+      } else {
+        // Usar webrtc como padrão se nada estiver salvo
+        console.log(`Definindo modo padrão: ${defaultMode}`);
+        setTranscriptionMode(defaultMode);
+        previousModeRef.current = defaultMode;
+        localStorage.setItem('transcription-mode', defaultMode);
       }
+      
+      // Definir variável global
+      window.currentTranscriptionMode = savedMode || defaultMode;
     } catch (e) {
       console.error('Erro ao carregar modo de transcrição:', e);
     }
   }, []);
 
-  // Renderizar os componentes no portal
+  // Renderizar os componentes no portal (atualização para incluir opção WebRTC)
   useEffect(() => {
     if (containerRef.current) {
       // Verificar se o modo mudou para evitar re-renderizações desnecessárias
       if (previousModeRef.current !== transcriptionMode) {
         previousModeRef.current = transcriptionMode;
         console.log(`Modo atualizado para: ${transcriptionMode}`);
+        
+        // Verificar se o serviço WebRTC está disponível quando o modo é webrtc
+        if (transcriptionMode === 'webrtc') {
+          console.log('Modo WebRTC selecionado, verificando disponibilidade do serviço...');
+          if (window.webrtcTranscriptionService) {
+            const status = window.webrtcTranscriptionService.getStatus();
+            console.log('Status do WebRTC:', status);
+            
+            if (!status.isInitialized) {
+              console.log('Serviço WebRTC não inicializado. Tentando inicializar...');
+              // Tentar inicializar o serviço
+              const sessionId = window.sessionId || 
+                               new URLSearchParams(window.location.search).get('sessionId') || 
+                               window.location.pathname.split('/').pop();
+              
+              if (sessionId) {
+                const socket = window.socket || window.constellationSocket;
+                if (socket) {
+                  console.log(`Inicializando WebRTC para sessão: ${sessionId}`);
+                  window.webrtcTranscriptionService.initialize(sessionId, socket, (transcription, options = {}) => {
+                    console.log('Transcrição recebida:', transcription);
+                    if (options && options.isPartial) {
+                      toast.success('Transcrição parcial recebida');
+                    } else {
+                      toast.success('Transcrição completa recebida');
+                    }
+                  });
+                }
+              }
+            }
+          } else {
+            console.warn('Serviço WebRTC não disponível, você deveria ver o botão "Transcrever Agora"');
+          }
+        }
       }
       
       // Injetamos diretamente os componentes simples e os handlers definidos acima
@@ -944,24 +1172,106 @@ export const AIToolsContainer = () => {
             <div className="mic-controls">
               <button 
                 onClick={() => {
+                  console.log("Clique no botão de gravação");
                   // Verificar se existe o serviço de WebRTC
                   if (window.webrtcTranscriptionService) {
-                    // Verificar se está gravando
-                    const status = window.webrtcTranscriptionService.getStatus();
-                    
-                    if (status.isRecording) {
-                      // Parar gravação
-                      window.webrtcTranscriptionService.stopRecording();
-                    } else {
-                      // Iniciar gravação
-                      window.webrtcTranscriptionService.startRecording();
+                    console.log("Usando serviço WebRTC");
+                    try {
+                      // Verificar se está gravando
+                      const status = window.webrtcTranscriptionService.getStatus();
+                      console.log("Status do WebRTC:", status);
+                      
+                      // Verificar se o serviço está inicializado
+                      if (!status.isInitialized) {
+                        console.log("WebRTC não inicializado, inicializando agora...");
+                        
+                        // Detectar o sessionId
+                        const sessionId = window.sessionId || 
+                                         new URLSearchParams(window.location.search).get('sessionId') || 
+                                         window.location.pathname.split('/').pop();
+                                         
+                        if (sessionId) {
+                          const socket = window.socket || window.constellationSocket;
+                          if (socket) {
+                            toast.info("Inicializando serviço de transcrição...");
+                            
+                            window.webrtcTranscriptionService.initialize(sessionId, socket, (transcription, options = {}) => {
+                              console.log('Transcrição recebida:', transcription);
+                              if (options && options.isPartial) {
+                                toast.success('Transcrição parcial recebida');
+                              } else {
+                                toast.success('Transcrição completa recebida');
+                              }
+                            }).then(success => {
+                              if (success) {
+                                console.log("WebRTC inicializado com sucesso, iniciando gravação...");
+                                // Iniciar gravação após inicialização bem-sucedida
+                                window.webrtcTranscriptionService.startRecording()
+                                  .then((startSuccess) => {
+                                    if (startSuccess) {
+                                      setIsRecording(true);
+                                      toast.success("Gravação iniciada");
+                                    } else {
+                                      toast.error("Falha ao iniciar gravação");
+                                    }
+                                  });
+                              } else {
+                                toast.error("Falha ao inicializar WebRTC");
+                              }
+                            });
+                            return; // Sair da função para evitar o código abaixo
+                          } else {
+                            toast.error("Socket não disponível");
+                          }
+                        } else {
+                          toast.error("ID de sessão não disponível");
+                        }
+                      }
+                      
+                      if (status && status.isRecording) {
+                        // Parar gravação
+                        console.log("Parando gravação WebRTC");
+                        window.webrtcTranscriptionService.stopRecording()
+                          .then(() => {
+                            setIsRecording(false);
+                            toast.info("Gravação parada");
+                          });
+                      } else {
+                        // Iniciar gravação
+                        console.log("Iniciando gravação WebRTC");
+                        window.webrtcTranscriptionService.startRecording()
+                          .then((success) => {
+                            if (success) {
+                              setIsRecording(true);
+                              toast.info("Gravação iniciada");
+                            } else {
+                              toast.error("Falha ao iniciar gravação");
+                            }
+                          });
+                      }
+                    } catch (error) {
+                      console.error("Erro ao controlar WebRTC:", error);
+                      toast.error("Erro ao controlar gravação");
                     }
                   } else if (window.hybridAIService) {
-                    if (window.hybridAIService.isRecording) {
-                      window.hybridAIService.stopRecording();
-                    } else {
-                      window.hybridAIService.startRecording();
+                    console.log("Usando serviço HybridAI");
+                    try {
+                      if (window.hybridAIService.isRecording) {
+                        window.hybridAIService.stopRecording();
+                        setIsRecording(false);
+                        toast.info("Gravação parada");
+                      } else {
+                        window.hybridAIService.startRecording();
+                        setIsRecording(true);
+                        toast.info("Gravação iniciada");
+                      }
+                    } catch (error) {
+                      console.error("Erro ao controlar HybridAI:", error);
+                      toast.error("Erro ao controlar gravação");
                     }
+                  } else {
+                    console.error("Nenhum serviço de gravação disponível");
+                    toast.error("Nenhum serviço de gravação disponível");
                   }
                 }}
                 className={`mic-button ${isRecording ? 'recording' : ''}`}
@@ -970,31 +1280,34 @@ export const AIToolsContainer = () => {
                 <FontAwesomeIcon icon={isRecording ? faMicrophoneSlash : faMicrophone} />
               </button>
               
-              {isRecording && transcriptionMode === 'webrtc' && window.webrtcTranscriptionService && (
-                <button 
-                  onClick={async () => {
-                    if (window.webrtcTranscriptionService) {
-                      try {
-                        toast.info("Solicitando transcrição parcial...");
-                        const result = await window.webrtcTranscriptionService.transcribeCurrentAudio();
-                        if (result && result.transcription) {
-                          toast.success("Transcrição parcial recebida!");
-                        } else {
-                          toast.warning("Nenhuma transcrição parcial disponível");
-                        }
-                      } catch (error) {
-                        toast.error("Erro ao solicitar transcrição parcial");
-                        console.error("Erro na transcrição parcial:", error);
+              <button 
+                onClick={async () => {
+                  console.log("Clique no botão Transcrever Agora");
+                  if (window.webrtcTranscriptionService) {
+                    try {
+                      toast.info("Solicitando transcrição parcial...");
+                      const result = await window.webrtcTranscriptionService.transcribeCurrentAudio();
+                      console.log("Resultado da transcrição parcial:", result);
+                      if (result && result.transcription) {
+                        toast.success("Transcrição parcial recebida!");
+                      } else {
+                        toast.warning("Nenhuma transcrição parcial disponível");
                       }
+                    } catch (error) {
+                      toast.error("Erro ao solicitar transcrição parcial");
+                      console.error("Erro na transcrição parcial:", error);
                     }
-                  }}
-                  className="transcribe-now-button"
-                  title="Transcrever áudio atual sem parar a gravação"
-                >
-                  <FontAwesomeIcon icon={faFileAlt} />
-                  <span className="button-text">Transcrever Agora</span>
-                </button>
-              )}
+                  } else {
+                    toast.error("Serviço WebRTC não disponível");
+                  }
+                }}
+                className="transcribe-now-button"
+                title={isRecording ? "Transcrever áudio atual sem parar a gravação" : "Inicie a gravação primeiro para solicitar transcrição parcial"}
+                disabled={!isRecording}
+              >
+                <FontAwesomeIcon icon={faFileAlt} />
+                <span className="button-text">Transcrever Agora</span>
+              </button>
             </div>
             
             <TranscriptionSelector 
