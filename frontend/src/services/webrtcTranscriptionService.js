@@ -34,6 +34,54 @@ class WebRTCTranscriptionService {
   }
   
   /**
+   * Obtém o token de autenticação do localStorage
+   * @private
+   * @returns {string|null} Token de autenticação ou null se não encontrado
+   */
+  _getAuthToken() {
+    try {
+      // Verificar em ordem de preferência, similar a outros serviços
+      const token = localStorage.getItem('authToken') || 
+                   sessionStorage.getItem('authToken') || 
+                   localStorage.getItem('token') || 
+                   sessionStorage.getItem('token');
+      
+      if (!token) {
+        console.warn('WebRTC: Token de autenticação não encontrado');
+      } else {
+        console.log('WebRTC: Token de autenticação encontrado');
+      }
+      
+      return token;
+    } catch (error) {
+      console.error('WebRTC: Erro ao obter token de autenticação:', error);
+      return null;
+    }
+  }
+  
+  /**
+   * Cria um objeto de configuração para requisições HTTP com autenticação
+   * @private
+   * @returns {Object} Configuração para requisição HTTP
+   */
+  _getRequestConfig() {
+    const token = this._getAuthToken();
+    const config = {
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    };
+    
+    if (token) {
+      config.headers['Authorization'] = `Bearer ${token}`;
+    } else {
+      console.warn('WebRTC: Token de autenticação não encontrado');
+    }
+    
+    return config;
+  }
+  
+  /**
    * Inicializa o serviço
    * @param {string} sessionId - ID da sessão
    * @param {Object} socket - Socket.IO
@@ -83,7 +131,14 @@ class WebRTCTranscriptionService {
   async _initializeServerSession() {
     try {
       console.log(`WebRTC: Inicializando sessão no servidor para ${this.sessionId}`);
-      const response = await axios.post(`${API_URL}/webrtc/session/${this.sessionId}`);
+      const config = this._getRequestConfig();
+      console.log('WebRTC: Config de requisição:', config);
+      
+      const response = await axios.post(
+        `${API_URL}/webrtc/session/${this.sessionId}`,
+        {},  // Corpo vazio da requisição
+        config
+      );
       
       if (!response.data.success) {
         throw new Error('Falha ao inicializar sessão no servidor');
@@ -449,7 +504,12 @@ class WebRTCTranscriptionService {
       console.log(`WebRTC: Iniciando gravação para sessão ${this.sessionId}`);
       
       // Solicitar início da gravação no servidor
-      const response = await axios.post(`${API_URL}/webrtc/record/start/${this.sessionId}`);
+      const config = this._getRequestConfig();
+      const response = await axios.post(
+        `${API_URL}/webrtc/record/start/${this.sessionId}`,
+        {},  // Corpo vazio da requisição
+        config
+      );
       
       if (!response.data.success) {
         throw new Error('Falha ao iniciar gravação no servidor');
@@ -491,7 +551,12 @@ class WebRTCTranscriptionService {
       console.log(`WebRTC: Parando gravação para sessão ${this.sessionId}`);
       
       // Solicitar parada da gravação no servidor
-      const response = await axios.post(`${API_URL}/webrtc/record/stop/${this.sessionId}`);
+      const config = this._getRequestConfig();
+      const response = await axios.post(
+        `${API_URL}/webrtc/record/stop/${this.sessionId}`,
+        {},  // Corpo vazio da requisição
+        config
+      );
       
       if (!response.data.success) {
         throw new Error('Falha ao parar gravação no servidor');
@@ -538,7 +603,12 @@ class WebRTCTranscriptionService {
       console.log(`WebRTC: Solicitando transcrição parcial para sessão ${this.sessionId}`);
       
       // Solicitar transcrição parcial no servidor
-      const response = await axios.post(`${API_URL}/webrtc/record/transcribe/${this.sessionId}`);
+      const config = this._getRequestConfig();
+      const response = await axios.post(
+        `${API_URL}/webrtc/record/transcribe/${this.sessionId}`,
+        {},  // Corpo vazio da requisição
+        config
+      );
       
       if (!response.data.success) {
         throw new Error('Falha ao solicitar transcrição parcial no servidor');
