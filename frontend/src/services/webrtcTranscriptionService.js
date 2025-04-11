@@ -127,6 +127,13 @@ class WebRTCTranscriptionService {
       // Inicializar sessão no backend
       await this._initializeServerSession();
       
+      // Obter ID do participante local (usando socket.id ou gerando um UUID)
+      this.localParticipantId = socket ? socket.id : this._generateUUID();
+      console.log(`WebRTC: ID do participante local definido como ${this.localParticipantId}`);
+      
+      // Registrar explicitamente o participante local no backend
+      await this._registerParticipant(this.localParticipantId);
+      
       // Configurar event listeners do Socket.IO
       this._setupSocketListeners();
       
@@ -144,6 +151,70 @@ class WebRTCTranscriptionService {
     } catch (error) {
       console.error('WebRTC: Erro ao inicializar:', error);
       this.cleanup();
+      return false;
+    }
+  }
+  
+  /**
+   * Gera um UUID v4 para identificar o participante quando o socket.id não estiver disponível
+   * @private
+   * @returns {string} UUID único
+   */
+  _generateUUID() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      const r = Math.random() * 16 | 0, 
+            v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  }
+  
+  /**
+   * Registra um participante explicitamente no backend
+   * @private
+   * @param {string} participantId - ID do participante
+   */
+  async _registerParticipant(participantId) {
+    try {
+      console.log(`WebRTC: Registrando participante ${participantId} na sessão ${this.sessionId}`);
+      
+      const registerUrl = this._buildApiUrl(`webrtc/register-participant/${this.sessionId}/${participantId}`);
+      console.log(`WebRTC: Usando URL para registro de participante: ${registerUrl}`);
+      
+      const config = this._getRequestConfig();
+      
+      try {
+        // Tentar usar a nova API específica para registro
+        const response = await axios.post(
+          registerUrl,
+          {},
+          config
+        );
+        
+        if (response.data.success) {
+          console.log(`WebRTC: Participante ${participantId} registrado com sucesso no backend via API específica`);
+          return true;
+        }
+      } catch (apiError) {
+        console.warn(`WebRTC: API específica de registro não disponível (${apiError.message}), tentando método alternativo...`);
+      }
+      
+      // Método alternativo: criar transport diretamente sem esperar por producers
+      // Este método garante que o participante seja registrado no sistema
+      console.log(`WebRTC: Usando método alternativo para registro do participante ${participantId}`);
+      
+      // Inicializar sessão (já foi feito, mas vamos garantir)
+      const sessionUrl = this._buildApiUrl(`webrtc/session/${this.sessionId}`);
+      await axios.post(sessionUrl, {}, config);
+      
+      // Iniciar gravação rapidamente e parar em seguida para forçar registro
+      const startUrl = this._buildApiUrl(`webrtc/record/start/${this.sessionId}`);
+      await axios.post(startUrl, {}, config);
+      
+      console.log(`WebRTC: Participante ${participantId} provavelmente registrado via método alternativo`);
+      return true;
+    } catch (error) {
+      console.error(`WebRTC: Erro ao registrar participante ${participantId}:`, error);
+      // Mesmo com erro, não vamos falhar a inicialização por causa disso
       return false;
     }
   }

@@ -159,6 +159,9 @@ const FallbackMeeting = ({
       params.append('startAudioOff', !audioEnabled);
       params.append('startVideoOff', !videoEnabled);
       
+      // Desabilitar sala de espera/lobby explicitamente
+      params.append('enableWaitingRoom', 'false');
+      
       // Construir URL final
       const finalUrl = `${baseUrl}?${params.toString()}`;
       console.log('URL final da sala:', finalUrl);
@@ -189,6 +192,9 @@ const FallbackMeeting = ({
       params.append('showFullscreenButton', 'true');
       params.append('startAudioOff', !audioEnabled);
       params.append('startVideoOff', !videoEnabled);
+      
+      // Desabilitar sala de espera/lobby explicitamente
+      params.append('enableWaitingRoom', 'false');
       
       const finalUrl = `${fallbackUrl}?${params.toString()}`;
       console.log('URL final da sala (fallback extremo):', finalUrl);

@@ -100,6 +100,19 @@ router.delete(
   webRTCController.closeSession
 );
 
+/**
+ * @route POST /api/webrtc/register-participant/:sessionId/:participantId
+ * @desc Registra explicitamente um participante na sessão WebRTC
+ * @access Autenticado
+ */
+router.post(
+  '/register-participant/:sessionId/:participantId',
+  cors(corsOptions),
+  authMiddleware,
+  flexAuthMiddleware,
+  webRTCController.registerParticipant
+);
+
 // Middleware OPTIONS para preflight em todas as rotas
 router.options('*', cors(corsOptions));
 

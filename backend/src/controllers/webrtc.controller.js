@@ -242,6 +242,49 @@ const webRTCController = {
         error: error.message
       });
     }
+  },
+  
+  /**
+   * Registra um participante explicitamente na sessão WebRTC
+   * @param {Object} req - Requisição Express
+   * @param {Object} res - Resposta Express
+   */
+  async registerParticipant(req, res) {
+    try {
+      const { sessionId, participantId } = req.params;
+      
+      if (!sessionId || !participantId) {
+        return res.status(400).json({
+          success: false,
+          message: 'IDs da sessão e do participante são obrigatórios'
+        });
+      }
+      
+      logger.info(`Registrando participante ${participantId} na sessão WebRTC ${sessionId}`);
+      
+      const result = await webRTCService.registerParticipant(sessionId, participantId);
+      
+      if (!result) {
+        return res.status(500).json({
+          success: false,
+          message: 'Falha ao registrar participante na sessão WebRTC'
+        });
+      }
+      
+      return res.status(200).json({
+        success: true,
+        message: 'Participante registrado com sucesso na sessão WebRTC',
+        sessionId,
+        participantId
+      });
+    } catch (error) {
+      logger.error(`Erro ao registrar participante na sessão WebRTC: ${error.message}`);
+      return res.status(500).json({
+        success: false,
+        message: 'Erro interno do servidor',
+        error: error.message
+      });
+    }
   }
 };
 
