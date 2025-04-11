@@ -217,6 +217,12 @@ class WebRTCSession {
       participant.producers.set(producer.id, producer);
       logger.info(`Producer de áudio ${producer.id} criado para participante ${participantId}`);
       
+      // Marcar este participante como "real" imediatamente quando ele produz áudio
+      // Mesmo que ainda não tenhamos dados de áudio
+      participant.isReal = true;
+      this.realParticipantCount = (this.realParticipantCount || 0) + 1;
+      logger.info(`Participante ${participantId} marcado como real. Total de participantes reais: ${this.realParticipantCount}`);
+      
       // Adicionar ao mixer
       this.addParticipantToMixer(participantId, producer);
       
@@ -277,12 +283,11 @@ class WebRTCSession {
       
       logger.info(`Participante ${participantId} adicionado ao mixer com sucesso como input: ${participant.mixerInput.name}`);
       
-      // Marcar este participante como "real" para evitar áudio sintético
-      participant.isReal = true;
-      
-      // Incrementar contador de participantes reais
-      this.realParticipantCount = (this.realParticipantCount || 0) + 1;
-      logger.info(`Número total de participantes reais agora: ${this.realParticipantCount}`);
+      // Marcação de participante real já é feita em produceAudio, então não incrementamos o contador aqui
+      if (!participant.isReal) {
+        participant.isReal = true;
+        logger.info(`Participante ${participantId} marcado como real no mixer`);
+      }
     } catch (error) {
       logger.error(`Erro ao adicionar participante ${participantId} ao mixer:`, error);
     }
@@ -482,12 +487,13 @@ class WebRTCSession {
         
         logger.info(`Input adicionado ao mixer para participante ${participantId}`);
         
-        // Marcar este participante como "real"
-        participant.isReal = true;
-        
-        // Incrementar contador de participantes reais
-        this.realParticipantCount = (this.realParticipantCount || 0) + 1;
-        logger.info(`Número total de participantes reais agora: ${this.realParticipantCount}`);
+        // Verificar se o participante já está marcado como real
+        if (!participant.isReal) {
+          participant.isReal = true;
+          // Incrementar contador apenas se não foi incrementado antes
+          this.realParticipantCount = (this.realParticipantCount || 0) + 1;
+          logger.info(`Participante ${participantId} marcado como real. Total: ${this.realParticipantCount}`);
+        }
       }
       
       // Registrar evento para quando o producer receber dados RTP (áudio real)
