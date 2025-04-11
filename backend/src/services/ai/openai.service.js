@@ -176,21 +176,35 @@ const openAIService = {
 
     /**
      * Transcreve um arquivo de áudio/vídeo usando a API Whisper do OpenAI
+     * com configurações otimizadas para detectar voz em volume baixo
      * @param {string} filePath - Caminho para o arquivo de áudio/vídeo
      * @param {string} language - Código ISO do idioma (pt, en, es, etc.)
      * @returns {Promise<string>} Texto transcrito
      */
     async transcribeAudioVideo(filePath, language = 'pt') {
         try {
-            logger.info(`Iniciando transcrição de arquivo: ${filePath}`);
+            logger.info(`Iniciando transcrição de arquivo com sensibilidade alta: ${filePath}`);
+            
+            // Verificar existência do arquivo
+            if (!fs.existsSync(filePath)) {
+                logger.error(`Arquivo não encontrado: ${filePath}`);
+                throw new Error(`Arquivo não encontrado: ${filePath}`);
+            }
+            
+            // Obter estatísticas do arquivo
+            const stats = fs.statSync(filePath);
+            logger.info(`Tamanho do arquivo: ${stats.size} bytes`);
             
             // Criar um ReadStream do arquivo
             const file = fs.createReadStream(filePath);
             
-            // Configurar o modelo Whisper com o idioma correto
+            // Configurar o modelo Whisper com o idioma correto e opções otimizadas
             const transcriptionOptions = {
                 file: file,
                 model: 'whisper-1',
+                temperature: 0, // Reduzir temperatura para maior precisão
+                response_format: 'verbose_json', // Formato detalhado com informações de segmentos e confiança
+                prompt: "Esta é uma transcrição de uma sessão de terapia. Pode conter áudio em volume baixo.", // Contexto para guiar a transcrição
             };
             
             // Adicionar o idioma se for especificado
@@ -201,8 +215,20 @@ const openAIService = {
             // Realizar a transcrição
             const response = await openai.audio.transcriptions.create(transcriptionOptions);
             
+            // Verificar se a resposta está no formato esperado
+            let transcribedText = '';
+            if (response.text) {
+                // Formato simples
+                transcribedText = response.text;
+            } else if (response.segments) {
+                // Formato verbose_json - concatenar todos os segmentos
+                transcribedText = response.segments.map(segment => segment.text).join(' ');
+            }
+            
             logger.info(`Transcrição concluída para arquivo: ${filePath}`);
-            return response.text;
+            logger.info(`Texto transcrito: "${transcribedText.substring(0, 100)}${transcribedText.length > 100 ? '...' : ''}"`);
+            
+            return transcribedText || '';
         } catch (error) {
             logger.error(`Erro ao transcrever áudio/vídeo: ${filePath}`, error);
             throw new Error(`Falha na transcrição: ${error.message}`);

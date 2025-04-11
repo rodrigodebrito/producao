@@ -272,10 +272,10 @@ class WebRTCSession {
         return;
       }
       
-      // Criar um input para o mixer com identificação clara
+      // Criar um input para o mixer com volume aumentado para captar áudio mais baixo
       participant.mixerInput = this.audioMixer.input({
         channels: 2,
-        volume: 100,
+        volume: 150, // Volume aumentado para melhor captação
         bitDepth: 16,
         sampleRate: 48000,
         name: `participant-${participantId}-${producer.id}`
@@ -419,12 +419,12 @@ class WebRTCSession {
           if (!participant.mixerInput) {
             participant.mixerInput = this.audioMixer.input({
               channels: 2,
-              volume: 100,
+              volume: 150, // Volume aumentado para captar áudio mais baixo
               bitDepth: 16,
               sampleRate: 48000,
               name: `participant-${participantId}-no-producer`
             });
-            logger.info(`Input de fallback criado para participante ${participantId}`);
+            logger.info(`Input de fallback criado para participante ${participantId} (sensibilidade aumentada)`);
           }
         }
       }
@@ -433,13 +433,13 @@ class WebRTCSession {
       
       // Verificação final - se não houver participantes reais, criar pelo menos um input de fallback global
       if (this.realParticipantCount === 0) {
-        logger.warn(`Nenhum participante real detectado, criando input de fallback global`);
+        logger.warn(`Nenhum participante real detectado, criando input de fallback global com alta sensibilidade`);
         const fallbackInput = this.audioMixer.input({
           channels: 2,
-          volume: 100,
+          volume: 200, // Volume muito aumentado para detecção de áudio muito baixo
           bitDepth: 16,
           sampleRate: 48000,
-          name: `session-${this.id}-fallback`
+          name: `session-${this.id}-fallback-high-sensitivity`
         });
         
         // Incrementar contador para evitar que a sessão seja considerada vazia
@@ -535,13 +535,13 @@ class WebRTCSession {
    */
   _addMinimumSilence() {
     try {
-      // Criar silêncio para 1 segundo
+      // Criar silêncio para apenas 0.5 segundos para permitir ouvir o áudio real mais rapidamente
       const sampleRate = 48000;
       const channels = 2;
       const bytesPerSample = 2; // 16 bits
-      const duration = 1; // 1 segundo
+      const duration = 0.5; // 0.5 segundos (reduzido)
       
-      const dataSize = sampleRate * channels * bytesPerSample * duration;
+      const dataSize = Math.floor(sampleRate * channels * bytesPerSample * duration);
       const buffer = Buffer.alloc(dataSize);
       
       // Buffer já está preenchido com zeros (silêncio absoluto)
@@ -558,19 +558,19 @@ class WebRTCSession {
         volume: 1, // Volume mínimo
         bitDepth: 16,
         sampleRate: 48000,
-        name: 'silence-minimum'
+        name: 'silence-minimum-short'
       });
       
       // Escrever buffer de silêncio diretamente
       silenceInput.write(buffer);
       
-      logger.info(`Silêncio mínimo de ${duration} segundo adicionado ao arquivo, tamanho: ${dataSize} bytes`);
+      logger.info(`Silêncio mínimo de ${duration} segundos adicionado ao arquivo, tamanho: ${dataSize} bytes`);
       
-      // Fechar o input após escrever os dados
+      // Fechar o input mais rapidamente
       setTimeout(() => {
         silenceInput.end();
         logger.info('Input de silêncio mínimo finalizado');
-      }, 100);
+      }, 50); // Tempo reduzido
     } catch (error) {
       logger.error(`Erro ao adicionar silêncio mínimo: ${error.message}`);
     }
@@ -629,13 +629,16 @@ class WebRTCSession {
    */
   async captureAudioFromProducer(participantId, producer) {
     try {
-      logger.info(`Iniciando captura real de áudio do participante ${participantId} com producer ${producer.id}`);
+      logger.info(`Iniciando captura de áudio do producer ${producer.id} do participante ${participantId} com sensibilidade aumentada`);
       
       const participant = this.participants.get(participantId);
       if (!participant) {
         logger.error(`Participante ${participantId} não encontrado para captura de áudio`);
         return;
       }
+      
+      // Marcar como participante real com producer ativo para análise posterior
+      participant.hasActiveProducer = true;
       
       // Verificar se já existe um input para este participante
       if (!participant.mixerInput) {
