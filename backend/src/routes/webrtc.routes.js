@@ -6,7 +6,7 @@
 const express = require('express');
 const router = express.Router();
 const webRTCController = require('../controllers/webrtc.controller');
-const authMiddleware = require('../middleware/auth.middleware');
+const { authMiddleware } = require('../middleware/auth.middleware');
 const flexAuthMiddleware = require('../middleware/flex-auth.middleware');
 
 // API pública para WebRTC
