@@ -155,6 +155,60 @@ headerBuffer.writeUInt32LE(0, 40); // Tamanho dos dados (atualizado depois)
    - `diagnoseConnections()` para identificar problemas
    - `repairConnections()` para consertar problemas automaticamente
 
+### 7. Problema: Texto "Legendas pela comunidade Amara.org" na transcrição
+
+**Problema**: Nas transcrições aparecia o texto "Legendas pela comunidade Amara.org" mesmo quando nenhum participante havia falado algo, gerando confusão.
+
+**Solução**: Identificamos que o problema era causado pelo áudio simulado que o sistema adicionava quando não detectava participantes reais. As seguintes alterações foram implementadas:
+
+1. **Remoção do áudio simulado com textos pré-definidos**:
+   ```javascript
+   // Código antigo removido:
+   if (participantCount === 0 || this.realParticipantCount === 0) {
+     logger.info('Nenhum participante real encontrado, adicionando input virtual para garantir dados de áudio');
+     
+     // Criar um input para áudio silencioso/teste
+     const virtualInput = this.audioMixer.input({
+       channels: 2,
+       volume: 50,
+       bitDepth: 16,
+       sampleRate: 48000,
+       name: 'virtual-participant'
+     });
+     
+     this.virtualInput = virtualInput;
+     this._simulateAudioData(virtualInput, 'virtual');
+   }
+   ```
+
+2. **Substituição por espera por participantes reais**:
+   ```javascript
+   // Novo código:
+   logger.info(`Verificando participantes: encontrados ${participantCount} participantes, ${this.realParticipantCount} com áudio real`);
+   
+   // Não adicionar mais dados simulados de áudio que causam problemas
+   // Aguardar pela entrada de áudio real dos participantes
+   logger.info(`Inicializando gravação apenas com participantes reais (${this.realParticipantCount})`);
+   ```
+
+3. **Uso apenas de áudio silencioso quando necessário**:
+   ```javascript
+   _simulateAudioData(input, participantId) {
+     try {
+       // Criar buffer de áudio completamente silencioso
+       const buffer = Buffer.alloc(bufferSize);
+       
+       // Preencher com um silêncio absoluto (zeros)
+       // O buffer já está inicializado com zeros, então não precisamos preencher
+       logger.info(`Usando silêncio para participante ${participantId}`);
+       
+       // ... código para enviar dados ...
+     }
+   }
+   ```
+
+Esta mudança garante que o sistema apenas transcreva áudio real dos participantes e não adicione texto simulado ou pré-definido nas transcrições.
+
 ## Fluxo de Funcionamento
 
 1. **Criação da sessão**: Uma sessão WebRTC é criada quando os participantes se conectam à sala de terapia.
