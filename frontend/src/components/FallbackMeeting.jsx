@@ -161,6 +161,14 @@ const FallbackMeeting = ({
       
       // Desabilitar sala de espera/lobby explicitamente
       params.append('enableWaitingRoom', 'false');
+      params.append('enable_knocking', 'false');
+      params.append('enable_prejoin_ui', 'false');
+      params.append('lang', 'pt');
+      
+      // Forçar entrada direta sem espera
+      params.append('emb', 'true'); // Modo embedado
+      params.append('prejoin', 'false');
+      params.append('skipPrejoin', 'true');
       
       // Construir URL final
       const finalUrl = `${baseUrl}?${params.toString()}`;
@@ -195,6 +203,14 @@ const FallbackMeeting = ({
       
       // Desabilitar sala de espera/lobby explicitamente
       params.append('enableWaitingRoom', 'false');
+      params.append('enable_knocking', 'false');
+      params.append('enable_prejoin_ui', 'false');
+      params.append('lang', 'pt');
+      
+      // Forçar entrada direta sem espera
+      params.append('emb', 'true'); // Modo embedado
+      params.append('prejoin', 'false');
+      params.append('skipPrejoin', 'true');
       
       const finalUrl = `${fallbackUrl}?${params.toString()}`;
       console.log('URL final da sala (fallback extremo):', finalUrl);
