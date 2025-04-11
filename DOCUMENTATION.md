@@ -285,6 +285,76 @@ Estas mudanças garantem que todos os participantes conectados sejam considerado
 
 Estas alterações garantem que, mesmo quando não há áudio real sendo captado, o sistema sempre gera um arquivo de tamanho suficiente para ser processado pela API Whisper, permitindo que o fluxo de transcrição continue funcionando corretamente.
 
+### 10. Problema: Falha na detecção de participantes em sessões com múltiplas abas
+
+**Problema**: Mesmo com dois participantes conectados (duas abas abertas), o sistema não conseguia detectá-los corretamente:
+```
+[INFO] [webrtc-service] Verificando participantes: encontrados 0 participantes, 0 com áudio real
+```
+
+**Causa raiz**: Análise aprofundada mostrou três problemas específicos:
+
+1. **Incompatibilidade entre eventos Socket.IO**: O frontend emitia `join-session` enquanto o backend estava configurado para ouvir `join-room`.
+
+2. **Dependência incorreta de producers**: A detecção de participantes dependia da existência de producers de áudio, que nem sempre são criados adequadamente quando os participantes se conectam silenciosamente.
+
+3. **Falta de registro explícito**: Participantes que se conectavam ao socket não eram automaticamente registrados na sessão WebRTC.
+
+**Solução**: Implementamos uma abordagem abrangente para resolver o problema:
+
+1. **Registro explícito de participantes**:
+   ```javascript
+   // Novo método no WebRTC Service
+   async registerParticipant(sessionId, participantId) {
+     // Criar novo participante
+     session.participants.set(participantId, {
+       id: participantId,
+       producerTransport: null,
+       consumerTransport: null,
+       producers: new Map(),
+       consumers: new Map(),
+       inputStream: null,
+       isReal: true // Marcar como real mesmo sem producer
+     });
+     
+     // Incrementar contador de participantes reais
+     session.realParticipantCount = (session.realParticipantCount || 0) + 1;
+   }
+   ```
+
+2. **Correção do evento Socket.IO**:
+   ```javascript
+   // Adicionado handler para join-session no backend
+   socket.on('join-session', async (data) => {
+     if (data && data.sessionId) {
+       // Código para juntar-se à sala
+       
+       // Registrar participante explicitamente
+       await webRTCService.registerParticipant(sessionId, socket.id);
+     }
+   });
+   ```
+
+3. **Melhoria da lógica de contagem de participantes**:
+   ```javascript
+   // Melhorias na função startRecording
+   // Contar todos os participantes conectados, não apenas aqueles com producers
+   for (const [participantId, participant] of this.participants.entries()) {
+     participantCount++; // Contar todos os participantes conectados
+     
+     // Tratar tanto participantes com producers quanto sem producers
+     if (participant.producers && participant.producers.size > 0) {
+       // Processar producers
+     } else {
+       // Marcar como real mesmo sem producer
+       participant.isReal = true;
+       this.realParticipantCount++;
+     }
+   }
+   ```
+
+Essas alterações garantem que todos os participantes conectados sejam detectados corretamente, independentemente de terem producers de áudio ativos, permitindo que o sistema de transcrição funcione corretamente com múltiplas abas abertas.
+
 ## Fluxo de Funcionamento
 
 1. **Criação da sessão**: Uma sessão WebRTC é criada quando os participantes se conectam à sala de terapia.
