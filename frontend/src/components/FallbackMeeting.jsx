@@ -154,22 +154,31 @@ const FallbackMeeting = ({
         params.append('name', userName);
       }
       
-      // Configurações básicas
-      params.append('showLeaveButton', 'true');
-      params.append('showFullscreenButton', 'true');
+      // Desabilitar sala de espera - usando apenas parâmetros mais recentes e confirmados da API
+      params.append('owner', 'true'); // Marcar o usuário como dono da sala
+      params.append('prejoin', 'false'); // Desabilitar tela de pré-entrada
+      params.append('knockKnock', 'false'); // Desativar sala de espera no modo novo
+      params.append('lang', 'pt'); // Idioma em português
+      
+      // Outros parâmetros documentados pelo Daily.co
+      params.append('dailyConfig', encodeURIComponent(JSON.stringify({
+        activeSpeakerMode: false,
+        showLeaveButton: true,
+        showFullscreenButton: true,
+        enableScreenshare: true,
+        disableJoinLeaveSounds: true,
+        autoWarmup: true, // Pré-iniciar conexão
+        detectSpeakingEvents: true,
+        receiveSettings: {
+          base: { 
+            maxQuality: 'high' 
+          }
+        }
+      })));
       
       // Áudio e vídeo
       params.append('startAudioOff', !audioEnabled);
       params.append('startVideoOff', !videoEnabled);
-      
-      // Desabilitar sala de espera/lobby (usando apenas os parâmetros documentados do Daily.co)
-      params.append('emb', 'true'); // Modo embedado que ignora configurações de sala de espera
-      params.append('prejoin', 'false'); // Desabilitar tela de pré-entrada
-      params.append('knock', 'false'); // Desabilitar "knock" (sala de espera)
-      params.append('lang', 'pt'); // Idioma em português
-      
-      // Forçar entrada direta sem espera
-      params.append('skipPrejoin', 'true');
       
       // Construir URL final
       const finalUrl = `${baseUrl}?${params.toString()}`;
@@ -202,14 +211,27 @@ const FallbackMeeting = ({
       params.append('startAudioOff', !audioEnabled);
       params.append('startVideoOff', !videoEnabled);
       
-      // Desabilitar sala de espera/lobby (usando apenas os parâmetros documentados do Daily.co)
-      params.append('emb', 'true'); // Modo embedado que ignora configurações de sala de espera
+      // Desabilitar sala de espera - usando apenas parâmetros mais recentes e confirmados da API
+      params.append('owner', 'true'); // Marcar o usuário como dono da sala
       params.append('prejoin', 'false'); // Desabilitar tela de pré-entrada
-      params.append('knock', 'false'); // Desabilitar "knock" (sala de espera)
+      params.append('knockKnock', 'false'); // Desativar sala de espera no modo novo
       params.append('lang', 'pt'); // Idioma em português
       
-      // Forçar entrada direta sem espera
-      params.append('skipPrejoin', 'true');
+      // Outros parâmetros documentados pelo Daily.co
+      params.append('dailyConfig', encodeURIComponent(JSON.stringify({
+        activeSpeakerMode: false,
+        showLeaveButton: true,
+        showFullscreenButton: true,
+        enableScreenshare: true,
+        disableJoinLeaveSounds: true,
+        autoWarmup: true, // Pré-iniciar conexão
+        detectSpeakingEvents: true,
+        receiveSettings: {
+          base: { 
+            maxQuality: 'high' 
+          }
+        }
+      })));
       
       const finalUrl = `${fallbackUrl}?${params.toString()}`;
       console.log('URL final da sala (fallback extremo):', finalUrl);
@@ -256,46 +278,32 @@ const FallbackMeeting = ({
     if (iframeElement) {
       iframeElement.classList.add('loaded');
       
-      // Tentar interagir com o Daily.co API dentro do iframe para garantir entrada
+      // Usar mensagens postMessage para comunicação segura com o iframe
       try {
-        // Acessar o conteúdo do iframe
-        const iframeWindow = iframeElement.contentWindow;
-        
-        // Verificar status a cada 2 segundos para caso esteja em sala de espera
-        const intervalId = setInterval(() => {
-          if (iframeWindow && iframeWindow.document) {
-            // Procurar por elementos comuns da sala de espera
-            const waitingRoomElements = iframeWindow.document.querySelectorAll(
-              '[data-waiting-room], .waiting-room, .knock-panel, .prejoin'
-            );
+        // Registrar ouvinte para receber mensagens do iframe
+        const handleMessage = (event) => {
+          // Validar origem para segurança
+          if (!event.origin.includes('daily.co')) return;
+          
+          if (event.data && event.data.action === 'daily-waiting-room') {
+            console.log('Daily: Recebido evento de sala de espera');
             
-            // Se encontrar elementos de sala de espera, tentar clicar em botões relevantes
-            if (waitingRoomElements.length > 0) {
-              console.log('Daily: Detectada sala de espera, tentando entrar na sala automaticamente');
-              
-              // Procurar botões de entrada e clicar neles
-              const joinButtons = iframeWindow.document.querySelectorAll(
-                'button[data-join], button.join-button, button.join, [data-testid="prejoin-join-button"]'
-              );
-              
-              joinButtons.forEach(button => {
-                console.log('Daily: Clicando no botão de entrada:', button);
-                button.click();
-              });
-            } else {
-              // Já está na sala, podemos limpar o intervalo
-              console.log('Daily: Já está na sala ou não está em sala de espera. Parando verificação.');
-              clearInterval(intervalId);
-            }
+            // Enviar mensagem para o iframe para tentar entrar
+            iframeElement.contentWindow.postMessage({
+              action: 'daily-join-meeting'
+            }, '*');
           }
-        }, 2000);
+        };
         
-        // Limpar o intervalo após 30 segundos (15 tentativas) para evitar consumo de recursos
+        // Adicionar ouvinte de eventos
+        window.addEventListener('message', handleMessage);
+        
+        // Configurar cleanup do ouvinte após 30 segundos
         setTimeout(() => {
-          clearInterval(intervalId);
+          window.removeEventListener('message', handleMessage);
         }, 30000);
       } catch (error) {
-        console.error('Erro ao tentar interagir com o iframe Daily.co:', error);
+        console.error('Erro ao configurar comunicação com iframe Daily.co:', error);
       }
     }
   }, []);

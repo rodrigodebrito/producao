@@ -99,12 +99,13 @@ class WebRTCSession {
         mediaCodecs: mediasoupOptions.router.mediaCodecs
       });
       
-      // Inicializar mixer de áudio
+      // Inicializar mixer de áudio (correção do construtor)
       this.audioMixer = new AudioMixer.Mixer({
         channels: 2,
         bitDepth: 16,
         sampleRate: 48000,
-        clearInterval: 250
+        clearInterval: 250,
+        volume: 150
       });
       
       logger.info(`Sessão ${this.id} inicializada com sucesso`);
@@ -402,7 +403,7 @@ class WebRTCSession {
       const outputStream = fs.createWriteStream(this.outputFile);
       
       // Criar mixer de áudio com configurações otimizadas
-      this.audioMixer = new AudioMixer({
+      this.audioMixer = new AudioMixer.Mixer({
         channels: 2,
         bitDepth: 16,
         sampleRate: 48000,
