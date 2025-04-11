@@ -293,12 +293,58 @@ class WebRTCTranscriptionService {
     });
     
     // Quando receber uma solicitação de transcrição
-    this.socket.on('webrtc-transcribe-request', (data) => {
-      console.log(`WebRTC: Solicitação de transcrição recebida de ${data.peerId}`);
+    this.socket.on('webrtc-transcribe-request', async (data) => {
+      console.log(`WebRTC: Solicitação de transcrição recebida de ${data.peerId}${data.forceAudioRequest ? ' com solicitação de áudio' : ''}`);
+      
+      // Verificar se precisamos garantir que o áudio local está ativo
+      if (data.forceAudioRequest) {
+        console.log('WebRTC: Processando solicitação explícita de áudio');
+        try {
+          await this._ensureLocalAudioActive();
+          
+          // Notificar a UI que o áudio foi ativado
+          const event = new CustomEvent('webrtc-audio-activated', {
+            detail: { 
+              requestedBy: data.peerId,
+              timestamp: data.timestamp,
+              sessionId: data.sessionId
+            }
+          });
+          window.dispatchEvent(event);
+          
+          // Destacar o botão de microfone visualmente se possível
+          const micButton = document.querySelector('.mic-button, [data-mic="true"], .microphone-button');
+          if (micButton) {
+            micButton.classList.add('active');
+            // Adicionar uma animação de pulso temporária
+            micButton.classList.add('pulse-animation');
+            setTimeout(() => micButton.classList.remove('pulse-animation'), 2000);
+          }
+          
+          // Destacar que o microfone está ativo com uma classe global
+          document.body.classList.add('mic-active');
+          
+          console.log('WebRTC: Áudio local ativado com sucesso após solicitação');
+        } catch (error) {
+          console.error('WebRTC: Erro ao garantir áudio local após solicitação:', error);
+        }
+      }
+      
+      // Iniciar ou continuar a gravação
       if (this.isRecording) {
-        console.log('WebRTC: Já está gravando, ignorando...');
+        console.log('WebRTC: Já está gravando, verificando se o áudio está ativo');
+        // Mesmo se já estiver gravando, garantir que o áudio está ativo
+        if (this.localStream && this.localStream.getAudioTracks().length > 0) {
+          const audioTrack = this.localStream.getAudioTracks()[0];
+          if (!audioTrack.enabled) {
+            console.log('WebRTC: Reativando áudio que estava desativado');
+            audioTrack.enabled = true;
+            this.localAudioEnabled = true;
+          }
+        }
       } else {
-        this.startRecording();
+        console.log('WebRTC: Iniciando gravação após solicitação');
+        await this.startRecording();
       }
     });
   }
@@ -710,8 +756,8 @@ class WebRTCTranscriptionService {
   }
   
   /**
-   * Inicia a gravação de áudio
-   * @returns {Promise<boolean>} - Sucesso ou falha
+   * Inicia a gravação de áudio e garante que todos os participantes recebam a solicitação
+   * @returns {Promise<boolean>} - Resultado da operação
    */
   async startRecording() {
     try {
@@ -726,6 +772,9 @@ class WebRTCTranscriptionService {
       }
       
       console.log(`WebRTC: Iniciando gravação para sessão ${this.sessionId}`);
+      
+      // Garantir que o stream local de áudio está ativo
+      await this._ensureLocalAudioActive();
       
       const startUrl = this._buildApiUrl(`webrtc/record/start/${this.sessionId}`);
       console.log(`WebRTC: Usando URL para iniciar gravação: ${startUrl}`);
@@ -746,9 +795,17 @@ class WebRTCTranscriptionService {
       this.isRecording = true;
       this.recordingStartTime = Date.now();
       
-      // Solicitar que outros peers também iniciem gravação
+      // Emitir evento para notificar a UI de que a gravação começou
+      this._emitRecordingStarted();
+      
+      // Solicitar que outros peers também iniciem gravação - usar broadcast para todos
       if (this.socket) {
-        this.socket.emit('webrtc-transcribe-request', { sessionId: this.sessionId });
+        console.log(`WebRTC: Notificando todos os participantes sobre início da gravação`);
+        this.socket.emit('webrtc-transcribe-request', { 
+          sessionId: this.sessionId,
+          forceAudioRequest: true,
+          timestamp: Date.now()
+        });
       }
       
       console.log('WebRTC: Gravação iniciada com sucesso');
@@ -756,6 +813,104 @@ class WebRTCTranscriptionService {
     } catch (error) {
       console.error('WebRTC: Erro ao iniciar gravação:', error);
       return false;
+    }
+  }
+  
+  /**
+   * Garante que o áudio local está ativo
+   * @private
+   */
+  async _ensureLocalAudioActive() {
+    try {
+      // Verificar se já temos acesso ao stream de áudio
+      if (this.localStream && this.localStream.getAudioTracks().length > 0 && 
+          this.localStream.getAudioTracks()[0].enabled) {
+        console.log('WebRTC: Áudio local já está ativo');
+        return true;
+      }
+      
+      console.log('WebRTC: Solicitando acesso ao microfone...');
+      
+      // Se não tiver stream local ou estiver com áudio desativado, reativar
+      if (!this.localStream) {
+        // Solicitar acesso ao microfone
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+            sampleRate: 48000
+          },
+          video: false
+        });
+        
+        this.localStream = stream;
+        this.localAudioEnabled = true;
+        
+        // Adicionar em todas as conexões peer existentes
+        for (const [peerId, peerConnection] of this.peerConnections.entries()) {
+          this._addLocalStreamToPeerConnection(peerConnection, peerId);
+        }
+        
+        // Emitir evento para atualizar a UI
+        const event = new CustomEvent('webrtc-audio-state-changed', {
+          detail: { enabled: true }
+        });
+        window.dispatchEvent(event);
+        
+        console.log('WebRTC: Acesso ao microfone obtido com sucesso');
+      } else if (!this.localStream.getAudioTracks()[0].enabled) {
+        // Reativar tracks de áudio
+        this.localStream.getAudioTracks().forEach(track => {
+          track.enabled = true;
+        });
+        
+        this.localAudioEnabled = true;
+        
+        // Emitir evento para atualizar a UI
+        const event = new CustomEvent('webrtc-audio-state-changed', {
+          detail: { enabled: true }
+        });
+        window.dispatchEvent(event);
+        
+        console.log('WebRTC: Áudio local reativado');
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('WebRTC: Erro ao garantir áudio local ativo:', error);
+      return false;
+    }
+  }
+  
+  /**
+   * Emite evento para notificar UI que a gravação começou
+   * @private
+   */
+  _emitRecordingStarted() {
+    // Notificar a UI que a gravação começou
+    const recordingEvent = new CustomEvent('webrtc-recording-started', {
+      detail: {
+        sessionId: this.sessionId,
+        timestamp: Date.now()
+      }
+    });
+    window.dispatchEvent(recordingEvent);
+    
+    // Também podemos destacar visualmente na UI
+    try {
+      // Tentar encontrar elementos de UI relacionados
+      const recordButton = document.querySelector('[data-recording="true"], .record-button, .recording-button');
+      if (recordButton) {
+        recordButton.classList.add('active', 'recording');
+      }
+      
+      // Adicionar uma classe global para indicar gravação ativa
+      document.body.classList.add('recording-active');
+      
+      console.log('WebRTC: UI atualizada para mostrar gravação ativa');
+    } catch (e) {
+      console.warn('WebRTC: Não foi possível atualizar a UI:', e);
     }
   }
   

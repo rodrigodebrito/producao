@@ -238,14 +238,34 @@ io.on('connection', (socket) => {
   // Evento para solicitação de transcrição via WebRTC
   socket.on('webrtc-transcribe-request', (data) => {
     if (data && data.sessionId) {
-      console.log(`[${socket.id}] Solicitação de transcrição WebRTC para sessão ${data.sessionId}`);
+      console.log(`[${socket.id}] Solicitação de transcrição WebRTC para sessão ${data.sessionId}${data.forceAudioRequest ? ' com solicitação de áudio' : ''}`);
       
-      // Informar outros na sala
-      socket.to(data.sessionId).emit('webrtc-transcribe-request', {
+      // Verificar se o cliente está na sala
+      const rooms = Array.from(socket.rooms);
+      if (!rooms.includes(data.sessionId)) {
+        console.log(`[${socket.id}] Socket não está na sala ${data.sessionId}, associando agora`);
+        socket.join(data.sessionId);
+      }
+      
+      // Melhorar a transmissão para garantir que todos recebam o evento
+      const eventData = {
         peerId: socket.id,
         sessionId: data.sessionId,
-        timestamp: Date.now()
-      });
+        forceAudioRequest: data.forceAudioRequest === true,
+        priority: data.priority || 'normal',
+        timestamp: Date.now(),
+        initiatorId: socket.id
+      };
+      
+      console.log(`[${socket.id}] Enviando solicitação de transcrição para todos os participantes na sala ${data.sessionId}`);
+      
+      // Enviar para TODOS na sala, incluindo quem enviou (para garantir feedback na UI)
+      io.to(data.sessionId).emit('webrtc-transcribe-request', eventData);
+      
+      // Adicionar log para facilitar o diagnóstico
+      const clients = io.sockets.adapter.rooms.get(data.sessionId);
+      const numClients = clients ? clients.size : 0;
+      console.log(`[${socket.id}] Solicitação enviada para ${numClients} cliente(s) na sessão ${data.sessionId}`);
     }
   });
   

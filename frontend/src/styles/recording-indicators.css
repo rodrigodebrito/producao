@@ -1,0 +1,96 @@
+/* Indicadores visuais para gravação e microfone ativo */
+
+/* Classe para indicar gravação ativa - aplicada ao body */
+body.recording-active {
+  --recording-color: rgba(255, 0, 0, 0.7);
+}
+
+/* Classe para indicar microfone ativo - aplicada ao body */
+body.mic-active {
+  --mic-color: rgba(0, 255, 0, 0.7);
+}
+
+/* Indicador de gravação - ponto pulsante no canto superior direito */
+body.recording-active::after {
+  content: '';
+  position: fixed;
+  top: 15px;
+  right: 15px;
+  width: 12px;
+  height: 12px;
+  background-color: var(--recording-color, rgba(255, 0, 0, 0.7));
+  border-radius: 50%;
+  z-index: 9999;
+  animation: pulse 2s infinite;
+}
+
+/* Estilo para botão de gravação ativo */
+.record-button.active, .recording-button.active {
+  background-color: var(--recording-color, rgba(255, 0, 0, 0.7)) !important;
+  box-shadow: 0 0 8px var(--recording-color, rgba(255, 0, 0, 0.7)) !important;
+}
+
+/* Estilo para botão de microfone ativo */
+.mic-button.active, [data-mic="true"].active, .microphone-button.active {
+  background-color: var(--mic-color, rgba(0, 255, 0, 0.7)) !important;
+  box-shadow: 0 0 8px var(--mic-color, rgba(0, 255, 0, 0.7)) !important;
+}
+
+/* Animação de pulso para indicar atividade */
+@keyframes pulse {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.7);
+  }
+  
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 5px rgba(255, 0, 0, 0);
+  }
+  
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(255, 0, 0, 0);
+  }
+}
+
+/* Animação de pulso para o botão de microfone */
+.pulse-animation {
+  animation: mic-pulse 1s 3;
+}
+
+@keyframes mic-pulse {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* Estilos para mostrar feedback visual durante a gravação */
+.recording-feedback {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background-color: rgba(0, 0, 0, 0.7);
+  color: white;
+  padding: 10px 15px;
+  border-radius: 5px;
+  font-size: 14px;
+  z-index: 9999;
+  display: none;
+  animation: fade-in 0.3s ease-in-out;
+}
+
+body.recording-active .recording-feedback {
+  display: block;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+} 

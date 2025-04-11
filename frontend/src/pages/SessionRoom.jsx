@@ -7,9 +7,11 @@ import { AIProvider } from '../contexts/AIContext';
 import AIToolsContainer from '../components/AIComponents';
 import AIResultsPanel from '../components/AIResultsPanel';
 import ConstellationField from '../components/ConstellationField/index';
+import RecordingFeedback from '../components/RecordingFeedback';
 import io from 'socket.io-client';
 import { SOCKET_URL } from '../config';
 import '../styles/SessionRoom.css';
+import '../styles/recording-indicators.css';
 
 const SessionRoom = () => {
   const { sessionId } = useParams();
@@ -503,6 +505,9 @@ const SessionRoom = () => {
   return (
     <AIProvider>
       <div className={`session-room ${showConstellation ? 'with-constellation' : ''}`} ref={sessionRoomRef}>
+        {/* Feedback visual de gravação e microfone */}
+        <RecordingFeedback />
+        
         <div 
           className={`session-video-container ${isPipMode ? 'pip-mode' : ''} ${fullScreenElement ? 'fullscreen' : ''}`}
           style={isPipMode ? { 
