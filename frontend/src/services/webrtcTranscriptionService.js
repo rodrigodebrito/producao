@@ -31,6 +31,9 @@ class WebRTCTranscriptionService {
         { urls: 'stun:stun2.l.google.com:19302' }
       ]
     };
+    
+    // Logs para debug de API
+    console.log('WebRTC: URL da API configurada como:', API_URL);
   }
   
   /**
@@ -79,6 +82,26 @@ class WebRTCTranscriptionService {
     }
     
     return config;
+  }
+  
+  /**
+   * Constrói uma URL de API correta, evitando duplicação de /api
+   * @param {string} path - Caminho relativo da API (sem /api inicial)
+   * @returns {string} URL completa e correta para a API
+   * @private
+   */
+  _buildApiUrl(path) {
+    // Remover barras iniciais duplicadas se existirem
+    const cleanPath = path.startsWith('/') ? path.substring(1) : path;
+    
+    // Construir URL corretamente com base na configuração de API_URL
+    if (API_URL.endsWith('/api')) {
+      return `${API_URL}/${cleanPath}`;
+    } else if (API_URL.includes('/api/')) {
+      return `${API_URL.split('/api/')[0]}/api/${cleanPath}`;
+    } else {
+      return `${API_URL}/api/${cleanPath}`;
+    }
   }
   
   /**
@@ -134,8 +157,11 @@ class WebRTCTranscriptionService {
       const config = this._getRequestConfig();
       console.log('WebRTC: Config de requisição:', config);
       
+      const sessionUrl = this._buildApiUrl(`webrtc/session/${this.sessionId}`);
+      console.log(`WebRTC: Usando URL para inicializar sessão: ${sessionUrl}`);
+      
       const response = await axios.post(
-        `${API_URL}/webrtc/session/${this.sessionId}`,
+        sessionUrl,
         {},  // Corpo vazio da requisição
         config
       );
@@ -503,10 +529,13 @@ class WebRTCTranscriptionService {
       
       console.log(`WebRTC: Iniciando gravação para sessão ${this.sessionId}`);
       
+      const startUrl = this._buildApiUrl(`webrtc/record/start/${this.sessionId}`);
+      console.log(`WebRTC: Usando URL para iniciar gravação: ${startUrl}`);
+      
       // Solicitar início da gravação no servidor
       const config = this._getRequestConfig();
       const response = await axios.post(
-        `${API_URL}/webrtc/record/start/${this.sessionId}`,
+        startUrl,
         {},  // Corpo vazio da requisição
         config
       );
@@ -550,10 +579,13 @@ class WebRTCTranscriptionService {
       
       console.log(`WebRTC: Parando gravação para sessão ${this.sessionId}`);
       
+      const stopUrl = this._buildApiUrl(`webrtc/record/stop/${this.sessionId}`);
+      console.log(`WebRTC: Usando URL para parar gravação: ${stopUrl}`);
+      
       // Solicitar parada da gravação no servidor
       const config = this._getRequestConfig();
       const response = await axios.post(
-        `${API_URL}/webrtc/record/stop/${this.sessionId}`,
+        stopUrl,
         {},  // Corpo vazio da requisição
         config
       );
@@ -602,10 +634,13 @@ class WebRTCTranscriptionService {
       
       console.log(`WebRTC: Solicitando transcrição parcial para sessão ${this.sessionId}`);
       
+      const transcribeUrl = this._buildApiUrl(`webrtc/record/transcribe/${this.sessionId}`);
+      console.log(`WebRTC: Usando URL para transcrição parcial: ${transcribeUrl}`);
+      
       // Solicitar transcrição parcial no servidor
       const config = this._getRequestConfig();
       const response = await axios.post(
-        `${API_URL}/webrtc/record/transcribe/${this.sessionId}`,
+        transcribeUrl,
         {},  // Corpo vazio da requisição
         config
       );

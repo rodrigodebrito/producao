@@ -804,6 +804,17 @@ class WebRTCSession {
       const transcription = await openaiService.transcribeAudioVideo(fileToTranscribe, 'pt');
       
       logger.info(`Transcrição concluída com sucesso, tamanho: ${transcription.length} caracteres`);
+      
+      // Se a transcrição estiver vazia, retornar um texto padrão
+      if (!transcription || transcription.trim() === '') {
+        logger.info('Transcrição vazia recebida, gerando texto de resposta padrão');
+        
+        const defaultText = "Nenhuma fala detectada. A gravação pode conter apenas silêncio ou ruído de fundo. " + 
+                           "Tente falar mais próximo do microfone ou aumentar o volume.";
+        
+        return defaultText;
+      }
+      
       return transcription;
     } catch (error) {
       logger.error(`Erro ao transcrever áudio: ${error.message}`);
