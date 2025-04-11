@@ -3,7 +3,8 @@ const fs = require('fs');
 const { PrismaClient } = require('@prisma/client');
 const openaiService = require('../services/ai/openai.service');
 const trainingService = require('../services/ai/training.service');
-const logger = require('../utils/logger');
+const { createLogger } = require('../utils/logger');
+const logger = createLogger('transcription-controller');
 
 const prisma = new PrismaClient();
 

@@ -1,7 +1,9 @@
-const OpenAI = require('openai');
-require('dotenv').config();
 const fs = require('fs');
-const logger = require('../../utils/logger');
+const path = require('path');
+const { createLogger } = require('../../utils/logger');
+const logger = createLogger('openai-service');
+const { OpenAI } = require('openai');
+require('dotenv').config();
 const tokenUsageService = require('./token-usage.service');
 
 // Configuração do cliente OpenAI

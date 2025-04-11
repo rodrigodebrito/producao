@@ -1,6 +1,7 @@
 const { OpenAI } = require('openai');
 const prisma = require('../../utils/prisma');
-const logger = require('../../utils/logger');
+const { createLogger } = require('../../utils/logger');
+const logger = createLogger('training-service');
 const ytdl = require('ytdl-core');
 const fs = require('fs');
 const path = require('path');
@@ -8,6 +9,7 @@ const mammoth = require('mammoth');
 const pdf = require('pdf-parse');
 const { PDFDocument } = require('pdf-lib');
 const embeddingService = require('./embedding.service');
+const openaiService = require('./openai.service');
 
 class TrainingService {
   constructor() {

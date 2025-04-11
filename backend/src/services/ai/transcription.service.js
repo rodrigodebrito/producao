@@ -1,10 +1,12 @@
 const { OpenAI } = require('openai');
 const fs = require('fs');
 const path = require('path');
-const logger = require('../../utils/logger');
+const { createLogger } = require('../../utils/logger');
+const logger = createLogger('transcription-service');
 const ffmpeg = require('fluent-ffmpeg');
 const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
 const FormData = require('form-data');
+const openaiService = require('./openai.service');
 
 // Configurar ffmpeg
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);

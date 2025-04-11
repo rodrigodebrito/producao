@@ -1,7 +1,8 @@
 // Removendo import com require e usando uma variável que será preenchida depois
 // const { pipeline } = require('@xenova/transformers');
 const prisma = require('../../utils/prisma');
-const logger = require('../../utils/logger');
+const { createLogger } = require('../../utils/logger');
+const logger = createLogger('embedding-service');
 
 let pipeline; // Será preenchido após importação dinâmica
 

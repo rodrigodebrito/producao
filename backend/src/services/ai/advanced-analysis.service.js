@@ -5,7 +5,11 @@
  */
 const { OpenAI } = require('openai');
 const { PrismaClient } = require('@prisma/client');
-const logger = require('../../utils/logger');
+const fs = require('fs');
+const path = require('path');
+const { Configuration, OpenAIApi } = require('openai');
+const { createLogger } = require('../../utils/logger');
+const logger = createLogger('advanced-analysis-service');
 const trainingService = require('./training.service');
 
 // Inicializar clientes

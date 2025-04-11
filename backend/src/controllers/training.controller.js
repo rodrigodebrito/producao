@@ -1,7 +1,8 @@
 const trainingService = require('../services/ai/training.service');
 const embeddingService = require('../services/ai/embedding.service');
 const prisma = require('../utils/prisma');
-const logger = require('../utils/logger');
+const { createLogger } = require('../utils/logger');
+const logger = createLogger('training-controller');
 const fs = require('fs');
 const path = require('path');
 const pdf = require('pdf-parse');
