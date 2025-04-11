@@ -389,28 +389,9 @@ class WebRTCSession {
       
       logger.info(`Verificando participantes: encontrados ${participantCount} participantes, ${this.realParticipantCount} com áudio real`);
       
-      // Garantir que pelo menos a entrada do mixer está funcionando, mesmo sem participantes
-      if (participantCount === 0 || this.realParticipantCount === 0) {
-        logger.info('Nenhum participante real encontrado, adicionando input virtual para garantir dados de áudio');
-        
-        // Criar um input para áudio silencioso/teste
-        const virtualInput = this.audioMixer.input({
-          channels: 2,
-          volume: 50, // 50% do volume
-          bitDepth: 16,
-          sampleRate: 48000,
-          name: 'virtual-participant'
-        });
-        
-        // Armazenar o input virtual para referência
-        this.virtualInput = virtualInput;
-        
-        // Gerar dados de áudio para este input
-        this._simulateAudioData(virtualInput, 'virtual');
-        logger.info('Input virtual adicionado e gerando dados de áudio');
-      } else {
-        logger.info(`Capturando áudio de ${participantCount} producers de ${this.realParticipantCount} participantes reais`);
-      }
+      // Não adicionar mais dados simulados de áudio que causam problemas
+      // Aguardar pela entrada de áudio real dos participantes
+      logger.info(`Inicializando gravação apenas com participantes reais (${this.realParticipantCount})`);
       
       logger.info(`Gravação iniciada para sessão ${this.id}, salvando em ${this.outputFile}`);
       
@@ -460,20 +441,9 @@ class WebRTCSession {
             }
           }
           
-          if (!hasRealParticipants && !this.virtualInput) {
-            logger.info('Nenhum participante real encontrado ainda, adicionando input virtual');
-            
-            // Adicionar input virtual se não existir
-            const virtualInput = this.audioMixer.input({
-              channels: 2,
-              volume: 50,
-              bitDepth: 16,
-              sampleRate: 48000,
-              name: 'virtual-participant-backup'
-            });
-            
-            this.virtualInput = virtualInput;
-            this._simulateAudioData(virtualInput, 'virtual-backup');
+          // Não adicionamos um input virtual, apenas logamos que não existem participantes reais
+          if (!hasRealParticipants) {
+            logger.info('Nenhum participante real encontrado ainda. Esperando conexão de áudio...');
           }
         }
       } catch (error) {
@@ -560,44 +530,21 @@ class WebRTCSession {
    */
   _simulateAudioData(input, participantId) {
     try {
-      // Criar um buffer com 1 segundo de áudio silencioso (ou tom de teste)
+      // Criar um buffer com 1 segundo de áudio silencioso
       // Para 48kHz, 16-bit, estéreo, 1 segundo = 48000 * 2 * 2 bytes = 192000 bytes
       const sampleRate = 48000;
-      const duration = 3; // 3 segundos de dados
+      const duration = 2; // 2 segundos de dados
       const bufferSize = sampleRate * 2 * 2 * duration; // 2 canais, 2 bytes por amostra
       
-      logger.info(`Gerando ${duration} segundos de áudio para participante ${participantId}`);
+      logger.info(`Gerando ${duration} segundos de áudio silencioso para participante ${participantId}`);
       
-      // Criar buffer de áudio
+      // Criar buffer de áudio completamente silencioso
       const buffer = Buffer.alloc(bufferSize);
       
-      // Preencher o buffer com um tom de teste (senóide de 440Hz)
-      // ou preencher com zeros para silêncio
-      const useSilence = false; // true = silêncio, false = tom de teste
-      
-      if (useSilence) {
-        // Já está preenchido com zeros
-        logger.info(`Usando silêncio para participante ${participantId}`);
-      } else {
-        // Gerar um tom de teste (senoide simples)
-        const frequency = 440; // Hz (nota Lá)
-        const amplitude = 0.1; // 10% do volume máximo (valor baixo para não incomodar)
-        
-        logger.info(`Gerando tom de teste de ${frequency}Hz para participante ${participantId}`);
-        
-        for (let i = 0; i < sampleRate * duration; i++) {
-          // Calcular o valor da senoide
-          const sampleValue = Math.sin(2 * Math.PI * frequency * i / sampleRate) * amplitude;
-          
-          // Converter para inteiro de 16 bits e escrever nos dois canais
-          const intValue = Math.floor(sampleValue * 32767); // 32767 = 2^15 - 1 (máximo para int16)
-          
-          // Canal esquerdo
-          buffer.writeInt16LE(intValue, i * 4);
-          // Canal direito
-          buffer.writeInt16LE(intValue, i * 4 + 2);
-        }
-      }
+      // Preencher com um silêncio absoluto (zeros)
+      // O buffer já está inicializado com zeros, então não precisamos preencher
+
+      logger.info(`Usando silêncio para participante ${participantId}`);
       
       // Definir um intervalo para enviar dados para o mixer
       const chunkSize = 4096; // Tamanho do chunk em bytes
