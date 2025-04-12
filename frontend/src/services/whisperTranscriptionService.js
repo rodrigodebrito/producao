@@ -29,12 +29,12 @@ class WhisperTranscriptionService {
     ];
     this.currentFileName = null;
     
-    // Configurações para detecção de silêncio
+    // Configurações para detecção de silêncio - AJUSTADO PARA SER MENOS SENSÍVEL
     this.silenceDetectionEnabled = true;
-    this.silenceThreshold = -45; // dB (mais negativo = mais sensível)
-    this.silenceDuration = 5000; // AJUSTADO: 5 segundos de silêncio para enviar e parar
-    this.maxChunkDuration = 15000; // AJUSTADO: 15 segundos máximos por chunk (mais rápido)
-    this.minChunkDuration = 1500; // AJUSTADO: 1.5 segundos mínimos por chunk
+    this.silenceThreshold = -60; // dB (mais negativo = mais sensível) - AJUSTADO PARA -60
+    this.silenceDuration = 15000; // AJUSTADO: 15 segundos de silêncio para enviar e parar
+    this.maxChunkDuration = 30000; // AJUSTADO: 30 segundos máximos por chunk
+    this.minChunkDuration = 1500; // 1.5 segundos mínimos por chunk
     
     // Estado de detecção de silêncio
     this.audioContext = null;
@@ -58,9 +58,9 @@ class WhisperTranscriptionService {
     // NOVO: Flag para verificar se estamos em pausa por silêncio
     this.pausedForSilence = false;
     
-    // NOVO: Configuração para detecção de voz após pausa
+    // NOVO: Configuração para detecção de voz após pausa - AJUSTADO PARA SER MENOS SENSÍVEL
     this.voiceDetectionEnabled = true;
-    this.voiceThreshold = -40; // dB (menos sensível que o silêncio)
+    this.voiceThreshold = -50; // dB (menos sensível que o silêncio) - AJUSTADO PARA -50
     this.voiceDetectionInterval = null;
 
     // NOVO: Variáveis para suporte ao Daily.co
@@ -655,11 +655,21 @@ class WhisperTranscriptionService {
         // Silêncio suficiente e chunk com duração mínima, processar áudio
         console.log(`Silêncio atingiu ${Math.round(silenceDuration/1000)}s, processando áudio e pausando gravação...`);
         
-        // Processar o chunk atual
-        this._processCurrentChunk();
-        
-        // NOVO: Pausar gravação por inatividade
-        this._pauseRecordingForSilence();
+        // Processar o chunk atual apenas se houver chunks válidos
+        if (this.audioChunks && this.audioChunks.length > 0) {
+          this._processCurrentChunk();
+          
+          // NOVO: Pausar gravação por inatividade
+          this._pauseRecordingForSilence();
+        } else {
+          console.log('Detectado silêncio prolongado, mas não há áudio para processar. Continuando gravação...');
+          // Resetar contagem de silêncio sem pausar
+          this.silenceStart = null;
+          
+          // Continuar detecção
+          requestAnimationFrame(() => this._detectSilence());
+          return;
+        }
         
         return; // Não continuar a detecção
       }
@@ -693,6 +703,20 @@ class WhisperTranscriptionService {
       // Se a duração for menor que o mínimo, ignorar
       if (duration < this.minChunkDuration) {
         console.log(`Duração muito curta (${Math.round(duration/1000)}s), mínimo é ${Math.round(this.minChunkDuration/1000)}s. Ignorando chunk.`);
+        return;
+      }
+      
+      // Verificar se há dados de áudio válidos nos chunks
+      let hasValidAudio = false;
+      for (const chunk of this.audioChunks) {
+        if (chunk && chunk.size > 0) {
+          hasValidAudio = true;
+          break;
+        }
+      }
+      
+      if (!hasValidAudio) {
+        console.log('Todos os chunks de áudio estão vazios, ignorando processamento');
         return;
       }
       
