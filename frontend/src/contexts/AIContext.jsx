@@ -130,11 +130,18 @@ export const AIProvider = ({ children }) => {
             const responseData = await response.json();
             console.log('[AIContext] Resposta obtida com sucesso:', responseData);
             
-            // Verificar se a resposta contém dados de transcrição
-            if (responseData.data || responseData.transcripts || responseData.transcriptions) {
+            // CORREÇÃO: Verificar todos os formatos possíveis de resposta
+            if (responseData && (
+                (responseData.data && responseData.data.length > 0) ||
+                (responseData.transcripts && responseData.transcripts.length > 0) ||
+                (responseData.transcriptions && responseData.transcriptions.length > 0) ||
+                (Array.isArray(responseData) && responseData.length > 0)
+              )) {
               transcriptData = responseData;
               successfulEndpoint = endpoint;
               break;
+            } else {
+              console.log('[AIContext] Endpoint retornou dados, mas sem transcrições válidas');
             }
           } else {
             console.warn(`[AIContext] Erro no endpoint ${endpoint}: ${response.status}`);
@@ -152,16 +159,33 @@ export const AIProvider = ({ children }) => {
       
       console.log(`[AIContext] Dados de transcrição obtidos do endpoint: ${successfulEndpoint}`);
       
-      // Extrair os dados da transcrição (diferentes endpoints podem ter formatos diferentes)
-      const transcriptItems = transcriptData.data || 
-                              transcriptData.transcripts || 
-                              transcriptData.transcriptions || 
-                              [];
+      // CORREÇÃO: Extrair os dados da transcrição (diferentes formatos possíveis)
+      let transcriptItems = [];
+      
+      if (Array.isArray(transcriptData)) {
+        // Se a resposta já é um array
+        transcriptItems = transcriptData;
+      } else if (transcriptData.data && Array.isArray(transcriptData.data)) {
+        // Formato { data: [...] }
+        transcriptItems = transcriptData.data;
+      } else if (transcriptData.transcripts && Array.isArray(transcriptData.transcripts)) {
+        // Formato { transcripts: [...] }
+        transcriptItems = transcriptData.transcripts;
+      } else if (transcriptData.transcriptions && Array.isArray(transcriptData.transcriptions)) {
+        // Formato { transcriptions: [...] }
+        transcriptItems = transcriptData.transcriptions;
+      }
+      
+      console.log(`[AIContext] Encontradas ${transcriptItems.length} transcrições processáveis`);
       
       if (transcriptItems.length > 0) {
-        // Combinar as transcrições em um único texto
+        // CORREÇÃO: Lidar com diferentes estruturas de objeto
         const combinedText = transcriptItems
-          .map(t => `${t.speaker || 'Usuário'}: ${t.content || t.text || t.transcript}`)
+          .map(t => {
+            const speaker = t.speaker || t.user || 'Usuário';
+            const text = t.content || t.text || t.transcript || t.message || '';
+            return `${speaker}: ${text}`;
+          })
           .join('\n');
         
         console.log(`[AIContext] Texto combinado das transcrições: ${combinedText.length} caracteres`);

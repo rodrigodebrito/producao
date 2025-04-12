@@ -987,6 +987,177 @@ class WhisperTranscriptionService {
         console.error('Erro ao acessar microfone para detecção de voz:', err);
       });
   }
+
+  /**
+   * MODIFICADO: Processar a transcrição recebida
+   * @param {Object} response - Resposta da API
+   * @param {Blob} audioBlob - Blob de áudio enviado (para debug)
+   * @private
+   */
+  async _processTranscription(response, audioBlob) {
+    try {
+      // Validar resposta
+      if (!response || !response.data) {
+        throw new Error('Resposta de transcrição inválida');
+      }
+      
+      const transcription = response.data.text || response.data.transcript || response.data;
+      console.log(`Transcrição recebida (${transcription.length} caracteres): ${transcription.substring(0, 100)}...`);
+      
+      // Validar transcrição
+      if (!transcription || transcription.trim().length === 0) {
+        console.warn('Transcrição vazia recebida, ignorando...');
+        return false;
+      }
+      
+      // Formato para envio para o AI Context
+      const transcriptionData = {
+        sessionId: this.sessionId || this.extractSessionId(),
+        speaker: 'user', // Definimos 'user' como padrão, poderia ser configurável
+        content: transcription.trim(),
+        timestamp: new Date().toISOString()
+      };
+      
+      // CORREÇÃO: Usar nossa nova função para enviar a transcrição para o backend
+      await this._sendTranscriptionToBackend(transcriptionData);
+      
+      // Adicionar ao estado local, útil para manutenção do histórico
+      // e para casos em que o app não tem conexão com o backend
+      this.transcriptionHistory.push(transcriptionData);
+      
+      // Disparar evento de nova transcrição
+      this._dispatchEvent('transcriptionReceived', {
+        transcript: transcription,
+        ...transcriptionData
+      });
+      
+      // Tentar encontrar o AI Context e salvar a transcrição
+      try {
+        // Notificar via evento global que capturamos transcrição
+        window.dispatchEvent(new CustomEvent('whisper-transcription', { 
+          detail: transcriptionData
+        }));
+        
+        // Tentar usar o AIContext se disponível
+        if (window.__AI_CONTEXT && window.__AI_CONTEXT.saveTranscript) {
+          console.log('AIContext encontrado, salvando transcrição via contexto...');
+          await window.__AI_CONTEXT.saveTranscript(transcriptionData);
+        }
+      } catch (aiContextError) {
+        console.error('Erro ao interagir com AIContext:', aiContextError);
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('Erro ao processar transcrição:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Envia uma transcrição para o backend
+   * @param {Object} data - Dados da transcrição
+   * @returns {Promise<Object>} Resultado do envio
+   * @private
+   */
+  async _sendTranscriptionToBackend(data) {
+    try {
+      // Obter token de autenticação
+      const authToken = localStorage.getItem('authToken') || 
+                        sessionStorage.getItem('authToken') || 
+                        localStorage.getItem('token') || 
+                        sessionStorage.getItem('token');
+      
+      if (!authToken) {
+        console.error('Whisper: Token de autenticação não encontrado para envio de transcrição');
+        return { success: false, error: 'Token de autenticação não encontrado' };
+      }
+      
+      // CORREÇÃO: Garantir que temos sessionId e formatação correta dos dados
+      if (!data.sessionId) {
+        data.sessionId = this.sessionId || this.extractSessionId();
+      }
+      
+      // CORREÇÃO: Garantir que temos o speaker (padrão 'user')
+      if (!data.speaker) {
+        data.speaker = 'user';
+      }
+      
+      // CORREÇÃO: Garantir que temos o conteúdo na propriedade correta
+      if (data.transcript && !data.content) {
+        data.content = data.transcript;
+      }
+      
+      console.log('Whisper: Enviando transcrição para backend:', {
+        sessionId: data.sessionId,
+        speaker: data.speaker,
+        contentLength: data.content?.length || 0
+      });
+      
+      // CORREÇÃO: Tentar enviar para múltiplos possíveis endpoints
+      const endpoints = [
+        '/api/ai/transcriptions',
+        '/api/ai/transcript',
+        'https://theraconnect-prd.onrender.com/api/ai/transcriptions',
+        'https://theraconnect-prd.onrender.com/api/ai/transcript'
+      ];
+      
+      // Tentar cada endpoint até conseguir
+      let success = false;
+      let response = null;
+      let error = null;
+      
+      for (const endpoint of endpoints) {
+        try {
+          console.log(`Whisper: Tentando enviar para endpoint: ${endpoint}`);
+          
+          response = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${authToken}`
+            },
+            body: JSON.stringify(data)
+          });
+          
+          if (response.ok) {
+            success = true;
+            console.log(`Whisper: Transcrição enviada com sucesso para: ${endpoint}`);
+            break;
+          } else {
+            const errorText = await response.text();
+            console.warn(`Whisper: Erro ao enviar para ${endpoint} (${response.status}): ${errorText}`);
+          }
+        } catch (endpointError) {
+          console.warn(`Whisper: Erro de conexão com ${endpoint}:`, endpointError);
+          error = endpointError;
+        }
+      }
+      
+      // Se conseguimos sucesso em algum endpoint
+      if (success) {
+        try {
+          const result = await response.json();
+          console.log('Whisper: Resposta do backend:', result);
+          return { success: true, data: result };
+        } catch (jsonError) {
+          // Se a resposta não for JSON, consideramos sucesso mesmo assim
+          console.log('Whisper: Resposta não é JSON, mas transcrição foi enviada');
+          return { success: true };
+        }
+      }
+      
+      // Se chegamos aqui, nenhum endpoint funcionou
+      console.error('Whisper: Todos os endpoints falharam ao enviar transcrição');
+      return { 
+        success: false, 
+        error: error?.message || 'Falha ao enviar transcrição para todos os endpoints'
+      };
+    } catch (error) {
+      console.error('Whisper: Erro ao enviar transcrição:', error);
+      return { success: false, error: error.message };
+    }
+  }
 }
 
 // Exportar como singleton
