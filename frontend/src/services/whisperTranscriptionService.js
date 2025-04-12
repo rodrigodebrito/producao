@@ -1390,21 +1390,24 @@ class WhisperTranscriptionService {
           console.log('AIContext encontrado, salvando transcrição via contexto...');
           const result = await window.__AI_CONTEXT.saveTranscript(transcriptionData);
           
-          // MELHORIA: Se a transcrição foi salva com sucesso, forçar a atualização das sugestões
-          if (result && result.success) {
-            console.log('Transcrição salva com sucesso, forçando atualização de sugestões');
+          // CORREÇÃO: REMOVIDO chamada automática para suggest() para evitar sugestões duplicadas
+          // quando HybridAI e Whisper estão sendo usados simultaneamente
+          
+          // Verificar se existe flag global indicando que o HybridAI está ativo
+          const hybridAIActive = window.__HYBRID_AI_ACTIVE || 
+                                (window.__AI_CONTEXT && window.__AI_CONTEXT.hybridAIActive);
+          
+          if (result && result.success && !hybridAIActive) {
+            // Apenas disparar um evento para notificar que há nova transcrição
+            // sem chamar diretamente o suggest()
+            console.log('Transcrição salva com sucesso, notificando via evento');
             
-            // Se o AIContext tem um método para gerar sugestões, chamá-lo após um breve atraso
-            setTimeout(() => {
-              try {
-                if (window.__AI_CONTEXT.suggest) {
-                  console.log('Chamando suggest() para atualizar sugestões');
-                  window.__AI_CONTEXT.suggest(transcriptionData.sessionId);
-                }
-              } catch (suggestError) {
-                console.error('Erro ao tentar forçar sugestões:', suggestError);
+            window.dispatchEvent(new CustomEvent('whisper-transcription-saved', {
+              detail: { 
+                sessionId: transcriptionData.sessionId,
+                length: transcriptionData.content.length
               }
-            }, 2000); // Atraso para garantir que o backend teve tempo de processar
+            }));
           }
         }
       } catch (aiContextError) {
