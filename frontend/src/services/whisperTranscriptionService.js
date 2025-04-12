@@ -6,6 +6,203 @@
  */
 import { WHISPER_URL, API_URL } from '../config';
 
+// Injeta um script inicializador para Daily.co se estamos na página principal
+// Este código é executado imediatamente na inicialização e prepara o ambiente para comunicação
+(function initializeDailyCapture() {
+  // Verifica se estamos em uma página com Daily.co
+  if (window.location.href.includes('daily.co') || 
+      document.querySelector('iframe[src*="daily.co"]')) {
+    
+    console.log('[DAILY INIT] Inicializando sistema de captura compatível com Daily.co');
+    
+    // Adiciona um listener global para mensagens postMessage enviadas para o iframe do Daily
+    window.addEventListener('message', function(event) {
+      // Verifica se a mensagem é de origem confiável
+      if (!event.origin.includes('theraconnect') && 
+          !event.origin.includes('terapia-conect') && 
+          !event.origin.includes('localhost')) {
+        return;
+      }
+      
+      // Verifica se a mensagem tem o formato esperado para captura de áudio
+      if (event.data && event.data.type === 'daily-audio-capture-request') {
+        console.log('[DAILY INIT] Recebida solicitação de captura de áudio do WhisperService');
+        
+        // Cria um script para injetar no iframe do Daily
+        const dailyIframe = document.querySelector('iframe[src*="daily.co"]');
+        if (!dailyIframe) {
+          console.warn('[DAILY INIT] Iframe do Daily não encontrado');
+          return;
+        }
+        
+        // Define uma função para capturar áudio do Daily e envia de volta
+        try {
+          // Cria um elemento de script
+          const scriptElement = document.createElement('script');
+          scriptElement.textContent = `
+            (function() {
+              console.log('[DAILY CAPTURE] Script de captura injetado no iframe Daily.co');
+              
+              // Função para capturar áudio do Daily
+              function captureAudioFromDaily() {
+                try {
+                  // Verifica se o objeto daily está disponível
+                  if (typeof window.daily === 'undefined' || !window.daily) {
+                    console.warn('[DAILY CAPTURE] Objeto daily não encontrado');
+                    window.parent.postMessage({
+                      type: 'daily-audio-capture-response',
+                      success: false,
+                      error: 'Objeto daily não encontrado'
+                    }, '*');
+                    return;
+                  }
+                  
+                  // Verifica se a chamada está ativa
+                  const callState = window.daily.callState();
+                  if (!callState || callState === 'left-meeting') {
+                    console.warn('[DAILY CAPTURE] Chamada não está ativa');
+                    window.parent.postMessage({
+                      type: 'daily-audio-capture-response',
+                      success: false,
+                      error: 'Chamada não está ativa'
+                    }, '*');
+                    return;
+                  }
+                  
+                  // Obtém participantes
+                  const participants = window.daily.participants();
+                  if (!participants) {
+                    console.warn('[DAILY CAPTURE] Nenhum participante encontrado');
+                    window.parent.postMessage({
+                      type: 'daily-audio-capture-response',
+                      success: false,
+                      error: 'Nenhum participante encontrado'
+                    }, '*');
+                    return;
+                  }
+                  
+                  // Coleta faixas de áudio de todos os participantes
+                  let audioTracks = [];
+                  let participantDetails = [];
+                  
+                  Object.keys(participants).forEach(id => {
+                    const participant = participants[id];
+                    
+                    if (participant.audioTrack) {
+                      audioTracks.push(participant.audioTrack);
+                      participantDetails.push({
+                        id: id,
+                        name: participant.user_name || 'Unknown',
+                        isLocal: participant.local === true
+                      });
+                    }
+                  });
+                  
+                  // Verifica se encontrou faixas de áudio
+                  if (audioTracks.length === 0) {
+                    console.warn('[DAILY CAPTURE] Nenhuma faixa de áudio encontrada');
+                    window.parent.postMessage({
+                      type: 'daily-audio-capture-response',
+                      success: false,
+                      error: 'Nenhuma faixa de áudio encontrada'
+                    }, '*');
+                    return;
+                  }
+                  
+                  // Cria uma conexão de áudio
+                  console.log('[DAILY CAPTURE] Faixas de áudio encontradas:', audioTracks.length);
+                  
+                  // Notifica sucesso
+                  window.parent.postMessage({
+                    type: 'daily-audio-capture-response',
+                    success: true,
+                    trackCount: audioTracks.length,
+                    participantCount: participantDetails.length,
+                    participants: participantDetails
+                  }, '*');
+                  
+                  // Configura streaming contínuo de áudio (a cada 500ms)
+                  setInterval(() => {
+                    try {
+                      // Verifica se ainda temos participantes ativos
+                      const currentParticipants = window.daily.participants();
+                      const hasAudioTracks = Object.values(currentParticipants).some(p => p.audioTrack);
+                      
+                      if (hasAudioTracks) {
+                        // Obtém dados atuais de áudio
+                        window.parent.postMessage({
+                          type: 'daily-audio-data',
+                          timestamp: Date.now(),
+                          participantCount: Object.keys(currentParticipants).length,
+                          hasAudio: true
+                        }, '*');
+                      }
+                    } catch (e) {
+                      console.error('[DAILY CAPTURE] Erro ao enviar streaming de áudio:', e);
+                    }
+                  }, 500);
+                  
+                  return true;
+                } catch (error) {
+                  console.error('[DAILY CAPTURE] Erro ao capturar áudio:', error);
+                  window.parent.postMessage({
+                    type: 'daily-audio-capture-response',
+                    success: false,
+                    error: error.message || 'Erro desconhecido'
+                  }, '*');
+                  return false;
+                }
+              }
+              
+              // Adiciona listener para receber solicitações
+              window.addEventListener('message', function(event) {
+                if (event.data && event.data.type === 'daily-audio-capture-request') {
+                  console.log('[DAILY CAPTURE] Solicitação de captura recebida, iniciando captura...');
+                  captureAudioFromDaily();
+                }
+              });
+              
+              // Tenta iniciar captura automaticamente
+              console.log('[DAILY CAPTURE] Tentando iniciar captura automática...');
+              setTimeout(captureAudioFromDaily, 1000);
+            })();
+          `;
+          
+          // Adiciona o script ao iframe ou ao documento
+          try {
+            if (dailyIframe.contentDocument) {
+              dailyIframe.contentDocument.head.appendChild(scriptElement);
+              console.log('[DAILY INIT] Script injetado no contentDocument do iframe');
+            }
+          } catch (e) {
+            console.warn('[DAILY INIT] Não foi possível acessar contentDocument, tentando alternativa');
+            // Alternativa: criar um elemento visual com instruções
+            const dailyHelper = document.createElement('div');
+            dailyHelper.style.position = 'fixed';
+            dailyHelper.style.bottom = '10px';
+            dailyHelper.style.right = '10px';
+            dailyHelper.style.zIndex = '99999';
+            dailyHelper.style.backgroundColor = 'rgba(0,0,0,0.7)';
+            dailyHelper.style.color = 'white';
+            dailyHelper.style.padding = '10px';
+            dailyHelper.style.borderRadius = '5px';
+            dailyHelper.style.fontSize = '12px';
+            dailyHelper.innerHTML = `
+              <p>Daily.co detectado. Captura de áudio habilitada.</p>
+              <p>Áudio captado do microfone local. Transcrição em andamento.</p>
+            `;
+            document.body.appendChild(dailyHelper);
+          }
+        } catch (error) {
+          console.error('[DAILY INIT] Erro ao injetar script:', error);
+        }
+      }
+    });
+    
+    console.log('[DAILY INIT] Sistema de captura Daily.co inicializado com sucesso');
+  }
+})();
+
 class WhisperTranscriptionService {
   constructor() {
     this.mediaRecorder = null;
