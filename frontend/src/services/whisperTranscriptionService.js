@@ -176,67 +176,264 @@ class WhisperTranscriptionService {
   }
   
   /**
-   * NOVO: Tenta ativar a captura de áudio do Daily
-   * @returns {Promise<boolean>} Sucesso da ativação
+   * Tenta ativar a captura de áudio do Daily.co
+   * @returns {Promise<boolean>}
    * @private
    */
   async _tryEnableDailyCapture() {
     try {
-      // Verificar se já está ativado
-      if (this.dailyCapturingEnabled) {
-        console.log('Captura do Daily já está ativada');
-        return true;
-      }
+      console.log('[DAILY DEBUG] Iniciando tentativa de captura de áudio do Daily.co...');
+      // 1. Encontrar todos os iframes da página que possam ser do Daily
+      const iframes = document.querySelectorAll('iframe');
       
-      // Verificar se está em produção
-      if (window.location.hostname === 'localhost') {
-        console.log('Em ambiente de desenvolvimento, não tentando comunicação com Daily');
+      if (iframes.length === 0) {
+        console.log('[DAILY DEBUG] Nenhum iframe encontrado na página');
         return false;
       }
       
-      // Garantir que o listener está configurado
-      this._setupDailyMessageListener();
+      console.log(`[DAILY DEBUG] Encontrados ${iframes.length} iframes na página`);
       
-      // Buscar iframes do Daily
-      const dailyIframes = Array.from(document.querySelectorAll('iframe'))
-        .filter(iframe => 
-          iframe.src && (
-            iframe.src.includes('daily.co') || 
-            iframe.src.includes('terapiaconect') ||
-            iframe.id.includes('daily') ||
-            iframe.className.includes('daily')
-          )
-        );
+      // 2. Tentar capturar de cada iframe
+      let captureSuccessful = false;
       
-      console.log(`Encontrados ${dailyIframes.length} possíveis iframes do Daily`);
-      
-      if (dailyIframes.length > 0) {
-        // Enviar mensagem para ativar captura
-        dailyIframes.forEach(iframe => {
-          try {
-            console.log(`Enviando mensagem para iframe: ${iframe.src}`);
-            
-            // Enviar mensagem de forma segura
-            iframe.contentWindow.postMessage({
-              type: 'whisper-request-audio-capture',
-              sessionId: this.sessionId
-            }, '*');
-          } catch (e) {
-            console.warn(`Não foi possível enviar mensagem para iframe: ${e.message}`);
-          }
-        });
+      for (let i = 0; i < iframes.length; i++) {
+        const iframe = iframes[i];
+        const iframeUrl = iframe.src || '';
         
-        // Marcar como ativado (mesmo que não tenhamos garantia de resposta)
-        this.dailyCapturingEnabled = true;
-        console.log('Solicitação de captura enviada para iframes do Daily');
-        return true;
+        console.log(`[DAILY DEBUG] Verificando iframe #${i+1}: ${iframeUrl}`);
+        
+        if (iframeUrl.includes('daily.co') || iframeUrl.includes('theraconnect')) {
+          console.log(`[DAILY DEBUG] Iframe #${i+1} é potencialmente do Daily.co, tentando injetar script de captura`);
+          
+          try {
+            // 3. Injetar script para capturar áudio
+            const success = await this._injectDailyCaptureScript(iframe);
+            
+            if (success) {
+              captureSuccessful = true;
+              console.log(`[DAILY DEBUG] Script de captura injetado com sucesso no iframe #${i+1}`);
+              break;
+            } else {
+              console.log(`[DAILY DEBUG] Falha ao injetar script no iframe #${i+1}`);
+            }
+          } catch (error) {
+            console.error(`[DAILY DEBUG] Erro ao injetar script no iframe #${i+1}:`, error);
+          }
+        } else {
+          console.log(`[DAILY DEBUG] Iframe #${i+1} não é do Daily.co, ignorando`);
+        }
       }
       
-      return false;
-    } catch (e) {
-      console.error('Erro ao tentar ativar captura do Daily:', e);
+      if (captureSuccessful) {
+        // 4. Ativar flag para evitar tentativas duplicadas
+        this.dailyCapturingEnabled = true;
+        console.log('[DAILY DEBUG] Captura de áudio do Daily.co ativada com sucesso');
+      } else {
+        console.warn('[DAILY DEBUG] Não foi possível ativar a captura em nenhum iframe do Daily.co');
+      }
+      
+      return captureSuccessful;
+    } catch (error) {
+      console.error('[DAILY DEBUG] Erro ao tentar ativar captura do Daily:', error);
       return false;
     }
+  }
+
+  /**
+   * Injeta script para capturar áudio do Daily.co
+   * @param {HTMLIFrameElement} iframe - iframe do Daily.co
+   * @returns {Promise<boolean>}
+   * @private
+   */
+  async _injectDailyCaptureScript(iframe) {
+    if (!iframe || !iframe.contentWindow) {
+      console.error('[DAILY DEBUG] iframe inválido ou sem contentWindow');
+      return false;
+    }
+    
+    return new Promise((resolve) => {
+      // Adicionar timeout para garantir que o script não fique preso
+      const timeout = setTimeout(() => {
+        console.warn('[DAILY DEBUG] Timeout ao esperar resposta do script de captura do Daily');
+        if (!this.dailyEventListenerAdded) {
+          window.removeEventListener('message', handleMessage);
+        }
+        resolve(false);
+      }, 5000);
+      
+      // Função de callback para mensagens
+      const handleMessage = (event) => {
+        try {
+          // Verificar origem da mensagem para segurança
+          if (!event.origin.includes('daily.co') && 
+              !event.origin.includes('theraconnect') && 
+              event.origin !== window.location.origin) {
+            return;
+          }
+          
+          const data = event.data;
+          
+          if (typeof data === 'object' && data.type === 'daily-audio-capture') {
+            clearTimeout(timeout);
+            
+            if (data.success) {
+              console.log('[DAILY DEBUG] Mensagem recebida do Daily: captura de áudio iniciada com sucesso');
+              console.log('[DAILY DEBUG] Detalhes do stream:', {
+                participantId: data.participantId,
+                hasAudioTracks: data.hasAudioTracks,
+                trackCount: data.trackCount
+              });
+              
+              if (!this.dailyEventListenerAdded) {
+                window.removeEventListener('message', handleMessage);
+              }
+              
+              resolve(true);
+            } else {
+              console.warn('[DAILY DEBUG] Mensagem recebida do Daily: falha na captura de áudio');
+              console.warn('[DAILY DEBUG] Motivo da falha:', data.error);
+              
+              if (!this.dailyEventListenerAdded) {
+                window.removeEventListener('message', handleMessage);
+              }
+              
+              resolve(false);
+            }
+          }
+        } catch (error) {
+          console.error('[DAILY DEBUG] Erro ao processar mensagem:', error);
+        }
+      };
+      
+      // Adicionar listener para mensagens
+      if (!this.dailyEventListenerAdded) {
+        window.addEventListener('message', handleMessage);
+        this.dailyEventListenerAdded = true;
+      }
+      
+      // Código JavaScript a ser injetado no iframe
+      const scriptToInject = `
+        try {
+          console.log('[DAILY IFRAME] Iniciando script de captura no iframe do Daily.co');
+          
+          // Verificar se o daily está definido
+          if (typeof window.daily !== 'undefined' && window.daily) {
+            console.log('[DAILY IFRAME] Objeto daily encontrado:', window.daily);
+            
+            // Verificar o estado da chamada
+            const callState = window.daily.callState();
+            console.log('[DAILY IFRAME] Estado da chamada:', callState);
+            
+            // Obter participantes
+            const participants = window.daily.participants();
+            const participantIds = Object.keys(participants);
+            console.log('[DAILY IFRAME] Participantes encontrados:', participantIds.length);
+            
+            // Capturar streams de áudio
+            let audioTracks = [];
+            let localParticipantId = '';
+            
+            for (const id in participants) {
+              const participant = participants[id];
+              console.log('[DAILY IFRAME] Verificando participante:', id, participant.user_name || 'Sem nome');
+              
+              if (participant.local) {
+                localParticipantId = id;
+                console.log('[DAILY IFRAME] Participante local identificado:', id);
+              }
+              
+              // Capturar stream de áudio
+              if (participant.audioTrack) {
+                console.log('[DAILY IFRAME] Faixa de áudio encontrada para participante:', id);
+                audioTracks.push(participant.audioTrack);
+              }
+              
+              // Também verificar a propriedade tracks para mais detalhes
+              if (participant.tracks) {
+                console.log('[DAILY IFRAME] Faixas disponíveis para', id, ':', Object.keys(participant.tracks));
+                
+                if (participant.tracks.audio) {
+                  console.log('[DAILY IFRAME] Detalhes da faixa de áudio:', 
+                    'state:', participant.tracks.audio.state,
+                    'subscribed:', participant.tracks.audio.subscribed
+                  );
+                }
+              }
+            }
+            
+            // Criar MediaStream com as faixas de áudio
+            if (audioTracks.length > 0) {
+              console.log('[DAILY IFRAME] Criando MediaStream com', audioTracks.length, 'faixas de áudio');
+              const audioStream = new MediaStream(audioTracks);
+              
+              // Enviar mensagem para a página principal
+              window.parent.postMessage({
+                type: 'daily-audio-capture',
+                success: true,
+                participantId: localParticipantId,
+                hasAudioTracks: true,
+                trackCount: audioTracks.length
+              }, '*');
+              
+              console.log('[DAILY IFRAME] Stream de áudio enviado para a página principal');
+              return true;
+            } else {
+              console.warn('[DAILY IFRAME] Nenhuma faixa de áudio encontrada');
+              
+              // Enviar mensagem de erro
+              window.parent.postMessage({
+                type: 'daily-audio-capture',
+                success: false,
+                error: 'Nenhuma faixa de áudio encontrada',
+                hasAudioTracks: false,
+                trackCount: 0
+              }, '*');
+              
+              return false;
+            }
+          } else {
+            console.warn('[DAILY IFRAME] Objeto daily não encontrado no iframe');
+            
+            // Enviar mensagem de erro
+            window.parent.postMessage({
+              type: 'daily-audio-capture',
+              success: false,
+              error: 'Objeto daily não encontrado',
+              hasAudioTracks: false
+            }, '*');
+            
+            return false;
+          }
+        } catch (error) {
+          console.error('[DAILY IFRAME] Erro ao capturar áudio do Daily:', error);
+          
+          // Enviar mensagem de erro
+          window.parent.postMessage({
+            type: 'daily-audio-capture',
+            success: false,
+            error: error.message || 'Erro desconhecido',
+            hasAudioTracks: false
+          }, '*');
+          
+          return false;
+        }
+      `;
+      
+      try {
+        // Injetar script no iframe
+        console.log('[DAILY DEBUG] Injetando script no iframe do Daily...');
+        iframe.contentWindow.eval(scriptToInject);
+      } catch (error) {
+        console.error('[DAILY DEBUG] Erro ao injetar script:', error);
+        clearTimeout(timeout);
+        
+        if (!this.dailyEventListenerAdded) {
+          window.removeEventListener('message', handleMessage);
+        }
+        
+        resolve(false);
+      }
+    });
   }
 
   /**
