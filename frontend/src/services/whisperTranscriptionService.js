@@ -47,7 +47,7 @@ class WhisperTranscriptionService {
     
     // Estado de transcrição contínua
     this.transcriptionHistory = [];
-    this.sessionId = 'f275c5c4-fb58-40e3-9710-2c95e30741b0'; // ID fixo atualizado
+    this.sessionId = '3be9d267-da13-4841-b2f1-c8deb15c8e17'; // ID da sessão atual para uso com API
     
     // Contador de chunks
     this.chunkCounter = 0;
@@ -240,238 +240,98 @@ class WhisperTranscriptionService {
   }
 
   /**
-   * Iniciar a gravação de áudio e configurar detecção de silêncio
-   * @returns {Promise<boolean>} - Sucesso da inicialização da gravação
+   * Inicia o processo de gravação de áudio
+   * @param {string} [sessionId=null] - ID da sessão (opcional)
+   * @returns {Promise<boolean>} - true se iniciou com sucesso
    */
-  async startRecording() {
+  async startRecording(sessionId = null) {
     try {
       console.log('=== INICIANDO NOVA GRAVAÇÃO WAV ===');
       
-      // ESTRATÉGIA ANTI-CORRUPÇÃO: Forçar liberação máxima entre gravações
+      // Limpar qualquer recurso existente antes de começar
+      await this._releaseResources();
       
-      // 1. Forçar parada de qualquer gravação existente
-      if (this.isRecording || this.mediaRecorder) {
-        console.log('Gravação anterior detectada, parando completamente...');
-        await this.stopRecording(false);
-        
-        // Aguardar liberação de recursos pelo SO
-        console.log('Aguardando 800ms para garantir liberação de recursos...');
-        await new Promise(resolve => setTimeout(resolve, 800));
-      }
-
-      // 2. Liberação COMPLETA de todos os recursos
-      await this._releaseAllAudioResources();
-      
-      // 3. Pausa extra para garantir que o sistema operacional libere handles de arquivos
       console.log('Pausa adicional para garantir liberação total...');
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await this._wait(300); // Pequena pausa para garantir que os recursos foram liberados
       
-      // 4. Reiniciar completamente o estado
-      this.audioChunks = [];
-      this.chunkCounter = 0;
-      this.isRecording = true;
-      this.chunkStartTime = Date.now();
-      
-      // 5. Extrair sessionId se necessário
-      if (!this.sessionId) {
-        this.sessionId = this.extractSessionId();
-        console.log(`SessionID extraído: ${this.sessionId}`);
+      // Atualizar ID da sessão se fornecido
+      if (sessionId) {
+        this.updateSessionId(sessionId);
       }
       
-      // NOVO: Tentar ativar captura de áudio do Daily.co, mas sem bloquear o fluxo
-      const dailySuccess = await this._tryEnableDailyCapture();
-      console.log(`Tentativa de captura do Daily.co: ${dailySuccess ? 'SUCESSO' : 'FALHA'}`);
+      // Tentar capturar áudio do Daily.co primeiro
+      const dailySuccess = await this._captureAudioFromDaily();
       
-      if (!dailySuccess) {
-        console.log('Falha na ativação do Daily.co, não há fonte de áudio disponível');
-        console.warn('TESTE TEMPORÁRIO: Microfone local desativado propositalmente para teste');
-        
-        // Criar um stream de áudio silencioso utilizando Web Audio API
-        try {
-          // Criar contexto de áudio
-          const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-          
-          // Criar um oscilador com frequência muito baixa
-          const oscillator = audioContext.createOscillator();
-          oscillator.frequency.value = 1; // 1 Hz - quase inaudível
-          
-          // Criar um nó de ganho para controlar o volume
-          const gainNode = audioContext.createGain();
-          gainNode.gain.value = 0.001; // Volume praticamente zero
-          
-          // Conectar o oscilador ao ganho e o ganho à saída
-          oscillator.connect(gainNode);
-          gainNode.connect(audioContext.destination);
-          
-          // Iniciar o oscilador
-          oscillator.start();
-          
-          // Criar um MediaStream a partir do destino
-          const streamDestination = audioContext.createMediaStreamDestination();
-          this.audioStream = streamDestination.stream;
-          
-          console.log('Stream de áudio silencioso criado com sucesso');
-        } catch (error) {
-          console.error('Erro ao criar stream de áudio silencioso:', error);
-          
-          // Em caso de erro, tentar com um método alternativo
-          console.log('Tentando método alternativo para criar stream de áudio silencioso...');
-          
-          try {
-            // Tentar obter o microfone local, mas desabilitar as tracks imediatamente
-            const localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            
-            // Desabilitar todas as tracks (não captura áudio, mas mantém o stream válido)
-            localStream.getAudioTracks().forEach(track => {
-              track.enabled = false;
-            });
-            
-            this.audioStream = localStream;
-            console.log('Stream de áudio alternativo criado com microfone (mudo)');
-          } catch (err) {
-            console.error('Erro ao criar stream de áudio alternativo:', err);
-            
-            // Criar stream vazio como última alternativa
-            this.audioStream = new MediaStream();
-            console.log('Stream vazio criado como última alternativa (pode falhar)');
-          }
-        }
-      } else {
+      if (dailySuccess) {
         console.log('Daily.co ativado com sucesso, usando apenas áudio do Daily');
-        
-        // PARA TESTE: Criar um stream silencioso para o MediaRecorder funcionar
-        // Em produção, remova este bloco e descomente o bloco abaixo
-        try {
-          // Criar contexto de áudio
-          const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-          
-          // Criar um oscilador com frequência muito baixa
-          const oscillator = audioContext.createOscillator();
-          oscillator.frequency.value = 1; // 1 Hz - quase inaudível
-          
-          // Criar um nó de ganho para controlar o volume
-          const gainNode = audioContext.createGain();
-          gainNode.gain.value = 0.001; // Volume praticamente zero
-          
-          // Conectar o oscilador ao ganho e o ganho à saída
-          oscillator.connect(gainNode);
-          gainNode.connect(audioContext.destination);
-          
-          // Iniciar o oscilador
-          oscillator.start();
-          
-          // Criar um MediaStream a partir do destino
-          const streamDestination = audioContext.createMediaStreamDestination();
-          this.audioStream = streamDestination.stream;
-          
-          console.log('Stream de áudio silencioso criado com sucesso');
-        } catch (error) {
-          console.error('Erro ao criar stream de áudio silencioso:', error);
-          
-          // Em caso de erro, tentar com um método alternativo
-          console.log('Tentando método alternativo para criar stream de áudio silencioso...');
-          
-          try {
-            // Tentar obter o microfone local, mas desabilitar as tracks imediatamente
-            const localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            
-            // Desabilitar todas as tracks (não captura áudio, mas mantém o stream válido)
-            localStream.getAudioTracks().forEach(track => {
-              track.enabled = false;
-            });
-            
-            this.audioStream = localStream;
-            console.log('Stream de áudio alternativo criado com microfone (mudo)');
-          } catch (err) {
-            console.error('Erro ao criar stream de áudio alternativo:', err);
-            
-            // Criar stream vazio como última alternativa
-            this.audioStream = new MediaStream();
-            console.log('Stream vazio criado como última alternativa (pode falhar)');
-          }
-        }
-        
-        /* COMENTADO PARA TESTE - REMOVA OS COMENTÁRIOS DEPOIS
-        // 6. Sempre solicitar permissão do microfone local independentemente do Daily
-        // Isso garante que pelo menos o áudio local será capturado
-        console.log('Solicitando permissão de microfone local...');
-        this.audioStream = await navigator.mediaDevices.getUserMedia({ 
+        // Criar um stream de áudio silencioso apenas para manter o formato de processamento
+        const silentStream = this._createSilentAudioStream();
+        this.audioStream = silentStream;
+        console.log('Stream de áudio silencioso criado com sucesso');
+      } else {
+        // Fallback: usar captura de áudio local
+        console.log('Daily.co não disponível, tentando captura de áudio local...');
+        const stream = await navigator.mediaDevices.getUserMedia({
           audio: {
             echoCancellation: true,
             noiseSuppression: true,
             autoGainControl: true
-          }
+          },
+          video: false
         });
         
-        console.log('Permissão de microfone concedida, criando novo MediaRecorder');
-        */
+        this.audioStream = stream;
+        console.log('Áudio local capturado com sucesso');
       }
       
-      // 7. Priorizar WAV como formato para compatibilidade com Whisper
-      let mimeType = null;
+      // Configurar contexto de áudio para análise
+      await this._setupAudioContext();
       
-      // Verificar suporte a WAV (prioridade para Whisper API)
-      if (MediaRecorder.isTypeSupported('audio/wav')) {
-        mimeType = 'audio/wav';
-      } else if (MediaRecorder.isTypeSupported('audio/mp3')) {
-        mimeType = 'audio/mp3'; 
-      } else if (MediaRecorder.isTypeSupported('audio/mpeg')) {
-        mimeType = 'audio/mpeg';
-      } else if (MediaRecorder.isTypeSupported('audio/webm')) {
-        mimeType = 'audio/webm';
-      }
+      // Obter MIME type suportado
+      const mimeType = this._getSupportedMimeType();
+      console.log(`Formato de gravação selecionado: ${mimeType}`);
       
-      console.log(`Formato de gravação selecionado: ${mimeType || 'padrão do navegador'}`);
-      
-      // 8. Configurar opções avançadas para MediaRecorder
-      const options = mimeType ? {
+      // Criar gravador
+      this.mediaRecorder = new MediaRecorder(this.audioStream, {
         mimeType,
-        audioBitsPerSecond: 128000 // Qualidade mais baixa para evitar problemas
-      } : undefined;
+        audioBitsPerSecond: 128000 // 128kbps
+      });
       
-      // Verificar se o stream tem faixas de áudio
-      if (!this.audioStream || !this.audioStream.getAudioTracks || this.audioStream.getAudioTracks().length === 0) {
-        console.error('ERRO: Stream sem faixas de áudio. O MediaRecorder não pode iniciar.');
-        throw new Error('O stream de áudio não tem faixas válidas');
-      }
+      // Configurar manipuladores de eventos
+      this._setupRecorderEvents();
       
-      // 9. Criar nova instância do MediaRecorder
-      this.mediaRecorder = new MediaRecorder(this.audioStream, options);
-      
-      // 10. Configurar evento para chunks pequenos e frequentes
-      this.mediaRecorder.ondataavailable = (event) => {
-        if (event.data && event.data.size > 0) {
-          const chunkNum = this.audioChunks.length;
-          const sizeKB = Math.round(event.data.size/1024);
-          console.log(`Chunk #${chunkNum} recebido: ${sizeKB}KB, tipo: ${event.data.type}`);
-          this.audioChunks.push(event.data);
-        }
-      };
-      
-      // 11. Capturar erros do MediaRecorder
-      this.mediaRecorder.onerror = (event) => {
-        console.error('Erro no MediaRecorder:', event);
-        this._dispatchEvent('recordingError', { error: 'Erro na gravação de áudio' });
-      };
-      
-      // 12. Iniciar gravação com chunks MUITO pequenos para melhor controle
-      this.mediaRecorder.start(300); // 300ms por chunk para maior controle
+      // Iniciar gravação
+      this.mediaRecorder.start();
+      this.isRecording = true;
       console.log('Gravação WAV iniciada com nova instância de MediaRecorder');
       
-      // 13. Configurar detecção de silêncio
+      // Iniciar contagem de tempo para este chunk
+      this.chunkStartTime = Date.now();
+      this.chunkCounter++;
+      
+      // Configurar detector de silêncio
       if (this.silenceDetectionEnabled) {
-        this._setupSilenceDetection(this.audioStream);
+        this._setupSilenceDetection();
+        console.log('Detecção de silêncio configurada');
       }
       
-      // 14. Configurar timer para chunk máximo
-      this._setupMaxChunkTimer();
+      // Configurar timer para tamanho máximo de chunk
+      if (this.maxChunkDuration > 0) {
+        this.maxChunkTimer = setTimeout(() => {
+          console.log(`Duração máxima de chunk atingida (${this.maxChunkDuration/1000}s), processando áudio...`);
+          this._processCurrentChunk();
+        }, this.maxChunkDuration);
+      }
       
-      // 15. Disparar evento de início
-      this._dispatchEvent('recordingStarted', { isRecording: true });
+      // Notificar que a gravação começou
+      this._dispatchEvent('recordingStarted', { 
+        isRecording: true,
+        timestamp: new Date().toISOString()
+      });
       
       return true;
     } catch (error) {
-      console.error('Erro ao iniciar gravação de áudio:', error);
+      console.error('Erro ao iniciar gravação:', error);
       this._dispatchEvent('recordingError', { error: error.message });
       return false;
     }
@@ -655,6 +515,9 @@ class WhisperTranscriptionService {
         // Silêncio suficiente e chunk com duração mínima, processar áudio
         console.log(`Silêncio atingiu ${Math.round(silenceDuration/1000)}s, processando áudio e pausando gravação...`);
         
+        // CORREÇÃO: Resetar o contador de silêncio imediatamente para evitar loops
+        this.silenceStart = null;
+        
         // Processar o chunk atual apenas se houver chunks válidos
         if (this.audioChunks && this.audioChunks.length > 0) {
           this._processCurrentChunk();
@@ -663,8 +526,6 @@ class WhisperTranscriptionService {
           this._pauseRecordingForSilence();
         } else {
           console.log('Detectado silêncio prolongado, mas não há áudio para processar. Continuando gravação...');
-          // Resetar contagem de silêncio sem pausar
-          this.silenceStart = null;
           
           // Continuar detecção
           requestAnimationFrame(() => this._detectSilence());
@@ -674,7 +535,7 @@ class WhisperTranscriptionService {
         return; // Não continuar a detecção
       }
     } else {
-      // Resetar detecção de silêncio
+      // Se detectou voz, resetar detecção de silêncio
       if (this.silenceStart) {
         console.log('Voz detectada, reiniciando contagem de silêncio');
         this.silenceStart = null;
@@ -1788,6 +1649,20 @@ class WhisperTranscriptionService {
       console.warn('Erro ao salvar transcrição no sessionStorage:', e);
       return false;
     }
+  }
+
+  /**
+   * Atualiza o ID da sessão atual
+   * @param {string} sessionId - ID da sessão
+   */
+  updateSessionId(sessionId) {
+    if (!sessionId) {
+      console.error('Tentativa de atualizar sessionId com valor inválido:', sessionId);
+      return;
+    }
+    
+    console.log(`Atualizando ID da sessão para: ${sessionId}`);
+    this.sessionId = sessionId;
   }
 }
 
