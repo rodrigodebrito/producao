@@ -1437,8 +1437,72 @@ class WhisperTranscriptionService {
         return { success: false, error: 'Token de autenticação não encontrado' };
       }
       
-      // CORREÇÃO: Usar o ID de sessão fixo para evitar problemas
-      data.sessionId = 'f275c5c4-fb58-40e3-9710-2c95e30741b0';
+      // CORREÇÃO: Obter ID de sessão válido do DOM ou localStorage
+      // Em vez de usar um ID fixo, tente obter o ID correto da sessão atual
+      let sessionId = null;
+      
+      // 1. Tente obter dos parâmetros da URL primeiro (mais confiável)
+      try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const pathSegments = window.location.pathname.split('/');
+        
+        // Procurar em parâmetros da URL
+        if (urlParams.has('sessionId')) {
+          sessionId = urlParams.get('sessionId');
+        } 
+        // Procurar em segmentos do path (/session/{id})
+        else if (pathSegments.includes('session') && pathSegments.length > pathSegments.indexOf('session') + 1) {
+          sessionId = pathSegments[pathSegments.indexOf('session') + 1];
+        }
+        
+        // Se não encontrou, procurar ID de formato UUID em qualquer posição do path
+        if (!sessionId) {
+          const uuidMatch = window.location.pathname.match(/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/i);
+          if (uuidMatch) {
+            sessionId = uuidMatch[0];
+          }
+        }
+      } catch (urlError) {
+        console.warn('Erro ao extrair sessionId da URL:', urlError);
+      }
+      
+      // 2. Se não encontrou na URL, tente obter do localStorage ou sessionStorage
+      if (!sessionId) {
+        sessionId = localStorage.getItem('currentSessionId') || 
+                    sessionStorage.getItem('currentSessionId') ||
+                    localStorage.getItem('sessionId') ||
+                    sessionStorage.getItem('sessionId');
+      }
+      
+      // 3. Se ainda não encontrou, procurar por qualquer elemento na página com data-session-id
+      if (!sessionId) {
+        const sessionElement = document.querySelector('[data-session-id]');
+        if (sessionElement) {
+          sessionId = sessionElement.getAttribute('data-session-id');
+        }
+      }
+      
+      // 4. Se ainda não encontrou, procurar variável global __AI_CONTEXT
+      if (!sessionId && window.__AI_CONTEXT && window.__AI_CONTEXT.sessionId) {
+        sessionId = window.__AI_CONTEXT.sessionId;
+      }
+      
+      // 5. Se ainda não encontrou, tente usar o ID que veio no parâmetro da função
+      if (!sessionId && data.sessionId) {
+        sessionId = data.sessionId;
+      }
+      
+      // 6. Se ainda não tem ID, usar um ID fixo como último recurso
+      if (!sessionId) {
+        // HACK: Usar um ID que possui alta probabilidade de existir
+        // Isso é um fallback para evitar erros 404
+        sessionId = 'temp_session';
+      }
+      
+      console.log(`Whisper: Usando sessionId: ${sessionId}`);
+      
+      // Usar o ID de sessão encontrado
+      data.sessionId = sessionId;
       
       // CORREÇÃO: Garantir que temos o speaker (padrão 'user')
       if (!data.speaker) {
@@ -1448,70 +1512,87 @@ class WhisperTranscriptionService {
       // CORREÇÃO: Garantir que temos o conteúdo na propriedade correta
       if (data.transcript && !data.content) {
         data.content = data.transcript;
+      } else if (!data.content && data.text) {
+        data.content = data.text;
+      }
+      
+      // CORREÇÃO: Garantir que transcript também existe (propriedade exigida pelo endpoint /api/ai/transcript)
+      if (!data.transcript && data.content) {
+        data.transcript = data.content;
       }
       
       console.log('Whisper: Enviando transcrição para backend:', {
         sessionId: data.sessionId,
         speaker: data.speaker,
-        contentLength: data.content?.length || 0
+        contentLength: data.content?.length || 0,
+        endpoint: this.transcriptEndpoint
       });
       
-      // CORREÇÃO: Usar apenas os endpoints corretos
-      const endpoints = [
-        'https://theraconnect-prd.onrender.com/api/ai/transcriptions',
-        'https://theraconnect-prd.onrender.com/api/ai/transcript'
-      ];
+      // CORREÇÃO: Construir payload apropriado para cada endpoint
+      const transcriptionsPayload = {
+        sessionId: sessionId,
+        speaker: data.speaker,
+        content: data.content,
+        timestamp: data.timestamp || new Date().toISOString()
+      };
       
-      // Tentar cada endpoint até conseguir
-      let success = false;
-      let response = null;
-      let error = null;
+      const transcriptPayload = {
+        sessionId: sessionId,
+        transcript: data.content || data.transcript,
+        speaker: data.speaker
+      };
       
-      for (const endpoint of endpoints) {
-        try {
-          console.log(`Whisper: Tentando enviar para endpoint: ${endpoint}`);
-          
-          response = await fetch(endpoint, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${authToken}`
-            },
-            body: JSON.stringify(data)
-          });
-          
-          if (response.ok) {
-            success = true;
-            console.log(`Whisper: Transcrição enviada com sucesso para: ${endpoint}`);
-            break;
-          } else {
-            const errorText = await response.text();
-            console.warn(`Whisper: Erro ao enviar para ${endpoint} (${response.status}): ${errorText}`);
-          }
-        } catch (endpointError) {
-          console.warn(`Whisper: Erro de conexão com ${endpoint}:`, endpointError);
-          error = endpointError;
-        }
-      }
-      
-      // Se conseguimos sucesso em algum endpoint
-      if (success) {
-        try {
-          const result = await response.json();
-          console.log('Whisper: Resposta do backend:', result);
-          return { success: true, data: result };
-        } catch (jsonError) {
-          // Se a resposta não for JSON, consideramos sucesso mesmo assim
-          console.log('Whisper: Resposta não é JSON, mas transcrição foi enviada');
+      // Tenta o endpoint principal (transcriptions) primeiro
+      try {
+        const response = await fetch(this.transcriptEndpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+          },
+          body: JSON.stringify(transcriptPayload)
+        });
+        
+        if (response.ok) {
+          console.log(`Whisper: Transcrição enviada com sucesso para: ${this.transcriptEndpoint}`);
           return { success: true };
+        } else {
+          const errorText = await response.text();
+          console.warn(`Whisper: Erro ao enviar para ${this.transcriptEndpoint} (${response.status}): ${errorText}`);
+          
+          // Se o erro foi 404 (endpoint não existe), tentar com caminho alternativo
+          if (response.status === 404) {
+            // Tentar endpoint alternativo com caminho diferente
+            const alternativeEndpoint = this.transcriptEndpoint.replace('/api/ai/transcript', '/api/transcript');
+            
+            const altResponse = await fetch(alternativeEndpoint, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${authToken}`
+              },
+              body: JSON.stringify(transcriptPayload)
+            });
+            
+            if (altResponse.ok) {
+              console.log(`Whisper: Transcrição enviada com sucesso para endpoint alternativo: ${alternativeEndpoint}`);
+              return { success: true };
+            }
+          }
         }
+      } catch (primaryError) {
+        console.warn(`Whisper: Erro ao enviar para endpoint primário:`, primaryError);
       }
       
-      // Se chegamos aqui, nenhum endpoint funcionou
-      console.error('Whisper: Todos os endpoints falharam ao enviar transcrição');
+      // Se falhou com o endpoint principal, salvar localmente
+      // Isso garante que pelo menos temos os dados no cliente
+      this._saveTranscriptionToStorage(transcriptionsPayload);
+      
+      // Continuar operação normal mesmo em caso de falha do backend
+      // Não devemos interromper a experiência do usuário
       return { 
         success: false, 
-        error: error?.message || 'Falha ao enviar transcrição para todos os endpoints'
+        error: 'Falha ao enviar transcrição para o backend, mas dados foram salvos localmente'
       };
     } catch (error) {
       console.error('Whisper: Erro ao enviar transcrição:', error);
