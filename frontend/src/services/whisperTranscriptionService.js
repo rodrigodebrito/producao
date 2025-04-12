@@ -592,10 +592,9 @@ class WhisperTranscriptionService {
 
   /**
    * Configurar detecção de silêncio
-   * @param {MediaStream} stream - Stream de áudio
    * @private
    */
-  _setupSilenceDetection(stream) {
+  _setupSilenceDetection() {
     try {
       // Criar contexto de áudio
       this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -605,8 +604,14 @@ class WhisperTranscriptionService {
       this.audioAnalyser.fftSize = 2048;
       this.audioAnalyser.smoothingTimeConstant = 0.8;
       
+      // Verificar se temos um stream de áudio válido
+      if (!this.audioStream || !this.audioStream.getAudioTracks || this.audioStream.getAudioTracks().length === 0) {
+        console.warn('Stream de áudio inválido ou sem faixas de áudio para análise de silêncio');
+        return;
+      }
+      
       // Conectar stream ao analisador
-      const source = this.audioContext.createMediaStreamSource(stream);
+      const source = this.audioContext.createMediaStreamSource(this.audioStream);
       source.connect(this.audioAnalyser);
       
       // Iniciar detecção
