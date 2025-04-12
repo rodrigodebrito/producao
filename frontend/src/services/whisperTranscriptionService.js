@@ -259,6 +259,10 @@ class WhisperTranscriptionService {
         this.updateSessionId(sessionId);
       }
       
+      // Inicializar array de chunks
+      this.audioChunks = [];
+      this.chunkStartTime = Date.now();
+      
       // Tentar capturar áudio do Daily.co primeiro
       const dailySuccess = await this._captureAudioFromDaily();
       
@@ -301,7 +305,7 @@ class WhisperTranscriptionService {
       this._setupRecorderEvents();
       
       // Iniciar gravação
-      this.mediaRecorder.start();
+      this.mediaRecorder.start(500); // Coletar chunks a cada 500ms para maior estabilidade
       this.isRecording = true;
       console.log('Gravação WAV iniciada com nova instância de MediaRecorder');
       
@@ -647,6 +651,23 @@ class WhisperTranscriptionService {
     // Converter para dB (approximation)
     const volumeDb = 20 * Math.log10(average / 255);
     
+    // Verificar se temos um valor válido
+    const isValidAudio = !isNaN(volumeDb) && isFinite(volumeDb);
+    
+    // Se não temos um valor válido, possivelmente a captura de áudio não está funcionando corretamente
+    if (!isValidAudio) {
+      console.log('Detecção de silêncio: valores de áudio inválidos, possivelmente sem captura real de áudio');
+      
+      // Programar próxima verificação com um atraso maior
+      setTimeout(() => {
+        if (this.isRecording) {
+          this._detectSilence();
+        }
+      }, 2000);
+      
+      return;
+    }
+    
     // Determinar se é silêncio
     const isSilence = volumeDb < this.silenceThreshold;
     
@@ -675,21 +696,46 @@ class WhisperTranscriptionService {
         // CORREÇÃO: Resetar o contador de silêncio imediatamente para evitar loops
         this.silenceStart = null;
         
-        // Processar o chunk atual apenas se houver chunks válidos
+        // Verificar se temos chunks de áudio e se eles têm conteúdo significativo
         if (this.audioChunks && this.audioChunks.length > 0) {
-          this._processCurrentChunk();
+          // Verificar se os chunks têm tamanho significativo
+          let totalSize = 0;
+          this.audioChunks.forEach(chunk => {
+            if (chunk && chunk.size) {
+              totalSize += chunk.size;
+            }
+          });
           
-          // NOVO: Pausar gravação por inatividade
-          this._pauseRecordingForSilence();
+          // Se temos pelo menos 1KB de dados, processar
+          if (totalSize > 1024) {
+            console.log(`Encontrados ${this.audioChunks.length} chunks com tamanho total de ${Math.round(totalSize/1024)}KB`);
+            this._processCurrentChunk();
+            
+            // NOVO: Pausar gravação por inatividade
+            this._pauseRecordingForSilence();
+          } else {
+            console.log(`Chunks de áudio muito pequenos (total ${totalSize} bytes), continuando gravação...`);
+            
+            // Continuar detecção, mas com uma pausa para reduzir carga de processamento
+            setTimeout(() => {
+              if (this.isRecording) {
+                this._detectSilence();
+              }
+            }, 1000);
+          }
         } else {
+          // Não há chunks para processar, apenas recomeçar a contagem de silêncio
           console.log('Detectado silêncio prolongado, mas não há áudio para processar. Continuando gravação...');
           
-          // Continuar detecção
-          requestAnimationFrame(() => this._detectSilence());
-          return;
+          // Reduzir frequência da verificação quando não há áudio 
+          setTimeout(() => {
+            if (this.isRecording) {
+              this._detectSilence();
+            }
+          }, 2000);
         }
         
-        return; // Não continuar a detecção
+        return; // Não continuar a detecção imediatamente
       }
     } else {
       // Se detectou voz, resetar detecção de silêncio
@@ -699,8 +745,12 @@ class WhisperTranscriptionService {
       }
     }
     
-    // Continuar detecção
-    requestAnimationFrame(() => this._detectSilence());
+    // Continuar detecção com atraso para reduzir carga de CPU
+    setTimeout(() => {
+      if (this.isRecording) {
+        this._detectSilence();
+      }
+    }, 200);
   }
 
   /**
