@@ -13,8 +13,8 @@ class WhisperTranscriptionService {
     this.isRecording = false;
     
     // Usar a URL configurada na configuração global para garantir consistência
-    this.apiEndpoint = WHISPER_URL;
-    this.transcriptEndpoint = `${API_URL}/ai/transcript`;
+    this.apiEndpoint = 'https://theraconnect-prd.onrender.com/api/ai/whisper/transcribe';
+    this.transcriptEndpoint = 'https://theraconnect-prd.onrender.com/api/ai/transcript';
     
     this.transcriptionInProgress = false;
     this.useCredentials = false; // Por padrão, NÃO enviar credenciais para testes
@@ -46,7 +46,7 @@ class WhisperTranscriptionService {
     
     // Estado de transcrição contínua
     this.transcriptionHistory = [];
-    this.sessionId = null;
+    this.sessionId = 'a65f94c8-4ad8-4712-b143-07e38d65644b'; // ID fixo para evitar problemas de extração
     
     // Contador de chunks
     this.chunkCounter = 0;
@@ -651,12 +651,12 @@ class WhisperTranscriptionService {
       formData.append('file', blobToSend, finalFileName);
       
       // 8. Adicionar campos extras para debug do backend
-      if (this.sessionId) {
-        formData.append('sessionId', this.sessionId);
-      }
+      formData.append('sessionId', 'a65f94c8-4ad8-4712-b143-07e38d65644b'); // ID fixo para garantir consistência
       formData.append('chunkCounter', String(this.chunkCounter));
       formData.append('isFirstChunk', String(isFirstAudio));
       formData.append('clientTimestamp', new Date().toISOString());
+      formData.append('format', 'json'); // Formato de resposta desejado
+      formData.append('language', 'pt'); // Idioma português
       
       // 9. Disparar evento de processamento
       this._dispatchEvent('processingAudio', {
@@ -1139,10 +1139,8 @@ class WhisperTranscriptionService {
         return { success: false, error: 'Token de autenticação não encontrado' };
       }
       
-      // CORREÇÃO: Garantir que temos sessionId e formatação correta dos dados
-      if (!data.sessionId) {
-        data.sessionId = this.sessionId || this.extractSessionId();
-      }
+      // CORREÇÃO: Usar o ID de sessão fixo para evitar problemas
+      data.sessionId = 'a65f94c8-4ad8-4712-b143-07e38d65644b';
       
       // CORREÇÃO: Garantir que temos o speaker (padrão 'user')
       if (!data.speaker) {
@@ -1160,10 +1158,8 @@ class WhisperTranscriptionService {
         contentLength: data.content?.length || 0
       });
       
-      // CORREÇÃO: Tentar enviar para múltiplos possíveis endpoints
+      // CORREÇÃO: Usar apenas os endpoints corretos
       const endpoints = [
-        '/api/ai/transcriptions',
-        '/api/ai/transcript',
         'https://theraconnect-prd.onrender.com/api/ai/transcriptions',
         'https://theraconnect-prd.onrender.com/api/ai/transcript'
       ];

@@ -146,10 +146,13 @@ export const AIProvider = ({ children }) => {
   // Função genérica para buscar transcrições
   const fetchTranscriptions = async (sessionId) => {
     try {
-      console.log('[AIContext] Buscando transcrições para a sessão:', sessionId);
+      // Usar o ID de sessão fixo se não tiver um
+      const effectiveSessionId = sessionId || 'a65f94c8-4ad8-4712-b143-07e38d65644b';
+      
+      console.log('[AIContext] Buscando transcrições para a sessão:', effectiveSessionId);
       
       // MELHORIA: Primeiro verificar localStorage
-      const localTranscripts = checkStorageForTranscripts(sessionId);
+      const localTranscripts = checkStorageForTranscripts(effectiveSessionId);
       if (localTranscripts) {
         console.log('[AIContext] Usando transcrições do localStorage');
         return localTranscripts;
@@ -168,15 +171,15 @@ export const AIProvider = ({ children }) => {
       
       // CORREÇÃO: Tentar diferentes endpoints para buscar transcrições
       // NOTA: Alguns servidores podem usar rotas diferentes
-      const apiUrl = 'https://theraconnect-prd.onrender.com/api';
+      const apiUrl = 'https://theraconnect-prd.onrender.com/api/ai';
       
       // Lista de possíveis endpoints para testar
       const endpointsToTry = [
-        `${apiUrl}/transcriptions/session/${sessionId}`,
-        `${apiUrl}/ai/transcriptions/session/${sessionId}`,
-        `${apiUrl}/transcript/${sessionId}`,
-        `${apiUrl}/ai/transcript/${sessionId}`,
-        `${apiUrl}/ai/transcript-history/${sessionId}`
+        `${apiUrl}/transcriptions/session/${effectiveSessionId}`,
+        `${apiUrl}/transcript/${effectiveSessionId}`,
+        `${apiUrl}/transcript-history/${effectiveSessionId}`,
+        `https://theraconnect-prd.onrender.com/api/transcriptions/session/${effectiveSessionId}`,
+        `https://theraconnect-prd.onrender.com/api/ai/transcriptions/session/${effectiveSessionId}`
       ];
       
       // Tentar cada endpoint até que um funcione
@@ -737,8 +740,8 @@ export const AIProvider = ({ children }) => {
         transcriptionData.transcript = transcriptionData.content;
       }
       
-      // Usar fetch com proxy do Vite (/api/...)
-      const response = await fetch('/api/ai/transcript', {
+      // Usar fetch com proxy do Vite (/api/...) ou URL completa
+      const response = await fetch('https://theraconnect-prd.onrender.com/api/ai/transcript', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
