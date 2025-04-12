@@ -249,7 +249,7 @@ class WhisperTranscriptionService {
       console.log('=== INICIANDO NOVA GRAVAÇÃO WAV ===');
       
       // Limpar qualquer recurso existente antes de começar
-      await this._releaseResources();
+      await this._releaseAllAudioResources();
       
       console.log('Pausa adicional para garantir liberação total...');
       await this._wait(300); // Pequena pausa para garantir que os recursos foram liberados
@@ -334,6 +334,158 @@ class WhisperTranscriptionService {
       console.error('Erro ao iniciar gravação:', error);
       this._dispatchEvent('recordingError', { error: error.message });
       return false;
+    }
+  }
+
+  /**
+   * Método auxiliar para esperar um tempo determinado
+   * @param {number} ms - Tempo em milissegundos
+   * @returns {Promise<void>}
+   * @private
+   */
+  _wait(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Configura manipuladores de eventos para o MediaRecorder
+   * @private
+   */
+  _setupRecorderEvents() {
+    if (!this.mediaRecorder) return;
+    
+    // Configurar evento para capturar chunks de áudio
+    this.mediaRecorder.ondataavailable = (event) => {
+      if (event.data && event.data.size > 0) {
+        const chunkNum = this.audioChunks.length;
+        const sizeKB = Math.round(event.data.size/1024);
+        console.log(`Chunk #${chunkNum} recebido: ${sizeKB}KB, tipo: ${event.data.type}`);
+        this.audioChunks.push(event.data);
+      }
+    };
+    
+    // Configurar evento para lidar com erros
+    this.mediaRecorder.onerror = (event) => {
+      console.error('Erro no MediaRecorder:', event);
+      this._dispatchEvent('recordingError', { error: 'Erro na gravação de áudio' });
+    };
+  }
+
+  /**
+   * Obtém o tipo MIME suportado para gravação de áudio
+   * @returns {string} Tipo MIME suportado
+   * @private
+   */
+  _getSupportedMimeType() {
+    const mimeTypes = [
+      'audio/wav',
+      'audio/webm',
+      'audio/mp3',
+      'audio/mpeg',
+      'audio/ogg'
+    ];
+    
+    for (const type of mimeTypes) {
+      if (MediaRecorder.isTypeSupported(type)) {
+        return type;
+      }
+    }
+    
+    return 'audio/webm'; // Fallback padrão
+  }
+
+  /**
+   * Configura o contexto de áudio para análise
+   * @returns {Promise<void>}
+   * @private
+   */
+  async _setupAudioContext() {
+    try {
+      // Criar contexto de áudio se não existir
+      if (!this.audioContext) {
+        this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      
+      // Criar analisador se não existir
+      if (!this.audioAnalyser) {
+        this.audioAnalyser = this.audioContext.createAnalyser();
+        this.audioAnalyser.fftSize = 2048;
+        this.audioAnalyser.smoothingTimeConstant = 0.8;
+      }
+      
+      // Conectar stream ao analisador
+      if (this.audioStream && this.audioStream.getAudioTracks().length > 0) {
+        const source = this.audioContext.createMediaStreamSource(this.audioStream);
+        source.connect(this.audioAnalyser);
+      }
+    } catch (error) {
+      console.error('Erro ao configurar contexto de áudio:', error);
+    }
+  }
+
+  /**
+   * Captura áudio do Daily.co
+   * @returns {Promise<boolean>} Sucesso da captura
+   * @private
+   */
+  async _captureAudioFromDaily() {
+    try {
+      // Verificar se já está ativado
+      if (this.dailyCapturingEnabled) {
+        console.log('Captura do Daily já está ativada');
+        return true;
+      }
+      
+      // Verificar se está em produção
+      if (window.location.hostname === 'localhost') {
+        console.log('Em ambiente de desenvolvimento, não tentando comunicação com Daily');
+        return false;
+      }
+      
+      // Tenta ativar a captura do Daily
+      const success = await this._tryEnableDailyCapture();
+      
+      return success;
+    } catch (error) {
+      console.error('Erro ao capturar áudio do Daily:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Cria um stream de áudio silencioso
+   * @returns {MediaStream} Stream de áudio silencioso
+   * @private
+   */
+  _createSilentAudioStream() {
+    try {
+      // Criar contexto de áudio
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      
+      // Criar um oscilador com frequência muito baixa
+      const oscillator = audioContext.createOscillator();
+      oscillator.frequency.value = 1; // 1 Hz - quase inaudível
+      
+      // Criar um nó de ganho para controlar o volume
+      const gainNode = audioContext.createGain();
+      gainNode.gain.value = 0.001; // Volume praticamente zero
+      
+      // Conectar o oscilador ao ganho e o ganho à saída
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+      
+      // Iniciar o oscilador
+      oscillator.start();
+      
+      // Criar um MediaStream a partir do destino
+      const streamDestination = audioContext.createMediaStreamDestination();
+      
+      return streamDestination.stream;
+    } catch (error) {
+      console.error('Erro ao criar stream de áudio silencioso:', error);
+      
+      // Criar um stream vazio como alternativa
+      return new MediaStream();
     }
   }
 
