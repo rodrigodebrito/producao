@@ -697,9 +697,21 @@ class WhisperTranscriptionService {
           formData.append('format', 'json');
           formData.append('language', 'pt');
           
+          // Detectar protocolo da página atual para usar o mesmo protocolo na API
+          const currentProtocol = window.location.protocol;
+          let endpoint = this.apiEndpoint;
+          
+          // Garantir que a API use o mesmo protocolo da página
+          if (currentProtocol === 'https:' && endpoint.startsWith('http://')) {
+            endpoint = endpoint.replace('http://', 'https://');
+          } else if (currentProtocol === 'http:' && endpoint.startsWith('https://')) {
+            endpoint = endpoint.replace('https://', 'http://');
+          }
+          
+          console.log(`Tentando fetch com endpoint: ${endpoint}`);
+          
           // Enviar com fetch
-          // Usar URL alternativa sem https para evitar problemas HTTP/2
-          const response = await fetch(this.apiEndpoint.replace('https://', 'http://'), {
+          const response = await fetch(endpoint, {
             method: 'POST',
             body: formData
           });
@@ -777,10 +789,21 @@ class WhisperTranscriptionService {
         reject(new Error('A requisição excedeu o tempo limite'));
       };
       
-      // Abrir conexão - usar http:// para evitar problemas HTTP/2
-      const endpoint = this.apiEndpoint.includes('https://') 
-        ? this.apiEndpoint.replace('https://', 'http://') 
-        : this.apiEndpoint;
+      // Detectar protocolo da página para usar o mesmo protocolo na API
+      // Isso corrige o erro de Mixed Content no navegador
+      const currentProtocol = window.location.protocol;
+      let endpoint = this.apiEndpoint;
+      
+      // Se estamos em HTTPS, garantir que a API também use HTTPS
+      if (currentProtocol === 'https:' && endpoint.startsWith('http://')) {
+        endpoint = endpoint.replace('http://', 'https://');
+      }
+      // Se estamos em HTTP, garantir que a API também use HTTP
+      else if (currentProtocol === 'http:' && endpoint.startsWith('https://')) {
+        endpoint = endpoint.replace('https://', 'http://');
+      }
+      
+      console.log(`Enviando áudio para: ${endpoint} usando protocolo compatível com ${currentProtocol}`);
       
       xhr.open('POST', endpoint, true);
       
