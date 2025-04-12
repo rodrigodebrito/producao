@@ -286,20 +286,110 @@ class WhisperTranscriptionService {
         console.log('Falha na ativação do Daily.co, não há fonte de áudio disponível');
         console.warn('TESTE TEMPORÁRIO: Microfone local desativado propositalmente para teste');
         
-        // Criar um MediaStream vazio para o MediaRecorder funcionar
-        // mas não capturar áudio real
-        const emptyStream = new MediaStream();
-        this.audioStream = emptyStream;
-        
-        console.log('Usando stream vazio para teste sem microfone local');
+        // Criar um stream de áudio silencioso utilizando Web Audio API
+        try {
+          // Criar contexto de áudio
+          const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+          
+          // Criar um oscilador com frequência muito baixa
+          const oscillator = audioContext.createOscillator();
+          oscillator.frequency.value = 1; // 1 Hz - quase inaudível
+          
+          // Criar um nó de ganho para controlar o volume
+          const gainNode = audioContext.createGain();
+          gainNode.gain.value = 0.001; // Volume praticamente zero
+          
+          // Conectar o oscilador ao ganho e o ganho à saída
+          oscillator.connect(gainNode);
+          gainNode.connect(audioContext.destination);
+          
+          // Iniciar o oscilador
+          oscillator.start();
+          
+          // Criar um MediaStream a partir do destino
+          const streamDestination = audioContext.createMediaStreamDestination();
+          this.audioStream = streamDestination.stream;
+          
+          console.log('Stream de áudio silencioso criado com sucesso');
+        } catch (error) {
+          console.error('Erro ao criar stream de áudio silencioso:', error);
+          
+          // Em caso de erro, tentar com um método alternativo
+          console.log('Tentando método alternativo para criar stream de áudio silencioso...');
+          
+          try {
+            // Tentar obter o microfone local, mas desabilitar as tracks imediatamente
+            const localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            
+            // Desabilitar todas as tracks (não captura áudio, mas mantém o stream válido)
+            localStream.getAudioTracks().forEach(track => {
+              track.enabled = false;
+            });
+            
+            this.audioStream = localStream;
+            console.log('Stream de áudio alternativo criado com microfone (mudo)');
+          } catch (err) {
+            console.error('Erro ao criar stream de áudio alternativo:', err);
+            
+            // Criar stream vazio como última alternativa
+            this.audioStream = new MediaStream();
+            console.log('Stream vazio criado como última alternativa (pode falhar)');
+          }
+        }
       } else {
         console.log('Daily.co ativado com sucesso, usando apenas áudio do Daily');
         
-        // PARA TESTE: Criar um stream fictício para o MediaRecorder funcionar
-        // mas não capturar áudio do microfone local
+        // PARA TESTE: Criar um stream silencioso para o MediaRecorder funcionar
         // Em produção, remova este bloco e descomente o bloco abaixo
-        const emptyStream = new MediaStream();
-        this.audioStream = emptyStream;
+        try {
+          // Criar contexto de áudio
+          const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+          
+          // Criar um oscilador com frequência muito baixa
+          const oscillator = audioContext.createOscillator();
+          oscillator.frequency.value = 1; // 1 Hz - quase inaudível
+          
+          // Criar um nó de ganho para controlar o volume
+          const gainNode = audioContext.createGain();
+          gainNode.gain.value = 0.001; // Volume praticamente zero
+          
+          // Conectar o oscilador ao ganho e o ganho à saída
+          oscillator.connect(gainNode);
+          gainNode.connect(audioContext.destination);
+          
+          // Iniciar o oscilador
+          oscillator.start();
+          
+          // Criar um MediaStream a partir do destino
+          const streamDestination = audioContext.createMediaStreamDestination();
+          this.audioStream = streamDestination.stream;
+          
+          console.log('Stream de áudio silencioso criado com sucesso');
+        } catch (error) {
+          console.error('Erro ao criar stream de áudio silencioso:', error);
+          
+          // Em caso de erro, tentar com um método alternativo
+          console.log('Tentando método alternativo para criar stream de áudio silencioso...');
+          
+          try {
+            // Tentar obter o microfone local, mas desabilitar as tracks imediatamente
+            const localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            
+            // Desabilitar todas as tracks (não captura áudio, mas mantém o stream válido)
+            localStream.getAudioTracks().forEach(track => {
+              track.enabled = false;
+            });
+            
+            this.audioStream = localStream;
+            console.log('Stream de áudio alternativo criado com microfone (mudo)');
+          } catch (err) {
+            console.error('Erro ao criar stream de áudio alternativo:', err);
+            
+            // Criar stream vazio como última alternativa
+            this.audioStream = new MediaStream();
+            console.log('Stream vazio criado como última alternativa (pode falhar)');
+          }
+        }
         
         /* COMENTADO PARA TESTE - REMOVA OS COMENTÁRIOS DEPOIS
         // 6. Sempre solicitar permissão do microfone local independentemente do Daily
@@ -338,6 +428,12 @@ class WhisperTranscriptionService {
         mimeType,
         audioBitsPerSecond: 128000 // Qualidade mais baixa para evitar problemas
       } : undefined;
+      
+      // Verificar se o stream tem faixas de áudio
+      if (!this.audioStream || !this.audioStream.getAudioTracks || this.audioStream.getAudioTracks().length === 0) {
+        console.error('ERRO: Stream sem faixas de áudio. O MediaRecorder não pode iniciar.');
+        throw new Error('O stream de áudio não tem faixas válidas');
+      }
       
       // 9. Criar nova instância do MediaRecorder
       this.mediaRecorder = new MediaRecorder(this.audioStream, options);
