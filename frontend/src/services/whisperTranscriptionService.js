@@ -64,10 +64,13 @@ class WhisperTranscriptionService {
     this.voiceDetectionInterval = null;
 
     // NOVO: Variáveis para suporte ao Daily.co
-    this.dailyCallObject = null;
-    this.dailyAudioStream = null;
-    this.remoteParticipantStreams = new Map();
-    this.dailyScriptInjected = false;
+    this.dailyCapturingEnabled = false;
+    this.dailyEventListenerAdded = false;
+    
+    // Adicionar listener para mensagens do iframe do Daily se estiver em produção
+    if (window.location.hostname !== 'localhost') {
+      this._setupDailyMessageListener();
+    }
   }
 
   /**
@@ -112,352 +115,127 @@ class WhisperTranscriptionService {
   }
 
   /**
-   * NOVO: Captura áudio do Daily.co para gravar áudio de todos os participantes
-   * @returns {Promise<boolean>} Sucesso da captura
+   * NOVO: Configura o listener de mensagens do Daily
    * @private
    */
-  async _captureAudioFromDaily() {
-    try {
-      console.log('Tentando capturar áudio diretamente do Daily.co...');
-      
-      // 1. Verificar se estamos dentro do iframe do Daily
-      const isDailyIframe = window.self !== window.top;
-      
-      // 2. Procurar por iframes do Daily na página
-      const dailyIframes = Array.from(document.querySelectorAll('iframe'))
-        .filter(iframe => 
-          iframe.src.includes('daily.co') || 
-          iframe.src.includes('terapiaconect') ||
-          iframe.id.includes('daily') ||
-          iframe.className.includes('daily')
-        );
-      
-      console.log(`Encontrados ${dailyIframes.length} iframes do Daily na página`);
-      
-      if (dailyIframes.length > 0) {
-        // Injetar script para capturar áudio do Daily
-        await this._injectDailyCaptureScript(dailyIframes[0]);
-        return true;
-      } else {
-        console.log('Nenhum iframe do Daily encontrado para captura de áudio');
-        return false;
-      }
-    } catch (error) {
-      console.error('Erro ao capturar áudio do Daily:', error);
-      return false;
-    }
-  }
-
-  /**
-   * NOVO: Injeta script de captura no iframe do Daily
-   * @param {HTMLIFrameElement} iframe - Iframe do Daily
-   * @returns {Promise<boolean>} Sucesso da injeção
-   * @private
-   */
-  async _injectDailyCaptureScript(iframe) {
-    return new Promise((resolve) => {
+  _setupDailyMessageListener() {
+    if (this.dailyEventListenerAdded) return;
+    
+    window.addEventListener('message', (event) => {
       try {
-        // Verificar se o script já foi injetado
-        if (this.dailyScriptInjected) {
-          console.log('Script de captura do Daily já injetado');
-          resolve(true);
-          return;
+        // Verificar se a mensagem vem do Daily
+        if (!event.data || typeof event.data !== 'object' || !event.data.type) return;
+        
+        // Processar mensagens relacionadas ao áudio
+        if (event.data.type === 'daily-audio-data') {
+          this._handleDailyAudioData(event.data);
         }
-        
-        console.log('Injetando script de captura no iframe do Daily...');
-        
-        // Criar script para injetar
-        const script = document.createElement('script');
-        script.textContent = `
-          // Script para capturar áudio do Daily
-          (function() {
-            try {
-              // Verificar se o Daily está disponível
-              if (typeof window.Daily === 'undefined') {
-                console.error('Daily API não disponível');
-                window.parent.postMessage({ type: 'daily-capture-error', error: 'Daily API não disponível' }, '*');
-                return;
-              }
-              
-              // Obter instância do Daily
-              const callObject = window.Daily.callObject;
-              if (!callObject) {
-                console.error('Objeto de chamada do Daily não disponível');
-                window.parent.postMessage({ type: 'daily-capture-error', error: 'Objeto de chamada não disponível' }, '*');
-                return;
-              }
-              
-              console.log('Daily detectado, capturando streams de áudio...');
-              
-              // Capturar streams de participantes
-              callObject.participants().then(participants => {
-                try {
-                  // Filtrar apenas participantes remotos com áudio
-                  const remoteParticipants = Object.values(participants).filter(p => 
-                    p.user_id && p.audio && !p.local
-                  );
-                  
-                  console.log('Participantes com áudio:', remoteParticipants.map(p => p.user_id));
-                  
-                  // Enviar streams para o frame principal
-                  remoteParticipants.forEach(participant => {
-                    try {
-                      if (participant.audioTrack) {
-                        const stream = new MediaStream([participant.audioTrack]);
-                        window.parent.postMessage({
-                          type: 'daily-audio-stream',
-                          participantId: participant.user_id,
-                          participantName: participant.user_name || 'Unknown'
-                        }, '*');
-                        
-                        // Criar conexão com o frame principal
-                        const pc = new RTCPeerConnection();
-                        stream.getTracks().forEach(track => pc.addTrack(track, stream));
-                        
-                        pc.onicecandidate = (event) => {
-                          if (event.candidate) {
-                            window.parent.postMessage({
-                              type: 'daily-ice-candidate',
-                              participantId: participant.user_id,
-                              candidate: event.candidate
-                            }, '*');
-                          }
-                        };
-                        
-                        // Criar e enviar oferta
-                        pc.createOffer().then(offer => {
-                          pc.setLocalDescription(offer);
-                          window.parent.postMessage({
-                            type: 'daily-offer',
-                            participantId: participant.user_id,
-                            offer: offer
-                          }, '*');
-                        });
-                        
-                        // Salvar referência para o PC
-                        window['pc_' + participant.user_id] = pc;
-                      }
-                    } catch (e) {
-                      console.error('Erro ao processar participante:', e);
-                    }
-                  });
-                  
-                  // Indicar sucesso
-                  window.parent.postMessage({ 
-                    type: 'daily-capture-success',
-                    count: remoteParticipants.length
-                  }, '*');
-                  
-                } catch (e) {
-                  console.error('Erro ao processar participantes:', e);
-                  window.parent.postMessage({ type: 'daily-capture-error', error: e.message }, '*');
-                }
-              }).catch(error => {
-                console.error('Erro ao obter participantes:', error);
-                window.parent.postMessage({ type: 'daily-capture-error', error: error.message }, '*');
-              });
-              
-              // Ouvir mensagens do frame principal
-              window.addEventListener('message', (event) => {
-                if (event.data.type === 'daily-answer') {
-                  const pc = window['pc_' + event.data.participantId];
-                  if (pc) {
-                    pc.setRemoteDescription(event.data.answer);
-                  }
-                } else if (event.data.type === 'daily-ice-candidate') {
-                  const pc = window['pc_' + event.data.participantId];
-                  if (pc) {
-                    pc.addIceCandidate(event.data.candidate);
-                  }
-                }
-              });
-            } catch (e) {
-              console.error('Erro no script de captura:', e);
-              window.parent.postMessage({ type: 'daily-capture-error', error: e.message }, '*');
-            }
-          })();
-        `;
-        
-        // Adicionar à cabeça do iframe
-        const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
-        iframeDoc.head.appendChild(script);
-        
-        // Configurar listener de mensagens
-        window.addEventListener('message', this._handleDailyMessages.bind(this));
-        
-        console.log('Script de captura do Daily injetado com sucesso');
-        this.dailyScriptInjected = true;
-        
-        // Resolver após esperar um pouco para dar tempo ao script executar
-        setTimeout(() => resolve(true), 1000);
       } catch (e) {
-        console.error('Erro ao injetar script de captura:', e);
-        resolve(false);
+        console.error('Erro ao processar mensagem do Daily:', e);
       }
     });
+    
+    this.dailyEventListenerAdded = true;
+    console.log('Listener de mensagens do Daily configurado');
   }
-
+  
   /**
-   * NOVO: Processa mensagens recebidas do iframe do Daily
-   * @param {MessageEvent} event - Evento de mensagem
+   * NOVO: Processa dados de áudio enviados pelo Daily
+   * @param {Object} data - Dados da mensagem
    * @private
    */
-  _handleDailyMessages(event) {
+  _handleDailyAudioData(data) {
     try {
-      const data = event.data;
+      if (!data.audioBlob || !this.isRecording) return;
       
-      if (!data || !data.type || !data.type.startsWith('daily-')) {
-        return; // Ignorar mensagens não relacionadas ao Daily
+      // Converter dados Base64 para Blob se necessário
+      let audioBlob;
+      if (typeof data.audioBlob === 'string') {
+        // Converter Base64 para Blob
+        const byteString = atob(data.audioBlob.split(',')[1]);
+        const mimeString = data.audioBlob.split(',')[0].split(':')[1].split(';')[0];
+        const ab = new ArrayBuffer(byteString.length);
+        const ia = new Uint8Array(ab);
+        
+        for (let i = 0; i < byteString.length; i++) {
+          ia[i] = byteString.charCodeAt(i);
+        }
+        
+        audioBlob = new Blob([ab], { type: mimeString });
+      } else {
+        audioBlob = data.audioBlob;
       }
       
-      console.log('Mensagem recebida do Daily:', data.type);
+      // Adicionar à lista de chunks
+      this.audioChunks.push(audioBlob);
       
-      switch (data.type) {
-        case 'daily-capture-success':
-          console.log(`Captura do Daily bem-sucedida, ${data.count} participantes com áudio`);
-          break;
-          
-        case 'daily-capture-error':
-          console.error('Erro na captura do Daily:', data.error);
-          break;
-          
-        case 'daily-audio-stream':
-          console.log(`Stream de áudio recebido do participante: ${data.participantId} (${data.participantName})`);
-          this._setupParticipantConnection(data.participantId, data.participantName);
-          break;
-          
-        case 'daily-offer':
-          this._handleDailyOffer(data.participantId, data.offer);
-          break;
-          
-        case 'daily-ice-candidate':
-          this._handleDailyIceCandidate(data.participantId, data.candidate);
-          break;
-      }
+      console.log(`Áudio do Daily recebido: ${Math.round(audioBlob.size/1024)}KB, participante: ${data.participantId || 'desconhecido'}`);
     } catch (e) {
-      console.error('Erro ao processar mensagem do Daily:', e);
+      console.error('Erro ao processar dados de áudio do Daily:', e);
     }
   }
-
+  
   /**
-   * NOVO: Configura conexão com participante do Daily
-   * @param {string} participantId - ID do participante
-   * @param {string} participantName - Nome do participante
+   * NOVO: Tenta ativar a captura de áudio do Daily
+   * @returns {Promise<boolean>} Sucesso da ativação
    * @private
    */
-  _setupParticipantConnection(participantId, participantName) {
+  async _tryEnableDailyCapture() {
     try {
-      // Criar novo PeerConnection
-      const pc = new RTCPeerConnection();
+      // Verificar se já está ativado
+      if (this.dailyCapturingEnabled) {
+        console.log('Captura do Daily já está ativada');
+        return true;
+      }
       
-      // Configurar handler para stream
-      pc.ontrack = (event) => {
-        console.log(`Áudio recebido do participante ${participantName} (${participantId})`);
-        
-        // Salvar o stream para uso posterior
-        this.remoteParticipantStreams.set(participantId, {
-          stream: event.streams[0],
-          name: participantName
+      // Verificar se está em produção
+      if (window.location.hostname === 'localhost') {
+        console.log('Em ambiente de desenvolvimento, não tentando comunicação com Daily');
+        return false;
+      }
+      
+      // Garantir que o listener está configurado
+      this._setupDailyMessageListener();
+      
+      // Buscar iframes do Daily
+      const dailyIframes = Array.from(document.querySelectorAll('iframe'))
+        .filter(iframe => 
+          iframe.src && (
+            iframe.src.includes('daily.co') || 
+            iframe.src.includes('terapiaconect') ||
+            iframe.id.includes('daily') ||
+            iframe.className.includes('daily')
+          )
+        );
+      
+      console.log(`Encontrados ${dailyIframes.length} possíveis iframes do Daily`);
+      
+      if (dailyIframes.length > 0) {
+        // Enviar mensagem para ativar captura
+        dailyIframes.forEach(iframe => {
+          try {
+            console.log(`Enviando mensagem para iframe: ${iframe.src}`);
+            
+            // Enviar mensagem de forma segura
+            iframe.contentWindow.postMessage({
+              type: 'whisper-request-audio-capture',
+              sessionId: this.sessionId
+            }, '*');
+          } catch (e) {
+            console.warn(`Não foi possível enviar mensagem para iframe: ${e.message}`);
+          }
         });
         
-        // Se já estiver gravando, adicionar este stream
-        if (this.isRecording && this.audioContext) {
-          this._addParticipantStreamToRecording(participantId, event.streams[0]);
-        }
-      };
-      
-      // Salvar referência
-      this.remoteParticipantConnections = this.remoteParticipantConnections || new Map();
-      this.remoteParticipantConnections.set(participantId, pc);
-      
-    } catch (e) {
-      console.error(`Erro ao configurar conexão para ${participantName}:`, e);
-    }
-  }
-
-  /**
-   * NOVO: Processa oferta WebRTC do Daily
-   * @param {string} participantId - ID do participante
-   * @param {RTCSessionDescriptionInit} offer - Oferta SDP
-   * @private
-   */
-  _handleDailyOffer(participantId, offer) {
-    try {
-      const pc = this.remoteParticipantConnections.get(participantId);
-      if (!pc) {
-        console.error(`PeerConnection não encontrada para ${participantId}`);
-        return;
+        // Marcar como ativado (mesmo que não tenhamos garantia de resposta)
+        this.dailyCapturingEnabled = true;
+        console.log('Solicitação de captura enviada para iframes do Daily');
+        return true;
       }
       
-      // Definir descrição remota (oferta)
-      pc.setRemoteDescription(offer)
-        .then(() => pc.createAnswer())
-        .then(answer => pc.setLocalDescription(answer))
-        .then(() => {
-          // Enviar resposta para o iframe do Daily
-          const dailyIframe = document.querySelector('iframe[src*="daily"]');
-          if (dailyIframe) {
-            dailyIframe.contentWindow.postMessage({
-              type: 'daily-answer',
-              participantId: participantId,
-              answer: pc.localDescription
-            }, '*');
-          }
-        })
-        .catch(e => console.error(`Erro ao processar oferta para ${participantId}:`, e));
-      
+      return false;
     } catch (e) {
-      console.error(`Erro ao processar oferta para ${participantId}:`, e);
-    }
-  }
-
-  /**
-   * NOVO: Processa candidato ICE do Daily
-   * @param {string} participantId - ID do participante
-   * @param {RTCIceCandidate} candidate - Candidato ICE
-   * @private
-   */
-  _handleDailyIceCandidate(participantId, candidate) {
-    try {
-      const pc = this.remoteParticipantConnections.get(participantId);
-      if (pc) {
-        pc.addIceCandidate(candidate)
-          .catch(e => console.error(`Erro ao adicionar candidato ICE para ${participantId}:`, e));
-      }
-    } catch (e) {
-      console.error(`Erro ao processar candidato ICE para ${participantId}:`, e);
-    }
-  }
-
-  /**
-   * NOVO: Adiciona stream de participante à gravação
-   * @param {string} participantId - ID do participante
-   * @param {MediaStream} stream - Stream de mídia
-   * @private
-   */
-  _addParticipantStreamToRecording(participantId, stream) {
-    try {
-      // Verificar se temos contexto de áudio
-      if (!this.audioContext) {
-        console.warn('Não foi possível adicionar participante, contexto de áudio indisponível');
-        return;
-      }
-      
-      // Criar fonte de áudio para o stream
-      const source = this.audioContext.createMediaStreamSource(stream);
-      
-      // Criar nó de ganho para amplificar o áudio (participantes remotos são frequentemente baixos)
-      const gainNode = this.audioContext.createGain();
-      gainNode.gain.value = 1.5; // Amplificar levemente
-      
-      // Conectar ao analisador de áudio
-      source.connect(gainNode);
-      gainNode.connect(this.audioAnalyser);
-      
-      console.log(`Stream do participante ${participantId} adicionado à gravação`);
-      
-    } catch (e) {
-      console.error(`Erro ao adicionar stream do participante ${participantId}:`, e);
+      console.error('Erro ao tentar ativar captura do Daily:', e);
+      return false;
     }
   }
 
@@ -500,28 +278,29 @@ class WhisperTranscriptionService {
         console.log(`SessionID extraído: ${this.sessionId}`);
       }
       
-      // NOVO: Primeiro tentar capturar áudio do Daily.co para todos os participantes
-      const dailyCaptureSuccess = await this._captureAudioFromDaily();
+      // NOVO: Tentar ativar captura de áudio do Daily.co, mas sem bloquear o fluxo
+      this._tryEnableDailyCapture().then(success => {
+        if (success) {
+          console.log('Captura de áudio do Daily.co solicitada com sucesso');
+        } else {
+          console.log('Não foi possível solicitar captura de áudio do Daily.co, usando apenas microfone local');
+        }
+      });
       
-      // Se não conseguiu capturar do Daily, usar microfone local
-      if (!dailyCaptureSuccess) {
-        console.log('Usando microfone local como fallback...');
-        
-        console.log('Solicitando nova permissão de microfone...');
-        this.audioStream = await navigator.mediaDevices.getUserMedia({ 
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true
-          }
-        });
-        
-        console.log('Permissão de microfone concedida, criando novo MediaRecorder');
-      } else {
-        console.log('Áudio do Daily.co capturado, não é necessário usar microfone local');
-      }
+      // 6. Sempre solicitar permissão do microfone local independentemente do Daily
+      // Isso garante que pelo menos o áudio local será capturado
+      console.log('Solicitando permissão de microfone local...');
+      this.audioStream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      });
       
-      // 6. Priorizar WAV como formato para compatibilidade com Whisper
+      console.log('Permissão de microfone concedida, criando novo MediaRecorder');
+      
+      // 7. Priorizar WAV como formato para compatibilidade com Whisper
       let mimeType = null;
       
       // Verificar suporte a WAV (prioridade para Whisper API)
@@ -537,17 +316,16 @@ class WhisperTranscriptionService {
       
       console.log(`Formato de gravação selecionado: ${mimeType || 'padrão do navegador'}`);
       
-      // 7. Configurar opções avançadas para MediaRecorder
+      // 8. Configurar opções avançadas para MediaRecorder
       const options = mimeType ? {
         mimeType,
         audioBitsPerSecond: 128000 // Qualidade mais baixa para evitar problemas
       } : undefined;
       
-      // 8. Criar nova instância do MediaRecorder com o stream disponível
-      const streamToRecord = this.audioStream || new MediaStream();
-      this.mediaRecorder = new MediaRecorder(streamToRecord, options);
+      // 9. Criar nova instância do MediaRecorder
+      this.mediaRecorder = new MediaRecorder(this.audioStream, options);
       
-      // 9. Configurar evento para chunks pequenos e frequentes
+      // 10. Configurar evento para chunks pequenos e frequentes
       this.mediaRecorder.ondataavailable = (event) => {
         if (event.data && event.data.size > 0) {
           const chunkNum = this.audioChunks.length;
@@ -557,26 +335,25 @@ class WhisperTranscriptionService {
         }
       };
       
-      // 10. Capturar erros do MediaRecorder
+      // 11. Capturar erros do MediaRecorder
       this.mediaRecorder.onerror = (event) => {
         console.error('Erro no MediaRecorder:', event);
         this._dispatchEvent('recordingError', { error: 'Erro na gravação de áudio' });
       };
       
-      // 11. Iniciar gravação com chunks MUITO pequenos para melhor controle
+      // 12. Iniciar gravação com chunks MUITO pequenos para melhor controle
       this.mediaRecorder.start(300); // 300ms por chunk para maior controle
       console.log('Gravação WAV iniciada com nova instância de MediaRecorder');
       
-      // 12. Configurar detecção de silêncio
+      // 13. Configurar detecção de silêncio
       if (this.silenceDetectionEnabled) {
-        // Usar o stream disponível
-        this._setupSilenceDetection(streamToRecord);
+        this._setupSilenceDetection(this.audioStream);
       }
       
-      // 13. Configurar timer para chunk máximo
+      // 14. Configurar timer para chunk máximo
       this._setupMaxChunkTimer();
       
-      // 14. Disparar evento de início
+      // 15. Disparar evento de início
       this._dispatchEvent('recordingStarted', { isRecording: true });
       
       return true;
@@ -1767,7 +1544,7 @@ class WhisperTranscriptionService {
             transcriptions = [];
           }
         } catch (e) {
-          console.warn('Erro ao processar transcrições armazenadas:', e);
+          console.warn('Erro ao recuperar transcrições armazenadas:', e);
           transcriptions = [];
         }
       }
