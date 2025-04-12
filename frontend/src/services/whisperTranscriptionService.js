@@ -128,7 +128,17 @@ class WhisperTranscriptionService {
         
         // Processar mensagens relacionadas ao áudio
         if (event.data.type === 'daily-audio-data') {
+          console.log('[DAILY DEBUG] Recebido frame de áudio do Daily.co');
           this._handleDailyAudioData(event.data);
+        }
+        // Processar resposta à solicitação de captura
+        else if (event.data.type === 'daily-audio-capture-response') {
+          console.log('[DAILY DEBUG] Recebida resposta de captura de áudio do Daily.co:', 
+              event.data.success ? 'SUCESSO' : 'FALHA');
+          
+          if (event.data.success) {
+            this.dailyCapturingEnabled = true;
+          }
         }
       } catch (e) {
         console.error('Erro ao processar mensagem do Daily:', e);
@@ -193,7 +203,7 @@ class WhisperTranscriptionService {
       
       console.log(`[DAILY DEBUG] Encontrados ${iframes.length} iframes na página`);
       
-      // 2. Tentar capturar de cada iframe
+      // 2. Tentar se comunicar com cada iframe usando postMessage (seguro entre origens)
       let captureSuccessful = false;
       
       for (let i = 0; i < iframes.length; i++) {
@@ -203,29 +213,30 @@ class WhisperTranscriptionService {
         console.log(`[DAILY DEBUG] Verificando iframe #${i+1}: ${iframeUrl}`);
         
         if (iframeUrl.includes('daily.co') || iframeUrl.includes('theraconnect')) {
-          console.log(`[DAILY DEBUG] Iframe #${i+1} é potencialmente do Daily.co, tentando injetar script de captura`);
+          console.log(`[DAILY DEBUG] Iframe #${i+1} é potencialmente do Daily.co, tentando comunicação via postMessage`);
           
           try {
-            // 3. Injetar script para capturar áudio
-            const success = await this._injectDailyCaptureScript(iframe);
+            // Método alternativo usando postMessage em vez de eval direto
+            const success = await this._requestDailyAudioCapture(iframe);
             
             if (success) {
               captureSuccessful = true;
-              console.log(`[DAILY DEBUG] Script de captura injetado com sucesso no iframe #${i+1}`);
+              console.log(`[DAILY DEBUG] Comunicação por postMessage bem sucedida com iframe #${i+1}`);
               break;
             } else {
-              console.log(`[DAILY DEBUG] Falha ao injetar script no iframe #${i+1}`);
+              console.log(`[DAILY DEBUG] Falha na comunicação por postMessage com iframe #${i+1}`);
             }
           } catch (error) {
-            console.error(`[DAILY DEBUG] Erro ao injetar script no iframe #${i+1}:`, error);
+            console.error(`[DAILY DEBUG] Erro ao comunicar com iframe #${i+1}:`, error);
           }
         } else {
           console.log(`[DAILY DEBUG] Iframe #${i+1} não é do Daily.co, ignorando`);
         }
       }
       
+      // 3. Se encontramos qualquer iframe do Daily, consideramos que a integração está ativa
+      // Mesmo que não tenhamos estabelecido comunicação ainda, o iframe pode responder depois
       if (captureSuccessful) {
-        // 4. Ativar flag para evitar tentativas duplicadas
         this.dailyCapturingEnabled = true;
         console.log('[DAILY DEBUG] Captura de áudio do Daily.co ativada com sucesso');
       } else {
@@ -240,21 +251,21 @@ class WhisperTranscriptionService {
   }
 
   /**
-   * Injeta script para capturar áudio do Daily.co
+   * Solicita a captura de áudio do Daily.co usando postMessage (seguro entre origens)
    * @param {HTMLIFrameElement} iframe - iframe do Daily.co
    * @returns {Promise<boolean>}
    * @private
    */
-  async _injectDailyCaptureScript(iframe) {
+  async _requestDailyAudioCapture(iframe) {
     if (!iframe || !iframe.contentWindow) {
       console.error('[DAILY DEBUG] iframe inválido ou sem contentWindow');
       return false;
     }
     
     return new Promise((resolve) => {
-      // Adicionar timeout para garantir que o script não fique preso
+      // Adicionar timeout para garantir que a solicitação não fique presa
       const timeout = setTimeout(() => {
-        console.warn('[DAILY DEBUG] Timeout ao esperar resposta do script de captura do Daily');
+        console.warn('[DAILY DEBUG] Timeout ao esperar resposta do Daily via postMessage');
         if (!this.dailyEventListenerAdded) {
           window.removeEventListener('message', handleMessage);
         }
@@ -273,12 +284,12 @@ class WhisperTranscriptionService {
           
           const data = event.data;
           
-          if (typeof data === 'object' && data.type === 'daily-audio-capture') {
+          if (typeof data === 'object' && data.type === 'daily-audio-capture-response') {
             clearTimeout(timeout);
             
             if (data.success) {
-              console.log('[DAILY DEBUG] Mensagem recebida do Daily: captura de áudio iniciada com sucesso');
-              console.log('[DAILY DEBUG] Detalhes do stream:', {
+              console.log('[DAILY DEBUG] Resposta recebida do Daily: captura de áudio iniciada com sucesso');
+              console.log('[DAILY DEBUG] Detalhes da resposta:', {
                 participantId: data.participantId,
                 hasAudioTracks: data.hasAudioTracks,
                 trackCount: data.trackCount
@@ -290,7 +301,7 @@ class WhisperTranscriptionService {
               
               resolve(true);
             } else {
-              console.warn('[DAILY DEBUG] Mensagem recebida do Daily: falha na captura de áudio');
+              console.warn('[DAILY DEBUG] Resposta recebida do Daily: falha na captura de áudio');
               console.warn('[DAILY DEBUG] Motivo da falha:', data.error);
               
               if (!this.dailyEventListenerAdded) {
@@ -305,126 +316,27 @@ class WhisperTranscriptionService {
         }
       };
       
-      // Adicionar listener para mensagens
+      // Adicionar listener para mensagens se ainda não existe
       if (!this.dailyEventListenerAdded) {
         window.addEventListener('message', handleMessage);
         this.dailyEventListenerAdded = true;
       }
       
-      // Código JavaScript a ser injetado no iframe
-      const scriptToInject = `
-        try {
-          console.log('[DAILY IFRAME] Iniciando script de captura no iframe do Daily.co');
-          
-          // Verificar se o daily está definido
-          if (typeof window.daily !== 'undefined' && window.daily) {
-            console.log('[DAILY IFRAME] Objeto daily encontrado:', window.daily);
-            
-            // Verificar o estado da chamada
-            const callState = window.daily.callState();
-            console.log('[DAILY IFRAME] Estado da chamada:', callState);
-            
-            // Obter participantes
-            const participants = window.daily.participants();
-            const participantIds = Object.keys(participants);
-            console.log('[DAILY IFRAME] Participantes encontrados:', participantIds.length);
-            
-            // Capturar streams de áudio
-            let audioTracks = [];
-            let localParticipantId = '';
-            
-            for (const id in participants) {
-              const participant = participants[id];
-              console.log('[DAILY IFRAME] Verificando participante:', id, participant.user_name || 'Sem nome');
-              
-              if (participant.local) {
-                localParticipantId = id;
-                console.log('[DAILY IFRAME] Participante local identificado:', id);
-              }
-              
-              // Capturar stream de áudio
-              if (participant.audioTrack) {
-                console.log('[DAILY IFRAME] Faixa de áudio encontrada para participante:', id);
-                audioTracks.push(participant.audioTrack);
-              }
-              
-              // Também verificar a propriedade tracks para mais detalhes
-              if (participant.tracks) {
-                console.log('[DAILY IFRAME] Faixas disponíveis para', id, ':', Object.keys(participant.tracks));
-                
-                if (participant.tracks.audio) {
-                  console.log('[DAILY IFRAME] Detalhes da faixa de áudio:', 
-                    'state:', participant.tracks.audio.state,
-                    'subscribed:', participant.tracks.audio.subscribed
-                  );
-                }
-              }
-            }
-            
-            // Criar MediaStream com as faixas de áudio
-            if (audioTracks.length > 0) {
-              console.log('[DAILY IFRAME] Criando MediaStream com', audioTracks.length, 'faixas de áudio');
-              const audioStream = new MediaStream(audioTracks);
-              
-              // Enviar mensagem para a página principal
-              window.parent.postMessage({
-                type: 'daily-audio-capture',
-                success: true,
-                participantId: localParticipantId,
-                hasAudioTracks: true,
-                trackCount: audioTracks.length
-              }, '*');
-              
-              console.log('[DAILY IFRAME] Stream de áudio enviado para a página principal');
-              return true;
-            } else {
-              console.warn('[DAILY IFRAME] Nenhuma faixa de áudio encontrada');
-              
-              // Enviar mensagem de erro
-              window.parent.postMessage({
-                type: 'daily-audio-capture',
-                success: false,
-                error: 'Nenhuma faixa de áudio encontrada',
-                hasAudioTracks: false,
-                trackCount: 0
-              }, '*');
-              
-              return false;
-            }
-          } else {
-            console.warn('[DAILY IFRAME] Objeto daily não encontrado no iframe');
-            
-            // Enviar mensagem de erro
-            window.parent.postMessage({
-              type: 'daily-audio-capture',
-              success: false,
-              error: 'Objeto daily não encontrado',
-              hasAudioTracks: false
-            }, '*');
-            
-            return false;
-          }
-        } catch (error) {
-          console.error('[DAILY IFRAME] Erro ao capturar áudio do Daily:', error);
-          
-          // Enviar mensagem de erro
-          window.parent.postMessage({
-            type: 'daily-audio-capture',
-            success: false,
-            error: error.message || 'Erro desconhecido',
-            hasAudioTracks: false
-          }, '*');
-          
-          return false;
-        }
-      `;
-      
       try {
-        // Injetar script no iframe
-        console.log('[DAILY DEBUG] Injetando script no iframe do Daily...');
-        iframe.contentWindow.eval(scriptToInject);
+        // Enviar mensagem para o iframe do Daily
+        console.log('[DAILY DEBUG] Enviando solicitação de captura de áudio via postMessage');
+        
+        // Necessário incluir * para comunicação cross-origin
+        iframe.contentWindow.postMessage({
+          type: 'daily-audio-capture-request',
+          sessionId: this.sessionId,
+          source: 'whisperTranscriptionService',
+          timestamp: new Date().toISOString()
+        }, '*');
+        
+        console.log('[DAILY DEBUG] Solicitação enviada, aguardando resposta...');
       } catch (error) {
-        console.error('[DAILY DEBUG] Erro ao injetar script:', error);
+        console.error('[DAILY DEBUG] Erro ao enviar mensagem para iframe:', error);
         clearTimeout(timeout);
         
         if (!this.dailyEventListenerAdded) {
