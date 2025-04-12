@@ -1018,6 +1018,9 @@ class WhisperTranscriptionService {
         timestamp: new Date().toISOString()
       };
       
+      // NOVO: Salvar no sessionStorage imediatamente como backup
+      this._saveTranscriptionToStorage(transcriptionData);
+      
       // CORREÇÃO: Usar nossa nova função para enviar a transcrição para o backend
       await this._sendTranscriptionToBackend(transcriptionData);
       
@@ -1031,6 +1034,52 @@ class WhisperTranscriptionService {
         ...transcriptionData
       });
       
+      // MELHORIA: Armazenar no localStorage para recuperação posterior
+      try {
+        const sessionId = transcriptionData.sessionId;
+        const key = `whisper_transcript_${sessionId}`;
+        
+        // Recuperar transcrições existentes
+        let existingTranscripts = [];
+        const storedData = localStorage.getItem(key);
+        if (storedData) {
+          try {
+            existingTranscripts = JSON.parse(storedData);
+          } catch (e) {
+            console.warn('Erro ao recuperar transcrições armazenadas:', e);
+          }
+        }
+        
+        // Adicionar nova transcrição
+        existingTranscripts.push(transcriptionData);
+        
+        // Salvar no localStorage
+        localStorage.setItem(key, JSON.stringify(existingTranscripts));
+        console.log('Transcrição salva no localStorage para recuperação futura');
+        
+        // MELHORIA: Atualizar diretamente o estado do transcript no AIContext
+        if (window.__AI_CONTEXT) {
+          const currentTranscript = window.__AI_CONTEXT.transcript || '';
+          const newTranscript = currentTranscript 
+            ? `${currentTranscript}\n${transcriptionData.speaker}: ${transcriptionData.content}`
+            : `${transcriptionData.speaker}: ${transcriptionData.content}`;
+          
+          // Se o AIContext tem uma função para atualizar o transcript, usá-la
+          if (typeof window.__AI_CONTEXT.updateTranscript === 'function') {
+            window.__AI_CONTEXT.updateTranscript(newTranscript);
+            console.log('Transcript atualizado diretamente no AIContext via updateTranscript');
+          } else {
+            // Caso contrário, disparar um evento para o AIContext atualizar o transcript
+            window.dispatchEvent(new CustomEvent('transcript-updated', { 
+              detail: { fullText: newTranscript }
+            }));
+            console.log('Evento transcript-updated disparado para atualizar AIContext');
+          }
+        }
+      } catch (storageError) {
+        console.warn('Erro ao salvar transcrição no localStorage:', storageError);
+      }
+      
       // Tentar encontrar o AI Context e salvar a transcrição
       try {
         // Notificar via evento global que capturamos transcrição
@@ -1041,7 +1090,24 @@ class WhisperTranscriptionService {
         // Tentar usar o AIContext se disponível
         if (window.__AI_CONTEXT && window.__AI_CONTEXT.saveTranscript) {
           console.log('AIContext encontrado, salvando transcrição via contexto...');
-          await window.__AI_CONTEXT.saveTranscript(transcriptionData);
+          const result = await window.__AI_CONTEXT.saveTranscript(transcriptionData);
+          
+          // MELHORIA: Se a transcrição foi salva com sucesso, forçar a atualização das sugestões
+          if (result && result.success) {
+            console.log('Transcrição salva com sucesso, forçando atualização de sugestões');
+            
+            // Se o AIContext tem um método para gerar sugestões, chamá-lo após um breve atraso
+            setTimeout(() => {
+              try {
+                if (window.__AI_CONTEXT.suggest) {
+                  console.log('Chamando suggest() para atualizar sugestões');
+                  window.__AI_CONTEXT.suggest(transcriptionData.sessionId);
+                }
+              } catch (suggestError) {
+                console.error('Erro ao tentar forçar sugestões:', suggestError);
+              }
+            }, 2000); // Atraso para garantir que o backend teve tempo de processar
+          }
         }
       } catch (aiContextError) {
         console.error('Erro ao interagir com AIContext:', aiContextError);
@@ -1156,6 +1222,56 @@ class WhisperTranscriptionService {
     } catch (error) {
       console.error('Whisper: Erro ao enviar transcrição:', error);
       return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * NOVO: Salvar transcrição no sessionStorage como backup
+   * @param {Object} transcription - A transcrição a ser salva
+   * @private
+   */
+  _saveTranscriptionToStorage(transcription) {
+    try {
+      if (!transcription || !transcription.sessionId || !transcription.content) {
+        return false;
+      }
+      
+      // Usar sessionStorage para maior segurança
+      const key = `whisper_transcriptions_${transcription.sessionId}`;
+      
+      // Obter transcrições existentes
+      let transcriptions = [];
+      const stored = sessionStorage.getItem(key);
+      
+      if (stored) {
+        try {
+          transcriptions = JSON.parse(stored);
+          if (!Array.isArray(transcriptions)) {
+            transcriptions = [];
+          }
+        } catch (e) {
+          console.warn('Erro ao processar transcrições armazenadas:', e);
+          transcriptions = [];
+        }
+      }
+      
+      // Adicionar nova transcrição
+      transcriptions.push({
+        ...transcription,
+        clientTimestamp: Date.now()
+      });
+      
+      // Salvar de volta
+      sessionStorage.setItem(key, JSON.stringify(transcriptions));
+      console.log(`Transcrição salva no sessionStorage: ${key}, total: ${transcriptions.length}`);
+      
+      // Também salvar a última transcrição separadamente
+      sessionStorage.setItem(`last_transcript_${transcription.sessionId}`, JSON.stringify(transcription));
+      
+      return true;
+    } catch (e) {
+      console.warn('Erro ao salvar transcrição no sessionStorage:', e);
+      return false;
     }
   }
 }

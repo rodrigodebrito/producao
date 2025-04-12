@@ -81,10 +81,79 @@ export const AIProvider = ({ children }) => {
     return false;
   };
   
+  // Nova função auxiliar para atualizar diretamente o transcript
+  const updateTranscript = (newTranscript) => {
+    if (typeof newTranscript === 'string') {
+      setTranscript(newTranscript);
+      return true;
+    }
+    return false;
+  };
+  
+  // Função auxiliar para verificar storage por transcrições
+  const checkStorageForTranscripts = (sessionId) => {
+    try {
+      if (!sessionId) return null;
+      
+      // Verificar primeiro no sessionStorage
+      const sessionKey = `whisper_transcriptions_${sessionId}`;
+      const sessionData = sessionStorage.getItem(sessionKey);
+      
+      // Se tiver dados no sessionStorage, usar esses
+      if (sessionData) {
+        try {
+          const transcripts = JSON.parse(sessionData);
+          
+          if (Array.isArray(transcripts) && transcripts.length > 0) {
+            console.log(`[AIContext] Encontradas ${transcripts.length} transcrições no sessionStorage`);
+            
+            // Combinar em texto único
+            const combinedText = transcripts
+              .map(t => `${t.speaker || 'Usuário'}: ${t.content}`)
+              .join('\n');
+            
+            return combinedText;
+          }
+        } catch (e) {
+          console.warn('[AIContext] Erro ao processar dados do sessionStorage:', e);
+        }
+      }
+      
+      // Verificar localStorage como fallback
+      const localKey = `whisper_transcript_${sessionId}`;
+      const localData = localStorage.getItem(localKey);
+      
+      if (!localData) return null;
+      
+      const transcripts = JSON.parse(localData);
+      
+      if (!Array.isArray(transcripts) || transcripts.length === 0) return null;
+      
+      console.log(`[AIContext] Encontradas ${transcripts.length} transcrições no localStorage`);
+      
+      // Combinar em texto único
+      const combinedText = transcripts
+        .map(t => `${t.speaker || 'Usuário'}: ${t.content}`)
+        .join('\n');
+      
+      return combinedText;
+    } catch (error) {
+      console.warn('[AIContext] Erro ao verificar storage por transcrições:', error);
+      return null;
+    }
+  };
+  
   // Função genérica para buscar transcrições
   const fetchTranscriptions = async (sessionId) => {
     try {
       console.log('[AIContext] Buscando transcrições para a sessão:', sessionId);
+      
+      // MELHORIA: Primeiro verificar localStorage
+      const localTranscripts = checkStorageForTranscripts(sessionId);
+      if (localTranscripts) {
+        console.log('[AIContext] Usando transcrições do localStorage');
+        return localTranscripts;
+      }
       
       // Obter token de autenticação
       const authToken = localStorage.getItem('authToken') || 
@@ -723,7 +792,8 @@ export const AIProvider = ({ children }) => {
     toggleAnonymization,
     isCompatible,
     clearTranscript,
-    saveTranscript
+    saveTranscript,
+    updateTranscript
   };
   
   // Exportar para o window para permitir acesso fora do React
