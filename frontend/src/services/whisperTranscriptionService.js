@@ -279,26 +279,43 @@ class WhisperTranscriptionService {
       }
       
       // NOVO: Tentar ativar captura de áudio do Daily.co, mas sem bloquear o fluxo
-      this._tryEnableDailyCapture().then(success => {
-        if (success) {
-          console.log('Captura de áudio do Daily.co solicitada com sucesso');
-        } else {
-          console.log('Não foi possível solicitar captura de áudio do Daily.co, usando apenas microfone local');
-        }
-      });
+      const dailySuccess = await this._tryEnableDailyCapture();
+      console.log(`Tentativa de captura do Daily.co: ${dailySuccess ? 'SUCESSO' : 'FALHA'}`);
       
-      // 6. Sempre solicitar permissão do microfone local independentemente do Daily
-      // Isso garante que pelo menos o áudio local será capturado
-      console.log('Solicitando permissão de microfone local...');
-      this.audioStream = await navigator.mediaDevices.getUserMedia({ 
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        }
-      });
-      
-      console.log('Permissão de microfone concedida, criando novo MediaRecorder');
+      if (!dailySuccess) {
+        console.log('Falha na ativação do Daily.co, não há fonte de áudio disponível');
+        console.warn('TESTE TEMPORÁRIO: Microfone local desativado propositalmente para teste');
+        
+        // Criar um MediaStream vazio para o MediaRecorder funcionar
+        // mas não capturar áudio real
+        const emptyStream = new MediaStream();
+        this.audioStream = emptyStream;
+        
+        console.log('Usando stream vazio para teste sem microfone local');
+      } else {
+        console.log('Daily.co ativado com sucesso, usando apenas áudio do Daily');
+        
+        // PARA TESTE: Criar um stream fictício para o MediaRecorder funcionar
+        // mas não capturar áudio do microfone local
+        // Em produção, remova este bloco e descomente o bloco abaixo
+        const emptyStream = new MediaStream();
+        this.audioStream = emptyStream;
+        
+        /* COMENTADO PARA TESTE - REMOVA OS COMENTÁRIOS DEPOIS
+        // 6. Sempre solicitar permissão do microfone local independentemente do Daily
+        // Isso garante que pelo menos o áudio local será capturado
+        console.log('Solicitando permissão de microfone local...');
+        this.audioStream = await navigator.mediaDevices.getUserMedia({ 
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          }
+        });
+        
+        console.log('Permissão de microfone concedida, criando novo MediaRecorder');
+        */
+      }
       
       // 7. Priorizar WAV como formato para compatibilidade com Whisper
       let mimeType = null;
