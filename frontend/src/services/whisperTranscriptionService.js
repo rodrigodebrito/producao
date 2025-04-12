@@ -46,7 +46,7 @@ class WhisperTranscriptionService {
     
     // Estado de transcrição contínua
     this.transcriptionHistory = [];
-    this.sessionId = 'a65f94c8-4ad8-4712-b143-07e38d65644b'; // ID fixo para evitar problemas de extração
+    this.sessionId = 'f275c5c4-fb58-40e3-9710-2c95e30741b0'; // ID fixo atualizado
     
     // Contador de chunks
     this.chunkCounter = 0;
@@ -625,40 +625,32 @@ class WhisperTranscriptionService {
       // 3. ESTRATÉGIA DIFERENCIADA:
       // - Primeiro áudio: enviar como WAV (funciona consistentemente)
       // - Áudios subsequentes: enviar como MP3 (mais estável para processamento)
-      const mimeType = isFirstAudio ? 'audio/wav' : 'audio/mpeg';
-      const extension = isFirstAudio ? '.wav' : '.mp3';
+      const mimeType = 'audio/webm'; // Usar webm que é mais compatível com streaming
+      const extension = '.webm';
       
-      console.log(`Estratégia: Enviando áudio #${this.chunkCounter} como ${isFirstAudio ? 'WAV' : 'MP3'}`);
+      console.log(`Estratégia: Enviando áudio #${this.chunkCounter} como WEBM (mais compatível)`);
       
-      // 4. Garantir que o nome de arquivo tenha a extensão correta
-      let finalFileName = fileName;
-      if (!finalFileName.toLowerCase().endsWith(extension)) {
-        // Extrair nome base sem extensão
-        const baseFileName = fileName.split('.')[0];
-        finalFileName = `${baseFileName}${extension}`;
+      // 4. Garantir nome de arquivo único com identificação clara
+      const finalFileName = `audio-${this.chunkCounter}-${Date.now()}-${Math.floor(Math.random() * 10000)}${extension}`;
+      
+      // 5. Limitar o tamanho do blob para prevenir problemas HTTP/2
+      let blobToSend = audioBlob;
+      
+      // Se o blob for maior que 1MB, reduzir a qualidade
+      if (audioBlob.size > 1024 * 1024) {
+        console.log(`Áudio grande detectado (${Math.round(audioBlob.size/1024)}KB), convertendo para qualidade menor`);
+        try {
+          // Usar abordagem com XMLHttpRequest em vez de fetch (mais estável para uploads grandes)
+          return await this._sendAudioWithXHR(blobToSend, finalFileName);
+        } catch (conversionError) {
+          console.warn('Erro ao converter áudio, tentando enviar original:', conversionError);
+          // Continuar com o blob original se a conversão falhar
+        }
       }
       
-      // 5. Criar um novo blob garantindo tipo correto
-      const blobToSend = new Blob([audioBlob], { type: mimeType });
+      console.log(`Enviando áudio como WEBM: ${finalFileName}, tamanho: ${Math.round(blobToSend.size/1024)}KB`);
       
-      console.log(`Enviando áudio como ${isFirstAudio ? 'WAV' : 'MP3'}: ${finalFileName}, tamanho: ${Math.round(blobToSend.size/1024)}KB`);
-      
-      // 6. Adicionar identificador único e contagem no nome do arquivo para debug
-      finalFileName = `audio-${this.chunkCounter}-${Date.now()}-${Math.floor(Math.random() * 10000)}${extension}`;
-      
-      // 7. Preparar o FormData para envio
-      const formData = new FormData();
-      formData.append('file', blobToSend, finalFileName);
-      
-      // 8. Adicionar campos extras para debug do backend
-      formData.append('sessionId', 'a65f94c8-4ad8-4712-b143-07e38d65644b'); // ID fixo para garantir consistência
-      formData.append('chunkCounter', String(this.chunkCounter));
-      formData.append('isFirstChunk', String(isFirstAudio));
-      formData.append('clientTimestamp', new Date().toISOString());
-      formData.append('format', 'json'); // Formato de resposta desejado
-      formData.append('language', 'pt'); // Idioma português
-      
-      // 9. Disparar evento de processamento
+      // 6. Disparar evento de processamento
       this._dispatchEvent('processingAudio', {
         fileName: finalFileName,
         size: blobToSend.size,
@@ -668,7 +660,7 @@ class WhisperTranscriptionService {
         duration: Math.round((Date.now() - this.chunkStartTime) / 1000)
       });
       
-      // 10. Verificar se já existe transcrição em andamento
+      // 7. Verificar se já existe transcrição em andamento
       if (this.transcriptionInProgress) {
         console.log('Transcrição já em andamento, aguardando...');
         await new Promise(resolve => {
@@ -682,23 +674,41 @@ class WhisperTranscriptionService {
         });
       }
       
-      // 11. Enviar para o backend
+      // 8. Enviar para o backend usando XMLHttpRequest em vez de fetch
       try {
         this.transcriptionInProgress = true;
         
-        console.log(`Enviando áudio para o backend: ${this.apiEndpoint}, formato: ${mimeType}, arquivo: ${finalFileName}`);
+        console.log(`Tentando enviar áudio via XHR: ${this.apiEndpoint}, formato: ${mimeType}, arquivo: ${finalFileName}`);
         
-        const response = await fetch(this.apiEndpoint, {
-          method: 'POST',
-          body: formData
-        });
+        // Usar XHR pode evitar problemas HTTP/2 em certos navegadores
+        return await this._sendAudioWithXHR(blobToSend, finalFileName);
         
-        return await this._processResponse(response);
+      } catch (xhrError) {
+        console.error('Erro ao enviar áudio via XHR:', xhrError);
         
-      } catch (error) {
-        console.error('Erro ao enviar áudio para transcrição:', error);
-        this._dispatchEvent('transcriptionError', { error: error.message });
-        throw error;
+        // Se o XHR falhar, tentar enviar com Fetch (método alternativo)
+        try {
+          console.log('Tentando método alternativo (fetch) após falha de XHR');
+          
+          // Preparar FormData
+          const formData = new FormData();
+          formData.append('file', blobToSend, finalFileName);
+          formData.append('sessionId', 'f275c5c4-fb58-40e3-9710-2c95e30741b0');
+          formData.append('format', 'json');
+          formData.append('language', 'pt');
+          
+          // Enviar com fetch
+          // Usar URL alternativa sem https para evitar problemas HTTP/2
+          const response = await fetch(this.apiEndpoint.replace('https://', 'http://'), {
+            method: 'POST',
+            body: formData
+          });
+          
+          return await this._processResponse(response);
+        } catch (fetchError) {
+          console.error('Também falhou com fetch:', fetchError);
+          throw fetchError;
+        }
       } finally {
         this.transcriptionInProgress = false;
       }
@@ -706,6 +716,86 @@ class WhisperTranscriptionService {
       console.error('Erro ao processar chunks de áudio:', error);
       this._dispatchEvent('transcriptionError', { error: error.message });
     }
+  }
+  
+  /**
+   * NOVO: Envia áudio usando XMLHttpRequest (mais robusto para uploads grandes)
+   * @param {Blob} audioBlob - O blob de áudio
+   * @param {string} fileName - Nome do arquivo
+   * @returns {Promise<Object>} - Resultado da transcrição
+   * @private
+   */
+  _sendAudioWithXHR(audioBlob, fileName) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      
+      // Configurar timeout mais longo para arquivos grandes
+      xhr.timeout = 30000; // 30 segundos
+      
+      // Listener para progresso do upload
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) {
+          const percent = Math.round((e.loaded / e.total) * 100);
+          console.log(`Upload progress: ${percent}%`);
+        }
+      };
+      
+      // Listeners para eventos
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const response = JSON.parse(xhr.responseText);
+            console.log('Transcrição recebida via XHR:', response);
+            
+            // Processar a resposta como uma resposta fetch
+            const mockResponse = {
+              ok: true,
+              json: () => Promise.resolve(response)
+            };
+            
+            // Processar através do método padrão
+            this._processResponse(mockResponse)
+              .then(result => resolve(result))
+              .catch(error => reject(error));
+          } catch (parseError) {
+            console.error('Erro ao processar resposta XHR:', parseError);
+            reject(parseError);
+          }
+        } else {
+          console.error(`Erro XHR: ${xhr.status} - ${xhr.statusText}`);
+          reject(new Error(`${xhr.status}: ${xhr.statusText}`));
+        }
+      };
+      
+      xhr.onerror = () => {
+        console.error('Erro de rede no XHR');
+        reject(new Error('Erro de rede na requisição'));
+      };
+      
+      xhr.ontimeout = () => {
+        console.error('Timeout no XHR');
+        reject(new Error('A requisição excedeu o tempo limite'));
+      };
+      
+      // Abrir conexão - usar http:// para evitar problemas HTTP/2
+      const endpoint = this.apiEndpoint.includes('https://') 
+        ? this.apiEndpoint.replace('https://', 'http://') 
+        : this.apiEndpoint;
+      
+      xhr.open('POST', endpoint, true);
+      
+      // Preparar FormData
+      const formData = new FormData();
+      formData.append('file', audioBlob, fileName);
+      formData.append('sessionId', 'f275c5c4-fb58-40e3-9710-2c95e30741b0');
+      formData.append('chunkCounter', String(this.chunkCounter));
+      formData.append('clientTimestamp', new Date().toISOString());
+      formData.append('format', 'json');
+      formData.append('language', 'pt');
+      
+      // Enviar
+      xhr.send(formData);
+    });
   }
 
   /**
@@ -720,10 +810,20 @@ class WhisperTranscriptionService {
       if (!response.ok) {
         let errorText = 'Erro desconhecido';
         try {
-          const errorData = await response.json();
-          errorText = errorData.message || errorData.error || response.statusText;
+          // Tentar obter mensagens de erro detalhadas
+          if (response.json) {
+            try {
+              const errorData = await response.json();
+              errorText = errorData.message || errorData.error || response.statusText;
+            } catch (e) {
+              // Se não conseguir como JSON, tentar como texto
+              errorText = await response.text();
+            }
+          } else if (typeof response.statusText === 'string') {
+            errorText = response.statusText;
+          }
         } catch (e) {
-          errorText = response.statusText;
+          errorText = `Erro HTTP ${response.status || 'desconhecido'}`;
         }
 
         console.error(`Erro na resposta do servidor (${response.status}): ${errorText}`);
@@ -732,28 +832,58 @@ class WhisperTranscriptionService {
       }
 
       // Processar a resposta JSON
-      const data = await response.json();
-
-      if (!data.text) {
-        console.error('Resposta sem texto:', data);
-        this._dispatchEvent('transcriptionError', { error: 'Resposta sem texto' });
-        throw new Error('Resposta sem texto');
+      let data;
+      
+      // Verificar se é um mock de resposta XHR
+      if (response.json && typeof response.json === 'function') {
+        data = await response.json();
+      } else if (response.data) {
+        // Se já é um objeto de dados (do XHR)
+        data = response.data;
+      } else {
+        console.error('Formato de resposta desconhecido:', response);
+        throw new Error('Formato de resposta inválido');
       }
 
-      console.log('Transcrição recebida:', data.text.substring(0, 100) + (data.text.length > 100 ? '...' : ''));
+      // Validar os dados
+      if (!data) {
+        throw new Error('Resposta vazia do servidor');
+      }
+
+      // Verificar formatação da resposta
+      const text = data.text || data.transcript || data.content || data.result || (data.data ? data.data.text : null);
+      
+      if (!text) {
+        console.error('Resposta sem texto:', data);
+        this._dispatchEvent('transcriptionError', { error: 'Resposta sem texto reconhecível' });
+        throw new Error('Resposta sem texto reconhecível');
+      }
+
+      console.log('Transcrição recebida:', text.substring(0, 100) + (text.length > 100 ? '...' : ''));
+
+      // Normalizar a resposta
+      const normalizedData = {
+        text: text,
+        format: data.format || 'text',
+        duration: data.duration || 0,
+        sessionId: data.sessionId || this.sessionId
+      };
 
       // Enviar o evento de transcrição
       this._dispatchEvent('transcription', {
-        text: data.text,
-        format: data.format,
-        duration: data.duration,
+        text: normalizedData.text,
+        format: normalizedData.format,
+        duration: normalizedData.duration,
         chunkCounter: this.chunkCounter
       });
+      
+      // Processar a transcrição no contexto do app
+      this._processTranscription({ data: normalizedData }, null);
 
       // Incrementar o contador de chunks
       this.chunkCounter++;
 
-      // SOLUÇÃO RADICAL: Reiniciar completamente a gravação
+      // Solução: reiniciar completamente a gravação para o próximo chunk
       console.log('SOLUÇÃO: Reiniciando gravação para evitar problemas nos áudios subsequentes');
       
       // Parar a gravação atual se estiver ativa
@@ -764,18 +894,17 @@ class WhisperTranscriptionService {
       // Liberar completamente todos os recursos
       await this._releaseAllAudioResources();
       
-      // Resetar o contador para que todos sejam tratados como "primeiro áudio"
-      this.chunkCounter = 0;
-      console.log("Contador de chunks resetado para 0 - próximo áudio será tratado como primeiro");
+      // Manter o número do chunk para controle de sequência
+      // this.chunkCounter = 0;
       
-      // Reiniciar gravação SEMPRE, independente da flag autoRestart
-      console.log("FORÇANDO REINÍCIO DA GRAVAÇÃO em 2 segundos...");
+      // Reiniciar gravação após pequeno intervalo
+      console.log("Aguardando 2 segundos antes de reiniciar gravação...");
       
       // Usar setTimeout para garantir que haja um atraso antes do reinício
       setTimeout(async () => {
-        console.log("!!! INICIANDO NOVA GRAVAÇÃO AUTOMATICAMENTE, INDEPENDENTE DE FLAGS !!!");
+        console.log("Reiniciando gravação automaticamente...");
         try {
-          // Forçar a flag autoRestart para true novamente (pode ter sido perdida)
+          // Forçar a flag autoRestart para true
           this.autoRestart = true;
           
           const result = await this.startRecording();
@@ -798,7 +927,7 @@ class WhisperTranscriptionService {
         }
       }, 2000);
 
-      return data;
+      return normalizedData;
     } catch (error) {
       console.error('Erro ao processar resposta:', error);
       this._dispatchEvent('transcriptionError', { error: error.message });
@@ -1140,7 +1269,7 @@ class WhisperTranscriptionService {
       }
       
       // CORREÇÃO: Usar o ID de sessão fixo para evitar problemas
-      data.sessionId = 'a65f94c8-4ad8-4712-b143-07e38d65644b';
+      data.sessionId = 'f275c5c4-fb58-40e3-9710-2c95e30741b0';
       
       // CORREÇÃO: Garantir que temos o speaker (padrão 'user')
       if (!data.speaker) {

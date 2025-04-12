@@ -147,7 +147,7 @@ export const AIProvider = ({ children }) => {
   const fetchTranscriptions = async (sessionId) => {
     try {
       // Usar o ID de sessão fixo se não tiver um
-      const effectiveSessionId = sessionId || 'a65f94c8-4ad8-4712-b143-07e38d65644b';
+      const effectiveSessionId = sessionId || 'f275c5c4-fb58-40e3-9710-2c95e30741b0';
       
       console.log('[AIContext] Buscando transcrições para a sessão:', effectiveSessionId);
       
