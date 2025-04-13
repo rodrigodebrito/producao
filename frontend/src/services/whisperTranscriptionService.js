@@ -786,126 +786,136 @@ class WhisperTranscriptionService {
   }
 
   /**
-   * Iniciar a gravação de áudio e configurar detecção de silêncio
-   * @returns {Promise<boolean>} - Sucesso da inicialização da gravação
+   * Inicia a gravação de áudio
+   * @returns {Promise<boolean>} true se a gravação foi iniciada com sucesso
    */
   async startRecording() {
     try {
-      console.log('=== INICIANDO NOVA GRAVAÇÃO WAV ===');
-      
-      // ESTRATÉGIA ANTI-CORRUPÇÃO: Forçar liberação máxima entre gravações
-      
-      // 1. Forçar parada de qualquer gravação existente
-      if (this.isRecording || this.mediaRecorder) {
-        console.log('Gravação anterior detectada, parando completamente...');
-        await this.stopRecording(false);
-        
-        // Aguardar liberação de recursos pelo SO
-        console.log('Aguardando 800ms para garantir liberação de recursos...');
-        await new Promise(resolve => setTimeout(resolve, 800));
+      if (this.isRecording) {
+        console.log('Gravação já está ativa, cancelando inicialização duplicada');
+        return true;
       }
-
-      // 2. Liberação COMPLETA de todos os recursos
-      await this._releaseAllAudioResources();
       
-      // 3. Pausa extra para garantir que o sistema operacional libere handles de arquivos
-      console.log('Pausa adicional para garantir liberação total...');
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // 4. Reiniciar completamente o estado
+      // Reset do estado
       this.audioChunks = [];
       this.chunkCounter = 0;
       this.isRecording = true;
-      this.chunkStartTime = Date.now();
       
-      // 5. Extrair sessionId se necessário
-      if (!this.sessionId) {
-        this.sessionId = this.extractSessionId();
-        console.log(`SessionID extraído: ${this.sessionId}`);
-      }
+      // Primeiro vamos tentar capturar áudio do Daily.co (se disponível)
+      let dailyCaptureEnabled = false;
       
-      // NOVO: Tentar ativar captura de áudio do Daily.co, mas sem bloquear o fluxo
-      this._tryEnableDailyCapture().then(success => {
-        if (success) {
-          console.log('Captura de áudio do Daily.co solicitada com sucesso');
+      // MODIFICADO: Aguardar explicitamente a tentativa de captura do Daily antes de partir para captura local
+      console.log('Tentando ativar captura de áudio do Daily.co...');
+      try {
+        // Essa função pode levar tempo, então vamos exibir uma mensagem enquanto isso
+        console.log("Verificando disponibilidade do Daily.co...");
+        
+        // Usar um timeout para garantir que não vamos ficar presos nessa etapa
+        dailyCaptureEnabled = await Promise.race([
+          this._tryEnableDailyCapture(),
+          new Promise(resolve => {
+            setTimeout(() => {
+              console.log("Tempo limite para verificar Daily.co excedido");
+              resolve(false);
+            }, 5000); // 5 segundos de timeout máximo para não atrasar muito a experiência
+          })
+        ]);
+        
+        if (dailyCaptureEnabled) {
+          console.log('Captura de áudio do Daily.co ativada com sucesso!');
+          // Disparamos o evento de início de gravação aqui mesmo
+          this._dispatchEvent('recordingStarted', { isRecording: true, timestamp: new Date().toISOString() });
+          
+          // Ainda inicializamos a captura local, mas apenas como backup
+          console.log('Iniciando captura local como backup...');
         } else {
           console.log('Não foi possível solicitar captura de áudio do Daily.co, usando apenas microfone local');
         }
-      });
-      
-      // 6. Sempre solicitar permissão do microfone local independentemente do Daily
-      // Isso garante que pelo menos o áudio local será capturado
-      console.log('Solicitando permissão de microfone local...');
-      this.audioStream = await navigator.mediaDevices.getUserMedia({ 
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        }
-      });
-      
-      console.log('Permissão de microfone concedida, criando novo MediaRecorder');
-      
-      // 7. Priorizar WAV como formato para compatibilidade com Whisper
-      let mimeType = null;
-      
-      // Verificar suporte a WAV (prioridade para Whisper API)
-      if (MediaRecorder.isTypeSupported('audio/wav')) {
-        mimeType = 'audio/wav';
-      } else if (MediaRecorder.isTypeSupported('audio/mp3')) {
-        mimeType = 'audio/mp3'; 
-      } else if (MediaRecorder.isTypeSupported('audio/mpeg')) {
-        mimeType = 'audio/mpeg';
-      } else if (MediaRecorder.isTypeSupported('audio/webm')) {
-        mimeType = 'audio/webm';
+      } catch (e) {
+        console.error('Erro ao tentar captura de áudio do Daily:', e);
+        console.log('Usando apenas microfone local devido a erro na captura do Daily');
       }
       
-      console.log(`Formato de gravação selecionado: ${mimeType || 'padrão do navegador'}`);
-      
-      // 8. Configurar opções avançadas para MediaRecorder
-      const options = mimeType ? {
-        mimeType,
-        audioBitsPerSecond: 128000 // Qualidade mais baixa para evitar problemas
-      } : undefined;
-      
-      // 9. Criar nova instância do MediaRecorder
-      this.mediaRecorder = new MediaRecorder(this.audioStream, options);
-      
-      // 10. Configurar evento para chunks pequenos e frequentes
-      this.mediaRecorder.ondataavailable = (event) => {
-        if (event.data && event.data.size > 0) {
-          const chunkNum = this.audioChunks.length;
-          const sizeKB = Math.round(event.data.size/1024);
-          console.log(`Chunk #${chunkNum} recebido: ${sizeKB}KB, tipo: ${event.data.type}`);
-          this.audioChunks.push(event.data);
+      // Capturar áudio do microfone local (sempre como backup ou principal se Daily falhar)
+      try {
+        // Se já temos Daily.co, podemos reduzir a prioridade da captura local
+        const shouldRequestMicrophone = !dailyCaptureEnabled || true; // Por segurança, sempre solicitamos
+        
+        if (shouldRequestMicrophone) {
+          console.log('Solicitando permissão de microfone local...');
+          
+          // Verificar se o navegador suporta getUserMedia
+          if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            throw new Error('getUserMedia não suportado neste navegador');
+          }
+          
+          // Solicitar acesso ao microfone
+          this.audioStream = await navigator.mediaDevices.getUserMedia({ 
+            audio: {
+              // Configurações específicas para melhorar a qualidade da gravação
+              echoCancellation: true, 
+              noiseSuppression: true,
+              autoGainControl: true
+            },
+            video: false
+          });
+          
+          console.log('Permissão de microfone concedida, criando novo MediaRecorder');
+          
+          // Determinar o melhor formato suportado
+          const mimeType = this._getBestSupportedMimeType();
+          console.log(`Formato de gravação selecionado: ${mimeType}`);
+          
+          // Criar o MediaRecorder com o formato selecionado
+          this.mediaRecorder = new MediaRecorder(this.audioStream, {
+            mimeType: mimeType,
+            audioBitsPerSecond: 128000 // 128kbps oferece boa qualidade para voz
+          });
+          
+          // Configurar eventos do MediaRecorder
+          this.mediaRecorder.ondataavailable = this._handleDataAvailable.bind(this);
+          this.mediaRecorder.onstop = this._handleRecordingStopped.bind(this);
+          
+          // Iniciar a gravação efetivamente
+          this.mediaRecorder.start(1000); // Coletar chunks a cada 1 segundo
+          console.log('Gravação WAV iniciada com nova instância de MediaRecorder');
+          
+          // Iniciar contagem de chunks
+          this.chunkStartTime = Date.now();
+          
+          // Configurar verificação periódica de silêncio
+          if (this.silenceDetectionEnabled) {
+            this._setupSilenceDetection();
+          }
+          
+          // Enviar evento de início de gravação apenas se ainda não foi enviado pelo Daily
+          if (!dailyCaptureEnabled) {
+            this._dispatchEvent('recordingStarted', { isRecording: true, timestamp: new Date().toISOString() });
+          }
+          
+          // Configurar timer para garantir que não excedemos o tempo máximo por chunk
+          this._setupMaxChunkTimer();
+          
+          return true;
         }
-      };
-      
-      // 11. Capturar erros do MediaRecorder
-      this.mediaRecorder.onerror = (event) => {
-        console.error('Erro no MediaRecorder:', event);
-        this._dispatchEvent('recordingError', { error: 'Erro na gravação de áudio' });
-      };
-      
-      // 12. Iniciar gravação com chunks MUITO pequenos para melhor controle
-      this.mediaRecorder.start(300); // 300ms por chunk para maior controle
-      console.log('Gravação WAV iniciada com nova instância de MediaRecorder');
-      
-      // 13. Configurar detecção de silêncio
-      if (this.silenceDetectionEnabled) {
-        this._setupSilenceDetection(this.audioStream);
+      } catch (error) {
+        console.error('Erro ao iniciar gravação de áudio local:', error);
+        
+        // Se não conseguimos iniciar gravação local E não temos Daily, a gravação falhou
+        if (!dailyCaptureEnabled) {
+          this.isRecording = false;
+          throw error;
+        } else {
+          console.log('Continuando apenas com captura do Daily.co devido a erro na captura local');
+          // Prosseguir mesmo sem captura local se temos Daily.co
+          return true;
+        }
       }
-      
-      // 14. Configurar timer para chunk máximo
-      this._setupMaxChunkTimer();
-      
-      // 15. Disparar evento de início
-      this._dispatchEvent('recordingStarted', { isRecording: true });
       
       return true;
     } catch (error) {
-      console.error('Erro ao iniciar gravação de áudio:', error);
-      this._dispatchEvent('recordingError', { error: error.message });
+      console.error('Erro ao iniciar gravação:', error);
+      this.isRecording = false;
       return false;
     }
   }
