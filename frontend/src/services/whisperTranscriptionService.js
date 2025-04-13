@@ -1063,87 +1063,85 @@ class WhisperTranscriptionService {
   }
 
   /**
-   * NOVO: Método para liberar completamente todos os recursos de áudio
+   * Libera todos os recursos de áudio para evitar vazamentos de memória
+   * @returns {Promise<void>}
    * @private
    */
   async _releaseAllAudioResources() {
     console.log('Liberando TODOS os recursos de áudio...');
     
-    // 1. Limpar MediaRecorder
-    if (this.mediaRecorder) {
-      try {
-        // Se estiver gravando, parar
-        if (this.mediaRecorder.state === 'recording') {
-          this.mediaRecorder.stop();
-        }
-        
-        // Remover todos os event listeners
-        this.mediaRecorder.ondataavailable = null;
-        this.mediaRecorder.onstop = null;
-        this.mediaRecorder.onerror = null;
-        
-        // Definir como null para incentivar garbage collection
-        this.mediaRecorder = null;
-      } catch (e) {
-        console.warn('Erro ao liberar MediaRecorder:', e);
-      }
-    }
-    
-    // 2. Limpar stream de áudio
-    if (this.audioStream) {
-      try {
-        // Parar todas as tracks
-        this.audioStream.getTracks().forEach(track => {
-          try { 
-            track.stop(); 
+    try {
+      // 1. Parar o stream de áudio
+      if (this.audioStream) {
+        // Parar todas as tracks de mídia
+        const tracks = this.audioStream.getTracks();
+        tracks.forEach(track => {
+          try {
+            track.stop();
             console.log('Track de áudio parada e liberada');
           } catch (e) {
             console.warn('Erro ao parar track de áudio:', e);
           }
         });
         
-        // Definir como null para incentivar garbage collection
+        // Limpar a referência ao stream
         this.audioStream = null;
-      } catch (e) {
-        console.warn('Erro ao liberar stream de áudio:', e);
       }
-    }
-    
-    // 3. Limpar contexto de áudio
-    if (this.audioContext) {
-      try {
-        // Fechar o contexto de áudio
-        await this.audioContext.close();
-        console.log('Contexto de áudio fechado');
-        
-        // Definir como null para incentivar garbage collection
+      
+      // 2. Fechar e liberar o contexto de áudio para análise
+      if (this.audioContext) {
+        try {
+          // Verificar se o AudioContext já está fechado antes de tentar fechá-lo novamente
+          if (this.audioContext.state !== 'closed') {
+            await this.audioContext.close();
+            console.log('Contexto de áudio fechado');
+          } else {
+            console.log('Contexto de áudio já estava fechado');
+          }
+        } catch (e) {
+          console.warn('Erro ao fechar contexto de áudio:', e);
+        }
         this.audioContext = null;
         this.audioAnalyser = null;
-      } catch (e) {
-        console.warn('Erro ao fechar contexto de áudio:', e);
       }
+      
+      // 3. Limpar referências ao MediaRecorder
+      if (this.mediaRecorder) {
+        try {
+          if (this.mediaRecorder.state === 'recording') {
+            this.mediaRecorder.stop();
+          }
+        } catch (e) {
+          console.warn('Erro ao parar MediaRecorder:', e);
+        }
+        this.mediaRecorder = null;
+      }
+      
+      // 4. Limpar timers de detecção de silêncio
+      if (this.silenceTimer) {
+        clearTimeout(this.silenceTimer);
+        this.silenceTimer = null;
+      }
+      
+      // 5. Limpar timer de chunk máximo
+      if (this.maxChunkTimer) {
+        clearTimeout(this.maxChunkTimer);
+        this.maxChunkTimer = null;
+      }
+      
+      // 6. Limpar estado de detecção de silêncio
+      this.silenceStart = null;
+      
+      // 7. Cancelar qualquer detecção de voz em andamento
+      if (this.voiceDetectionInterval) {
+        clearInterval(this.voiceDetectionInterval);
+        this.voiceDetectionInterval = null;
+      }
+      
+      console.log('Liberação de recursos concluída');
+    } catch (e) {
+      console.error('Erro ao liberar recursos de áudio:', e);
     }
-    
-    // 4. Limpar temporizadores
-    if (this.maxChunkTimer) {
-      clearTimeout(this.maxChunkTimer);
-      this.maxChunkTimer = null;
-    }
-    
-    if (this.silenceTimer) {
-      clearTimeout(this.silenceTimer);
-      this.silenceTimer = null;
-    }
-    
-    // 5. Sugerir garbage collection
-    if (window.gc) {
-      try {
-        window.gc();
-        console.log('Garbage collection solicitada');
-      } catch (e) {}
-    }
-    
-    console.log('Liberação de recursos concluída');
   }
 
   /**
@@ -1916,71 +1914,129 @@ class WhisperTranscriptionService {
   }
   
   /**
-   * NOVO: Inicia detecção de voz após pausa por silêncio
+   * Inicia detecção de voz para reiniciar a gravação quando o usuário falar novamente
    * @private
    */
   _startVoiceDetection() {
-    // Limpar qualquer intervalo existente
-    if (this.voiceDetectionInterval) {
-      clearInterval(this.voiceDetectionInterval);
-    }
-    
     console.log('Iniciando detecção de voz para retomar gravação...');
     
-    // Verificar se temos permissão para usar o microfone
-    navigator.mediaDevices.getUserMedia({ audio: true })
+    // Se já existe uma detecção de voz em andamento, limpar
+    if (this.voiceDetectionInterval) {
+      clearInterval(this.voiceDetectionInterval);
+      this.voiceDetectionInterval = null;
+    }
+    
+    // Garantir que não temos um AudioContext ativo para evitar vazamentos
+    if (this.audioContext && this.audioContext.state !== 'closed') {
+      try {
+        this.audioContext.close();
+      } catch (e) {
+        console.warn('Erro ao fechar audioContext:', e);
+      }
+      this.audioContext = null;
+    }
+    
+    // Iniciar novo stream para detecção
+    let voiceDetectionStream = null;
+    
+    console.log('Gravação pausada por silêncio. Aguardando voz para reiniciar...');
+    
+    // Criar um novo contexto de áudio para a detecção de voz
+    let voiceAudioContext = null;
+    let voiceAnalyser = null;
+    
+    // Este é um processo assíncrono que não podemos await diretamente aqui
+    navigator.mediaDevices.getUserMedia({ audio: true, video: false })
       .then(stream => {
-        // Configurar contexto de áudio para analisar volume
-        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        const analyser = audioContext.createAnalyser();
-        const source = audioContext.createMediaStreamSource(stream);
+        // Guardar referência ao stream para limpar depois
+        voiceDetectionStream = stream;
         
-        analyser.fftSize = 256;
-        source.connect(analyser);
+        // Criar novo contexto de áudio e analisador
+        voiceAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+        voiceAnalyser = voiceAudioContext.createAnalyser();
         
-        const bufferLength = analyser.frequencyBinCount;
-        const dataArray = new Uint8Array(bufferLength);
+        // Configurar analisador para detecção de voz
+        voiceAnalyser.fftSize = 256;
+        voiceAnalyser.smoothingTimeConstant = 0.5;
         
-        // Iniciar verificação a cada 300ms
+        // Conectar a fonte de áudio ao analisador
+        const source = voiceAudioContext.createMediaStreamSource(stream);
+        source.connect(voiceAnalyser);
+        
+        // Iniciar intervalo para verificar nível de voz periodicamente
         this.voiceDetectionInterval = setInterval(() => {
-          if (!this.pausedForSilence) {
-            // Se não estamos mais pausados, limpar recursos
-            clearInterval(this.voiceDetectionInterval);
-            stream.getTracks().forEach(track => track.stop());
-            audioContext.close();
-            return;
-          }
-          
-          // Obter dados de volume
-          analyser.getByteFrequencyData(dataArray);
-          
-          // Calcular volume médio
-          let sum = 0;
-          for (let i = 0; i < bufferLength; i++) {
-            sum += dataArray[i];
-          }
-          const average = sum / bufferLength;
-          
-          // Converter para dB
-          const volumeDb = 20 * Math.log10(average / 255);
-          
-          // Se volume for maior que o limiar, detectamos voz
-          if (volumeDb > this.voiceThreshold) {
-            console.log(`Voz detectada! (${volumeDb.toFixed(1)} dB) - Reiniciando gravação!`);
+          try {
+            // Se o contexto foi fechado, limpar intervalo
+            if (voiceAudioContext.state === 'closed') {
+              clearInterval(this.voiceDetectionInterval);
+              this.voiceDetectionInterval = null;
+              return;
+            }
             
-            // Limpar intervalo e recursos
-            clearInterval(this.voiceDetectionInterval);
-            stream.getTracks().forEach(track => track.stop());
-            audioContext.close();
+            // Obter dados do analisador
+            const dataArray = new Uint8Array(voiceAnalyser.frequencyBinCount);
+            voiceAnalyser.getByteFrequencyData(dataArray);
             
-            // Reiniciar gravação
-            this.pausedForSilence = false;
-            this.forceRestartRecording();
+            // Calcular volume médio
+            let sum = 0;
+            for (const value of dataArray) {
+              sum += value;
+            }
+            const average = sum / dataArray.length;
+            
+            // Converter para dB aproximados (0-255 -> -100-0 dB)
+            const dB = average === 0 ? -100 : ((average / 255) * 100) - 100;
+            
+            // Detectar se o nível está acima do limiar (mais próximo de 0 = mais alto)
+            if (dB > this.voiceThreshold) {
+              console.log(`Voz detectada! (${dB.toFixed(1)} dB) - Reiniciando gravação!`);
+              
+              // Limpar este intervalo de detecção
+              clearInterval(this.voiceDetectionInterval);
+              this.voiceDetectionInterval = null;
+              
+              // Limpar recursos da detecção de voz
+              if (voiceDetectionStream) {
+                voiceDetectionStream.getTracks().forEach(track => track.stop());
+              }
+              
+              // Fechar o contexto de áudio da detecção de voz se ainda estiver aberto
+              try {
+                if (voiceAudioContext && voiceAudioContext.state !== 'closed') {
+                  voiceAudioContext.close();
+                }
+              } catch (e) {
+                console.warn('Erro ao fechar contexto de detecção de voz:', e);
+              }
+              
+              // Reiniciar a gravação
+              this.forceRestartRecording();
+            }
+          } catch (e) {
+            console.error('Erro na detecção de voz:', e);
+            
+            // Em caso de erro, limpar o intervalo
+            clearInterval(this.voiceDetectionInterval);
+            this.voiceDetectionInterval = null;
+            
+            // Limpar recursos
+            if (voiceDetectionStream) {
+              voiceDetectionStream.getTracks().forEach(track => track.stop());
+            }
+            
+            // Tentar fechar o contexto de áudio se existir
+            try {
+              if (voiceAudioContext && voiceAudioContext.state !== 'closed') {
+                voiceAudioContext.close();
+              }
+            } catch (err) {
+              // Ignorar erros ao fechar o contexto
+            }
           }
         }, 300);
       })
-      .catch(err => {
-        console.error('Erro ao acessar microfone para detecção de voz:', err);
+      .catch(error => {
+        console.error('Erro ao iniciar detecção de voz:', error);
       });
   }
 
