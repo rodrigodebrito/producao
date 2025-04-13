@@ -503,12 +503,55 @@ class WhisperTranscriptionService {
       }
       
       // Construir URL do endpoint de proxy - usar o Render diretamente
-      const proxyEndpoint = 'https://theraconnect-prd.onrender.com/api/daily-proxy/capture';
+      const baseProxyUrl = 'https://theraconnect-prd.onrender.com/api/daily-proxy';
       
-      console.log(`[DAILY DEBUG] Solicitando captura de áudio via backend proxy: ${proxyEndpoint}`, { roomName, sessionId });
+      // Primeiro testar endpoint de debug para verificar se o backend está acessível
+      console.log('[DAILY DEBUG] Testando conexão com endpoint de debug...');
+      try {
+        const debugEndpoint = `${baseProxyUrl}/debug`;
+        const debugResponse = await fetch(debugEndpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            test: true,
+            timestamp: new Date().toISOString()
+          })
+        });
+        
+        if (debugResponse.ok) {
+          const debugResult = await debugResponse.json();
+          console.log('[DAILY DEBUG] Conexão com backend bem-sucedida:', debugResult);
+        } else {
+          console.warn('[DAILY DEBUG] Falha no teste de conexão:', await debugResponse.text());
+        }
+      } catch (debugError) {
+        console.warn('[DAILY DEBUG] Erro ao testar conexão:', debugError);
+      }
+      
+      // Tentar acessar endpoint de teste simples
+      try {
+        console.log('[DAILY DEBUG] Testando endpoint /test...');
+        const testEndpoint = `${baseProxyUrl}/test`;
+        const testResponse = await fetch(testEndpoint);
+        
+        if (testResponse.ok) {
+          const testResult = await testResponse.json();
+          console.log('[DAILY DEBUG] Endpoint de teste respondeu:', testResult);
+        } else {
+          console.warn('[DAILY DEBUG] Falha no endpoint de teste:', await testResponse.text());
+        }
+      } catch (testError) {
+        console.warn('[DAILY DEBUG] Erro ao acessar endpoint de teste:', testError);
+      }
+      
+      // Agora tentar o endpoint real de captura
+      const captureEndpoint = `${baseProxyUrl}/capture`;
+      console.log(`[DAILY DEBUG] Solicitando captura de áudio via backend proxy: ${captureEndpoint}`, { roomName, sessionId });
       
       // Fazer requisição para o backend iniciar o proxy de captura
-      const response = await fetch(proxyEndpoint, {
+      const response = await fetch(captureEndpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
