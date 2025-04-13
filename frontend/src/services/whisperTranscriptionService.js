@@ -504,9 +504,9 @@ class WhisperTranscriptionService {
       
       // Construir URL do endpoint de proxy
       const baseUrl = process.env.REACT_APP_API_URL || window.location.origin;
-      const proxyEndpoint = `${baseUrl}/api/daily-proxy/capture-audio`;
+      const proxyEndpoint = `${baseUrl}/api/daily-proxy/capture`;
       
-      console.log(`[DAILY DEBUG] Solicitando captura de áudio via backend proxy: ${proxyEndpoint}`);
+      console.log(`[DAILY DEBUG] Solicitando captura de áudio via backend proxy: ${proxyEndpoint}`, { roomName, sessionId });
       
       // Fazer requisição para o backend iniciar o proxy de captura
       const response = await fetch(proxyEndpoint, {
@@ -515,8 +515,8 @@ class WhisperTranscriptionService {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          roomName,
-          sessionId,
+          roomUrl: roomName,
+          participantId: sessionId,
           timestamp: new Date().toISOString()
         })
       });
@@ -533,7 +533,7 @@ class WhisperTranscriptionService {
         console.log('[DAILY DEBUG] Backend proxy registrado com sucesso');
         
         // Configurar listener para receber dados do backend via eventos SSE ou WebSocket
-        this._setupBackendStreamListener(result.streamToken);
+        this._setupBackendStreamListener(result.data?.streamToken || 'default-token');
         
         return true;
       } else {

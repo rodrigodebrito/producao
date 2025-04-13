@@ -17,6 +17,7 @@ const aiRoutes = require('./routes/ai.routes');
 const embedRoutes = require('./routes/embedding.route');
 const chatRoutes = require('./routes/chat.route');
 const insightRoutes = require('./routes/insight.routes');
+const dailyProxyRoutes = require('./routes/daily-proxy.routes');
 
 const app = express();
 
@@ -80,5 +81,6 @@ app.use('/api/ai', aiRoutes);
 app.use('/api/embed', embedRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/insights', insightRoutes);
+app.use('/api/daily-proxy', dailyProxyRoutes);
 
 // ... existing code ... 
