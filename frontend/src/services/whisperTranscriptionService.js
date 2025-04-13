@@ -502,9 +502,8 @@ class WhisperTranscriptionService {
         return false;
       }
       
-      // Construir URL do endpoint de proxy
-      const baseUrl = process.env.REACT_APP_API_URL || window.location.origin;
-      const proxyEndpoint = `${baseUrl}/api/daily-proxy/capture`;
+      // Construir URL do endpoint de proxy - usar o Render diretamente
+      const proxyEndpoint = 'https://theraconnect-prd.onrender.com/api/daily-proxy/capture';
       
       console.log(`[DAILY DEBUG] Solicitando captura de áudio via backend proxy: ${proxyEndpoint}`, { roomName, sessionId });
       
