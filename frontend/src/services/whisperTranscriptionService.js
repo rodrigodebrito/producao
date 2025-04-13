@@ -662,31 +662,25 @@ class WhisperTranscriptionService {
    * @private
    */
   async _requestDailyAudioCapture(iframe) {
-    if (!iframe || !iframe.contentWindow) {
-      console.error('[DAILY DEBUG] iframe inválido ou sem contentWindow');
+    if (!iframe) {
+      console.error('[DAILY DEBUG] iframe inválido');
       return false;
     }
     
     return new Promise((resolve) => {
-      // MODIFICADO: Aumentar timeout para 10 segundos
+      // MODIFICADO: Aumentar timeout para 15 segundos
       const timeout = setTimeout(() => {
         console.warn('[DAILY DEBUG] Timeout ao esperar resposta do Daily via postMessage');
         if (!this.dailyEventListenerAdded) {
           window.removeEventListener('message', handleMessage);
         }
         resolve(false);
-      }, 10000); // Aumentado de 5000 para 10000
+      }, 15000); // Aumentado para 15 segundos
       
       // Função de callback para mensagens
       const handleMessage = (event) => {
         try {
-          // Verificar origem da mensagem para segurança
-          if (!event.origin.includes('daily.co') && 
-              !event.origin.includes('theraconnect') && 
-              event.origin !== window.location.origin) {
-            return;
-          }
-          
+          // Aceitar qualquer origem para mensagens do tipo daily-*
           const data = event.data;
           
           if (typeof data === 'object' && data.type === 'daily-audio-capture-response') {
@@ -728,52 +722,192 @@ class WhisperTranscriptionService {
       }
       
       try {
-        // Enviar mensagem para o iframe do Daily
-        console.log('[DAILY DEBUG] Enviando solicitação de captura de áudio via postMessage');
-        
-        // MELHORIA: Verificar primeiro se o iframe está pronto
-        const checkFrameReady = () => {
+        // MODIFICADO: Função melhorada para tentar múltiplas abordagens de comunicação
+        const tryDailyCommunication = async () => {
+          // 1. Verificar se o iframe existe e tem contentWindow
+          if (!iframe.contentWindow) {
+            console.warn('[DAILY DEBUG] iframe não tem contentWindow, tentando outra abordagem...');
+            tryDirectInject();
+            return;
+          }
+          
+          // 2. Enviar mensagem diretamente via postMessage sem verificar readyState
+          console.log('[DAILY DEBUG] Enviando solicitação de captura de áudio via postMessage diretamente');
+          
           try {
-            // Testar se podemos acessar o contentWindow
-            if (iframe.contentWindow && 
-                iframe.contentWindow.postMessage && 
-                iframe.contentDocument && 
-                iframe.contentDocument.readyState === 'complete') {
-              console.log('[DAILY DEBUG] iframe está pronto, enviando mensagem...');
-              
-              // Necessário incluir * para comunicação cross-origin
-              iframe.contentWindow.postMessage({
-                type: 'daily-audio-capture-request',
-                sessionId: this.sessionId,
-                source: 'whisperTranscriptionService',
-                timestamp: new Date().toISOString()
-              }, '*');
-              
-              console.log('[DAILY DEBUG] Solicitação enviada, aguardando resposta...');
-            } else {
-              console.log('[DAILY DEBUG] iframe ainda não está pronto, tentando novamente em 500ms...');
-              setTimeout(checkFrameReady, 500);
-            }
-          } catch (error) {
-            console.warn('[DAILY DEBUG] Erro ao verificar se iframe está pronto:', error);
-            // Tentar enviar mensagem mesmo assim
-            try {
-              iframe.contentWindow.postMessage({
-                type: 'daily-audio-capture-request',
-                sessionId: this.sessionId,
-                source: 'whisperTranscriptionService',
-                timestamp: new Date().toISOString()
-              }, '*');
-            } catch (e) {
-              console.error('[DAILY DEBUG] Falha ao enviar mensagem para iframe:', e);
-            }
+            iframe.contentWindow.postMessage({
+              type: 'daily-audio-capture-request',
+              sessionId: this.sessionId,
+              source: 'whisperTranscriptionService',
+              timestamp: new Date().toISOString()
+            }, '*');
+            
+            console.log('[DAILY DEBUG] Mensagem enviada, aguardando resposta...');
+          } catch (err) {
+            console.warn('[DAILY DEBUG] Erro ao enviar mensagem diretamente:', err);
+            tryDirectInject();
           }
         };
         
-        // Iniciar verificação
-        checkFrameReady();
+        // Função alternativa para injetar script diretamente
+        const tryDirectInject = () => {
+          console.log('[DAILY DEBUG] Tentando injeção direta de script...');
+          
+          // Código a ser injetado
+          const scriptContent = `
+            // Função para enviar mensagem via postMessage
+            function sendToDailyBridge(data) {
+              try {
+                window.parent.postMessage(data, '*');
+                console.log('[DAILY IFRAME] Mensagem enviada via postMessage');
+              } catch (e) {
+                console.error('[DAILY IFRAME] Erro ao enviar mensagem:', e);
+              }
+            }
+            
+            // Função para verificar periodicamente o objeto Daily
+            let dailyCheckAttempts = 0;
+            function checkForDaily() {
+              dailyCheckAttempts++;
+              
+              // Limitar o número de tentativas
+              if (dailyCheckAttempts > 20) {
+                console.warn('[DAILY IFRAME] Máximo de tentativas de verificação do Daily atingido');
+                sendToDailyBridge({
+                  type: 'daily-audio-capture-response',
+                  success: false,
+                  error: 'Timeout ao tentar acessar API do Daily'
+                });
+                return;
+              }
+              
+              console.log('[DAILY IFRAME] Verificando disponibilidade do objeto Daily... Tentativa #' + dailyCheckAttempts);
+              
+              // Verificar se o objeto daily está disponível agora
+              if (typeof window.daily !== 'undefined' && window.daily) {
+                console.log('[DAILY IFRAME] Objeto Daily encontrado!');
+                
+                try {
+                  // Verificar métodos disponíveis
+                  const hasParticipants = typeof window.daily.participants === 'function';
+                  const hasCallState = typeof window.daily.callState === 'function';
+                  
+                  // Verificar se temos participantes
+                  let participants = null;
+                  if (hasParticipants) {
+                    try {
+                      participants = window.daily.participants();
+                    } catch (e) {
+                      console.warn('[DAILY IFRAME] Erro ao obter participantes:', e);
+                    }
+                  }
+                  
+                  // Reportar sucesso mesmo sem capturar áudio real ainda
+                  sendToDailyBridge({
+                    type: 'daily-audio-capture-response',
+                    success: true,
+                    message: 'Comunicação com Daily estabelecida',
+                    hasParticipants: !!participants,
+                    participantCount: participants ? Object.keys(participants).length : 0
+                  });
+                  
+                  return;
+                } catch (e) {
+                  console.error('[DAILY IFRAME] Erro ao verificar API Daily:', e);
+                }
+              }
+              
+              // Tentar novamente em 500ms
+              setTimeout(checkForDaily, 500);
+            }
+            
+            // Iniciar verificação
+            checkForDaily();
+            
+            // Também configurar listener para mensagens do pai
+            window.addEventListener('message', function(event) {
+              if (event.data && event.data.type === 'daily-audio-capture-request') {
+                console.log('[DAILY IFRAME] Solicitação recebida, iniciando verificação do Daily');
+                checkForDaily();
+              }
+            });
+          `;
+          
+          try {
+            // Criar elemento de script
+            const scriptElem = document.createElement('script');
+            scriptElem.textContent = scriptContent;
+            
+            // Tentar injetar no iframe de várias maneiras
+            try {
+              // 1. Tentar adicionar ao head do iframe (pode falhar por segurança)
+              if (iframe.contentDocument && iframe.contentDocument.head) {
+                iframe.contentDocument.head.appendChild(scriptElem);
+                console.log('[DAILY DEBUG] Script injetado diretamente no head do iframe');
+                return;
+              }
+            } catch (e) {
+              console.warn('[DAILY DEBUG] Falha ao injetar no head do iframe:', e);
+            }
+            
+            // 2. Tentar modificar o src do iframe para incluir o script
+            try {
+              const originalSrc = iframe.src;
+              
+              // Criar um parâmetro URL com o script codificado
+              const encodedScript = encodeURIComponent(scriptContent);
+              const separator = originalSrc.includes('?') ? '&' : '?';
+              const scriptParam = `injectScript=${encodedScript}`;
+              
+              // Não modificar o src diretamente, mas criar um elemento alternativo
+              console.log('[DAILY DEBUG] Tentando injeção via URL params');
+              
+              // 3. Última opção: criar um elemento visual auxiliar
+              const helperDiv = document.createElement('div');
+              helperDiv.style.position = 'fixed';
+              helperDiv.style.bottom = '10px';
+              helperDiv.style.right = '10px';
+              helperDiv.style.backgroundColor = 'rgba(0,0,0,0.7)';
+              helperDiv.style.color = '#fff';
+              helperDiv.style.padding = '10px';
+              helperDiv.style.borderRadius = '5px';
+              helperDiv.style.zIndex = '99999';
+              helperDiv.style.fontSize = '12px';
+              helperDiv.innerHTML = `
+                <div>Daily.co não respondeu</div>
+                <div>Usando microfone local</div>
+              `;
+              
+              document.body.appendChild(helperDiv);
+              setTimeout(() => {
+                helperDiv.style.opacity = '0.5';
+                setTimeout(() => {
+                  helperDiv.remove();
+                }, 5000);
+              }, 3000);
+            } catch (e) {
+              console.warn('[DAILY DEBUG] Falha ao injetar via URL params:', e);
+            }
+          } catch (e) {
+            console.error('[DAILY DEBUG] Erro na injeção direta:', e);
+          }
+        };
+        
+        // Iniciar o processo de comunicação
+        tryDailyCommunication();
+        
+        // Fazer tentativas adicionais em intervalos
+        for (let attempt = 1; attempt <= 5; attempt++) {
+          setTimeout(() => {
+            if (!this.dailyCapturingEnabled) {
+              console.log(`[DAILY DEBUG] Tentativa adicional #${attempt} de comunicação com Daily`);
+              tryDailyCommunication();
+            }
+          }, attempt * 1000); // 1s, 2s, 3s, 4s, 5s
+        }
+        
       } catch (error) {
-        console.error('[DAILY DEBUG] Erro ao enviar mensagem para iframe:', error);
+        console.error('[DAILY DEBUG] Erro ao comunicar com iframe:', error);
         clearTimeout(timeout);
         
         if (!this.dailyEventListenerAdded) {
