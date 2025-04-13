@@ -443,6 +443,9 @@ class WhisperTranscriptionService {
       // 2. Tentar se comunicar com cada iframe usando postMessage (seguro entre origens)
       let captureSuccessful = false;
       
+      // NOVO: Sistema de retry com backoff exponencial
+      const maxRetries = 3;
+      
       for (let i = 0; i < iframes.length; i++) {
         const iframe = iframes[i];
         const iframeUrl = iframe.src || '';
@@ -452,22 +455,62 @@ class WhisperTranscriptionService {
         if (iframeUrl.includes('daily.co') || iframeUrl.includes('theraconnect')) {
           console.log(`[DAILY DEBUG] Iframe #${i+1} é potencialmente do Daily.co, tentando comunicação via postMessage`);
           
+          // NOVO: Loop de tentativas com backoff exponencial
+          for (let attempt = 0; attempt < maxRetries; attempt++) {
+            try {
+              if (attempt > 0) {
+                const waitTime = Math.pow(2, attempt) * 1000; // 2s, 4s, 8s
+                console.log(`[DAILY DEBUG] Tentativa ${attempt+1}/${maxRetries} após ${waitTime/1000}s...`);
+                await new Promise(resolve => setTimeout(resolve, waitTime));
+              }
+              
+              // Método alternativo usando postMessage em vez de eval direto
+              const success = await this._requestDailyAudioCapture(iframe);
+              
+              if (success) {
+                captureSuccessful = true;
+                console.log(`[DAILY DEBUG] Comunicação por postMessage bem sucedida com iframe #${i+1} na tentativa ${attempt+1}`);
+                break; // Sair do loop de tentativas
+              } else {
+                console.log(`[DAILY DEBUG] Falha na comunicação por postMessage com iframe #${i+1} (tentativa ${attempt+1}/${maxRetries})`);
+              }
+            } catch (error) {
+              console.error(`[DAILY DEBUG] Erro ao comunicar com iframe #${i+1} (tentativa ${attempt+1}):`, error);
+            }
+          }
+          
+          if (captureSuccessful) {
+            break; // Sair do loop de iframes se já tivemos sucesso
+          }
+        } else {
+          console.log(`[DAILY DEBUG] Iframe #${i+1} não é do Daily.co, ignorando`);
+        }
+      }
+      
+      // NOVO: Verificação alternativa para iframes com srcDoc ou que ainda estão carregando
+      if (!captureSuccessful) {
+        console.log('[DAILY DEBUG] Tentando método alternativo para iframes sem src explícito...');
+        
+        // Aguardar um pouco para dar tempo de iframes carregarem
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        // Tentar novamente com todos os iframes, desta vez sem filtrar por URL
+        for (let i = 0; i < iframes.length; i++) {
+          const iframe = iframes[i];
+          
+          console.log(`[DAILY DEBUG] Tentativa alternativa com iframe #${i+1}`);
+          
           try {
-            // Método alternativo usando postMessage em vez de eval direto
             const success = await this._requestDailyAudioCapture(iframe);
             
             if (success) {
               captureSuccessful = true;
-              console.log(`[DAILY DEBUG] Comunicação por postMessage bem sucedida com iframe #${i+1}`);
+              console.log(`[DAILY DEBUG] Comunicação alternativa bem sucedida com iframe #${i+1}`);
               break;
-            } else {
-              console.log(`[DAILY DEBUG] Falha na comunicação por postMessage com iframe #${i+1}`);
             }
           } catch (error) {
-            console.error(`[DAILY DEBUG] Erro ao comunicar com iframe #${i+1}:`, error);
+            console.error(`[DAILY DEBUG] Erro na tentativa alternativa com iframe #${i+1}:`, error);
           }
-        } else {
-          console.log(`[DAILY DEBUG] Iframe #${i+1} não é do Daily.co, ignorando`);
         }
       }
       
@@ -478,6 +521,19 @@ class WhisperTranscriptionService {
         console.log('[DAILY DEBUG] Captura de áudio do Daily.co ativada com sucesso');
       } else {
         console.warn('[DAILY DEBUG] Não foi possível ativar a captura em nenhum iframe do Daily.co');
+        
+        // NOVO: Tentar verificar se o objeto Daily está disponível globalmente (para sessões incorporadas)
+        if (window.daily) {
+          console.log('[DAILY DEBUG] Objeto Daily encontrado globalmente, tentando usar API direta');
+          try {
+            // Tentar capturar áudio diretamente se a API estiver disponível na janela principal
+            this.dailyCapturingEnabled = true;
+            console.log('[DAILY DEBUG] Captura direta da API global do Daily ativada');
+            return true;
+          } catch (e) {
+            console.error('[DAILY DEBUG] Erro ao usar API global do Daily:', e);
+          }
+        }
       }
       
       return captureSuccessful;
@@ -600,71 +656,6 @@ class WhisperTranscriptionService {
   }
   
   /**
-   * Tenta ativar a captura de áudio do Daily.co
-   * @returns {Promise<boolean>}
-   * @private
-   */
-  async _tryEnableDailyCapture() {
-    try {
-      console.log('[DAILY DEBUG] Iniciando tentativa de captura de áudio do Daily.co...');
-      // 1. Encontrar todos os iframes da página que possam ser do Daily
-      const iframes = document.querySelectorAll('iframe');
-      
-      if (iframes.length === 0) {
-        console.log('[DAILY DEBUG] Nenhum iframe encontrado na página');
-        return false;
-      }
-      
-      console.log(`[DAILY DEBUG] Encontrados ${iframes.length} iframes na página`);
-      
-      // 2. Tentar se comunicar com cada iframe usando postMessage (seguro entre origens)
-      let captureSuccessful = false;
-      
-      for (let i = 0; i < iframes.length; i++) {
-        const iframe = iframes[i];
-        const iframeUrl = iframe.src || '';
-        
-        console.log(`[DAILY DEBUG] Verificando iframe #${i+1}: ${iframeUrl}`);
-        
-        if (iframeUrl.includes('daily.co') || iframeUrl.includes('theraconnect')) {
-          console.log(`[DAILY DEBUG] Iframe #${i+1} é potencialmente do Daily.co, tentando comunicação via postMessage`);
-          
-          try {
-            // Método alternativo usando postMessage em vez de eval direto
-            const success = await this._requestDailyAudioCapture(iframe);
-            
-            if (success) {
-              captureSuccessful = true;
-              console.log(`[DAILY DEBUG] Comunicação por postMessage bem sucedida com iframe #${i+1}`);
-              break;
-            } else {
-              console.log(`[DAILY DEBUG] Falha na comunicação por postMessage com iframe #${i+1}`);
-            }
-          } catch (error) {
-            console.error(`[DAILY DEBUG] Erro ao comunicar com iframe #${i+1}:`, error);
-          }
-        } else {
-          console.log(`[DAILY DEBUG] Iframe #${i+1} não é do Daily.co, ignorando`);
-        }
-      }
-      
-      // 3. Se encontramos qualquer iframe do Daily, consideramos que a integração está ativa
-      // Mesmo que não tenhamos estabelecido comunicação ainda, o iframe pode responder depois
-      if (captureSuccessful) {
-        this.dailyCapturingEnabled = true;
-        console.log('[DAILY DEBUG] Captura de áudio do Daily.co ativada com sucesso');
-      } else {
-        console.warn('[DAILY DEBUG] Não foi possível ativar a captura em nenhum iframe do Daily.co');
-      }
-      
-      return captureSuccessful;
-    } catch (error) {
-      console.error('[DAILY DEBUG] Erro ao tentar ativar captura do Daily:', error);
-      return false;
-    }
-  }
-
-  /**
    * Solicita a captura de áudio do Daily.co usando postMessage (seguro entre origens)
    * @param {HTMLIFrameElement} iframe - iframe do Daily.co
    * @returns {Promise<boolean>}
@@ -677,14 +668,14 @@ class WhisperTranscriptionService {
     }
     
     return new Promise((resolve) => {
-      // Adicionar timeout para garantir que a solicitação não fique presa
+      // MODIFICADO: Aumentar timeout para 10 segundos
       const timeout = setTimeout(() => {
         console.warn('[DAILY DEBUG] Timeout ao esperar resposta do Daily via postMessage');
         if (!this.dailyEventListenerAdded) {
           window.removeEventListener('message', handleMessage);
         }
         resolve(false);
-      }, 5000);
+      }, 10000); // Aumentado de 5000 para 10000
       
       // Função de callback para mensagens
       const handleMessage = (event) => {
@@ -740,15 +731,47 @@ class WhisperTranscriptionService {
         // Enviar mensagem para o iframe do Daily
         console.log('[DAILY DEBUG] Enviando solicitação de captura de áudio via postMessage');
         
-        // Necessário incluir * para comunicação cross-origin
-        iframe.contentWindow.postMessage({
-          type: 'daily-audio-capture-request',
-          sessionId: this.sessionId,
-          source: 'whisperTranscriptionService',
-          timestamp: new Date().toISOString()
-        }, '*');
+        // MELHORIA: Verificar primeiro se o iframe está pronto
+        const checkFrameReady = () => {
+          try {
+            // Testar se podemos acessar o contentWindow
+            if (iframe.contentWindow && 
+                iframe.contentWindow.postMessage && 
+                iframe.contentDocument && 
+                iframe.contentDocument.readyState === 'complete') {
+              console.log('[DAILY DEBUG] iframe está pronto, enviando mensagem...');
+              
+              // Necessário incluir * para comunicação cross-origin
+              iframe.contentWindow.postMessage({
+                type: 'daily-audio-capture-request',
+                sessionId: this.sessionId,
+                source: 'whisperTranscriptionService',
+                timestamp: new Date().toISOString()
+              }, '*');
+              
+              console.log('[DAILY DEBUG] Solicitação enviada, aguardando resposta...');
+            } else {
+              console.log('[DAILY DEBUG] iframe ainda não está pronto, tentando novamente em 500ms...');
+              setTimeout(checkFrameReady, 500);
+            }
+          } catch (error) {
+            console.warn('[DAILY DEBUG] Erro ao verificar se iframe está pronto:', error);
+            // Tentar enviar mensagem mesmo assim
+            try {
+              iframe.contentWindow.postMessage({
+                type: 'daily-audio-capture-request',
+                sessionId: this.sessionId,
+                source: 'whisperTranscriptionService',
+                timestamp: new Date().toISOString()
+              }, '*');
+            } catch (e) {
+              console.error('[DAILY DEBUG] Falha ao enviar mensagem para iframe:', e);
+            }
+          }
+        };
         
-        console.log('[DAILY DEBUG] Solicitação enviada, aguardando resposta...');
+        // Iniciar verificação
+        checkFrameReady();
       } catch (error) {
         console.error('[DAILY DEBUG] Erro ao enviar mensagem para iframe:', error);
         clearTimeout(timeout);
