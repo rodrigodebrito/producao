@@ -423,124 +423,238 @@ class WhisperTranscriptionService {
   }
   
   /**
-   * Tenta ativar a captura de áudio do Daily.co
+   * Tenta ativar a captura de áudio do Daily.co usando várias abordagens
    * @returns {Promise<boolean>}
    * @private
    */
   async _tryEnableDailyCapture() {
+    console.log('[DAILY DEBUG] Iniciando tentativa de captura de áudio do Daily.co...');
+    
     try {
-      console.log('[DAILY DEBUG] Iniciando tentativa de captura de áudio do Daily.co...');
-      // 1. Encontrar todos os iframes da página que possam ser do Daily
+      // 1. Tentar abordagem via proxy backend primeiro (evita CORS)
+      const backendProxySuccess = await this._tryDailyCaptureViaBackend();
+      if (backendProxySuccess) {
+        console.log('[DAILY DEBUG] Captura via proxy backend bem-sucedida!');
+        this.dailyCapturingEnabled = true;
+        return true;
+      }
+      
+      // 2. Tentar abordagem direta via postMessage como fallback
       const iframes = document.querySelectorAll('iframe');
+      console.log(`[DAILY DEBUG] Encontrados ${iframes.length} iframes na página`);
       
       if (iframes.length === 0) {
-        console.log('[DAILY DEBUG] Nenhum iframe encontrado na página');
+        console.log('[DAILY DEBUG] Nenhum iframe encontrado, impossível capturar áudio do Daily');
         return false;
       }
       
-      console.log(`[DAILY DEBUG] Encontrados ${iframes.length} iframes na página`);
-      
-      // 2. Tentar se comunicar com cada iframe usando postMessage (seguro entre origens)
-      let captureSuccessful = false;
-      
-      // NOVO: Sistema de retry com backoff exponencial
-      const maxRetries = 3;
+      // Verificar cada iframe
+      let dailyIframeFound = false;
       
       for (let i = 0; i < iframes.length; i++) {
         const iframe = iframes[i];
-        const iframeUrl = iframe.src || '';
+        const iframeSrc = iframe.src || '';
         
-        console.log(`[DAILY DEBUG] Verificando iframe #${i+1}: ${iframeUrl}`);
+        console.log(`[DAILY DEBUG] Verificando iframe #${i+1}: ${iframeSrc}`);
         
-        if (iframeUrl.includes('daily.co') || iframeUrl.includes('theraconnect')) {
+        // Verificar se parece ser do Daily.co
+        if (iframeSrc.includes('daily.co') || iframeSrc.includes('teraconect.daily.co')) {
           console.log(`[DAILY DEBUG] Iframe #${i+1} é potencialmente do Daily.co, tentando comunicação via postMessage`);
+          dailyIframeFound = true;
           
-          // NOVO: Loop de tentativas com backoff exponencial
-          for (let attempt = 0; attempt < maxRetries; attempt++) {
-            try {
-              if (attempt > 0) {
-                const waitTime = Math.pow(2, attempt) * 1000; // 2s, 4s, 8s
-                console.log(`[DAILY DEBUG] Tentativa ${attempt+1}/${maxRetries} após ${waitTime/1000}s...`);
-                await new Promise(resolve => setTimeout(resolve, waitTime));
-              }
-              
-              // Método alternativo usando postMessage em vez de eval direto
-              const success = await this._requestDailyAudioCapture(iframe);
-              
-              if (success) {
-                captureSuccessful = true;
-                console.log(`[DAILY DEBUG] Comunicação por postMessage bem sucedida com iframe #${i+1} na tentativa ${attempt+1}`);
-                break; // Sair do loop de tentativas
-              } else {
-                console.log(`[DAILY DEBUG] Falha na comunicação por postMessage com iframe #${i+1} (tentativa ${attempt+1}/${maxRetries})`);
-              }
-            } catch (error) {
-              console.error(`[DAILY DEBUG] Erro ao comunicar com iframe #${i+1} (tentativa ${attempt+1}):`, error);
-            }
-          }
+          // Tentar obter áudio deste iframe
+          const success = await this._requestDailyAudioCapture(iframe);
           
-          if (captureSuccessful) {
-            break; // Sair do loop de iframes se já tivemos sucesso
-          }
-        } else {
-          console.log(`[DAILY DEBUG] Iframe #${i+1} não é do Daily.co, ignorando`);
-        }
-      }
-      
-      // NOVO: Verificação alternativa para iframes com srcDoc ou que ainda estão carregando
-      if (!captureSuccessful) {
-        console.log('[DAILY DEBUG] Tentando método alternativo para iframes sem src explícito...');
-        
-        // Aguardar um pouco para dar tempo de iframes carregarem
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        
-        // Tentar novamente com todos os iframes, desta vez sem filtrar por URL
-        for (let i = 0; i < iframes.length; i++) {
-          const iframe = iframes[i];
-          
-          console.log(`[DAILY DEBUG] Tentativa alternativa com iframe #${i+1}`);
-          
-          try {
-            const success = await this._requestDailyAudioCapture(iframe);
-            
-            if (success) {
-              captureSuccessful = true;
-              console.log(`[DAILY DEBUG] Comunicação alternativa bem sucedida com iframe #${i+1}`);
-              break;
-            }
-          } catch (error) {
-            console.error(`[DAILY DEBUG] Erro na tentativa alternativa com iframe #${i+1}:`, error);
-          }
-        }
-      }
-      
-      // 3. Se encontramos qualquer iframe do Daily, consideramos que a integração está ativa
-      // Mesmo que não tenhamos estabelecido comunicação ainda, o iframe pode responder depois
-      if (captureSuccessful) {
-        this.dailyCapturingEnabled = true;
-        console.log('[DAILY DEBUG] Captura de áudio do Daily.co ativada com sucesso');
-      } else {
-        console.warn('[DAILY DEBUG] Não foi possível ativar a captura em nenhum iframe do Daily.co');
-        
-        // NOVO: Tentar verificar se o objeto Daily está disponível globalmente (para sessões incorporadas)
-        if (window.daily) {
-          console.log('[DAILY DEBUG] Objeto Daily encontrado globalmente, tentando usar API direta');
-          try {
-            // Tentar capturar áudio diretamente se a API estiver disponível na janela principal
+          if (success) {
+            console.log(`[DAILY DEBUG] Captura de áudio do Daily.co ativada com sucesso via iframe #${i+1}`);
             this.dailyCapturingEnabled = true;
-            console.log('[DAILY DEBUG] Captura direta da API global do Daily ativada');
             return true;
-          } catch (e) {
-            console.error('[DAILY DEBUG] Erro ao usar API global do Daily:', e);
           }
         }
       }
       
-      return captureSuccessful;
+      if (!dailyIframeFound) {
+        console.log('[DAILY DEBUG] Nenhum iframe do Daily.co encontrado');
+      } else {
+        console.log('[DAILY DEBUG] Falha na comunicação por postMessage com todos os iframes do Daily.co');
+      }
+      
+      return false;
     } catch (error) {
-      console.error('[DAILY DEBUG] Erro ao tentar ativar captura do Daily:', error);
+      console.error('[DAILY DEBUG] Erro ao tentar ativar captura de áudio do Daily:', error);
       return false;
     }
+  }
+  
+  /**
+   * Nova abordagem: tenta capturar áudio do Daily.co via proxy do backend (evita CORS)
+   * @returns {Promise<boolean>}
+   * @private
+   */
+  async _tryDailyCaptureViaBackend() {
+    try {
+      // Extrair informações necessárias para o backend identificar a sessão
+      const roomName = this._extractDailyRoomName();
+      const sessionId = this.sessionId || this.extractSessionId();
+      
+      if (!roomName || !sessionId) {
+        console.log('[DAILY DEBUG] Impossível identificar sala ou sessão para proxy backend');
+        return false;
+      }
+      
+      // Construir URL do endpoint de proxy
+      const baseUrl = process.env.REACT_APP_API_URL || window.location.origin;
+      const proxyEndpoint = `${baseUrl}/api/daily-proxy/capture-audio`;
+      
+      console.log(`[DAILY DEBUG] Solicitando captura de áudio via backend proxy: ${proxyEndpoint}`);
+      
+      // Fazer requisição para o backend iniciar o proxy de captura
+      const response = await fetch(proxyEndpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          roomName,
+          sessionId,
+          timestamp: new Date().toISOString()
+        })
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        console.warn(`[DAILY DEBUG] Falha no proxy backend: ${error}`);
+        return false;
+      }
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        console.log('[DAILY DEBUG] Backend proxy registrado com sucesso');
+        
+        // Configurar listener para receber dados do backend via eventos SSE ou WebSocket
+        this._setupBackendStreamListener(result.streamToken);
+        
+        return true;
+      } else {
+        console.warn(`[DAILY DEBUG] Backend reportou erro: ${result.error}`);
+        return false;
+      }
+    } catch (error) {
+      console.error('[DAILY DEBUG] Erro ao tentar proxy via backend:', error);
+      return false;
+    }
+  }
+  
+  /**
+   * Extrai o nome da sala do Daily.co a partir das URLs dos iframes
+   * @returns {string|null}
+   * @private
+   */
+  _extractDailyRoomName() {
+    // Procurar por iframes do Daily.co
+    const iframes = Array.from(document.querySelectorAll('iframe'));
+    
+    for (const iframe of iframes) {
+      const src = iframe.src || '';
+      
+      if (src.includes('daily.co') || src.includes('teraconect.daily.co')) {
+        // Tentar extrair o nome da sala da URL
+        try {
+          const url = new URL(src);
+          // A estrutura típica é: https://domain.daily.co/room-name?params
+          const pathParts = url.pathname.split('/').filter(Boolean);
+          if (pathParts.length > 0) {
+            return pathParts[0]; // Primeiro segmento após o domínio
+          }
+        } catch (e) {
+          console.warn('[DAILY DEBUG] Erro ao extrair nome da sala:', e);
+        }
+      }
+    }
+    
+    return null;
+  }
+  
+  /**
+   * Configura um listener para receber dados de áudio do backend
+   * @param {string} streamToken - Token de autenticação para o stream
+   * @private
+   */
+  _setupBackendStreamListener(streamToken) {
+    // Implementar de acordo com o mecanismo escolhido (WebSocket ou SSE)
+    console.log(`[DAILY DEBUG] Configurando listener para stream de áudio do backend (token: ${streamToken})`);
+    
+    // Exemplo usando WebSocket
+    try {
+      const baseUrl = process.env.REACT_APP_WS_URL || window.location.origin.replace('http', 'ws');
+      const wsUrl = `${baseUrl}/ws/daily-audio/${this.sessionId}?token=${streamToken}`;
+      
+      console.log(`[DAILY DEBUG] Conectando ao WebSocket: ${wsUrl}`);
+      
+      const socket = new WebSocket(wsUrl);
+      
+      socket.onopen = () => {
+        console.log('[DAILY DEBUG] Conexão WebSocket estabelecida para áudio do Daily');
+      };
+      
+      socket.onmessage = (event) => {
+        try {
+          // Processar mensagem com dados de áudio do backend
+          const data = JSON.parse(event.data);
+          
+          if (data.type === 'audio-chunk') {
+            // Converter chunk de áudio codificado em base64 para Blob
+            const audioBlob = this._base64ToBlob(data.chunk, 'audio/webm');
+            
+            // Adicionar à lista de chunks como se fosse do MediaRecorder
+            this.audioChunks.push(audioBlob);
+            console.log(`[DAILY DEBUG] Chunk de áudio recebido via backend: ${Math.round(audioBlob.size/1024)}KB`);
+          }
+        } catch (e) {
+          console.error('[DAILY DEBUG] Erro ao processar mensagem de áudio:', e);
+        }
+      };
+      
+      socket.onerror = (error) => {
+        console.error('[DAILY DEBUG] Erro na conexão WebSocket:', error);
+      };
+      
+      socket.onclose = () => {
+        console.log('[DAILY DEBUG] Conexão WebSocket fechada');
+      };
+      
+      // Guardar referência para limpar depois
+      this.backendSocket = socket;
+    } catch (e) {
+      console.error('[DAILY DEBUG] Erro ao configurar WebSocket:', e);
+    }
+  }
+  
+  /**
+   * Converte string Base64 para Blob
+   * @param {string} base64 - String em formato base64
+   * @param {string} mimeType - Tipo MIME do conteúdo
+   * @returns {Blob} - Blob com os dados
+   * @private
+   */
+  _base64ToBlob(base64, mimeType) {
+    const byteCharacters = atob(base64);
+    const byteArrays = [];
+    
+    for (let offset = 0; offset < byteCharacters.length; offset += 512) {
+      const slice = byteCharacters.slice(offset, offset + 512);
+      
+      const byteNumbers = new Array(slice.length);
+      for (let i = 0; i < slice.length; i++) {
+        byteNumbers[i] = slice.charCodeAt(i);
+      }
+      
+      const byteArray = new Uint8Array(byteNumbers);
+      byteArrays.push(byteArray);
+    }
+    
+    return new Blob(byteArrays, { type: mimeType });
   }
 
   /**
