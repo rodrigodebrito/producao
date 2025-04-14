@@ -12,9 +12,9 @@ class WhisperTranscriptionService {
     this.audioStream = null;
     this.isRecording = false;
     
-    // CORRIGIDO: Usar caminhos relativos para os endpoints principais
+    // ATUALIZADO: Usar caminho absoluto para o endpoint de transcrições conforme especificado
     this.apiEndpoint = '/api/ai/whisper/transcribe';
-    this.transcriptEndpoint = '/api/ai/transcript';
+    this.transcriptEndpoint = 'https://theraconnect-prd.onrender.com/api/ai/transcript';
     
     // NOVO: Endpoint para buscar todas as transcrições da sessão
     this.allTranscriptsEndpoint = '/api/ai/transcriptions/session';
