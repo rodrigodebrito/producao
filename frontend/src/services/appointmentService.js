@@ -232,20 +232,30 @@ export const cancelAppointment = async (id) => {
     
     const user = JSON.parse(userJson);
     
-    console.log(`🌐 Usando api.put para mudar status do agendamento ID: ${id} para CANCELLED`);
+    // Obter dados atuais do agendamento
+    console.log(`🔍 Buscando dados atuais do agendamento ${id} antes de cancelar`);
+    const appointment = await getAppointmentById(id);
     
-    // Usar o método PUT para atualizar o status para CANCELLED, incluindo mais dados no payload
-    const payload = { 
+    if (!appointment) {
+      throw new Error(`Agendamento ${id} não encontrado`);
+    }
+    
+    console.log(`🌐 Atualizando agendamento ${id} com status CANCELLED`);
+    
+    // Atualizar todo o objeto do agendamento em vez de apenas o status
+    const updatedAppointment = {
+      ...appointment,
       status: 'CANCELLED',
-      userId: user.id,
-      userName: user.name,
-      canceledBy: user.id,
-      cancelationReason: 'Cancelado pelo usuário via interface'
+      cancelledBy: user.id,
+      cancelledByName: user.name,
+      cancelledAt: new Date().toISOString(),
+      cancellationReason: 'Cancelado pelo usuário via interface'
     };
     
-    console.log('Enviando payload:', payload);
+    console.log('Enviando dados de atualização:', updatedAppointment);
     
-    const response = await api.put(`/appointments/${id}/status`, payload);
+    // Usar updateAppointment em vez da rota específica de status
+    const response = await api.put(`/appointments/${id}`, updatedAppointment);
     
     console.log('✅ Agendamento cancelado com sucesso:', response.data);
     return response.data;
