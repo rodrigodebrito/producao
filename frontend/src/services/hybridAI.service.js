@@ -1217,9 +1217,9 @@ class HybridAIService {
 Esta sessão não possui conteúdo suficiente para uma análise detalhada.
 
 ## Recomendações
-- Continue a conversa para permitir uma análise mais completa
-- Considere fazer perguntas abertas para estimular o diálogo
-- Mantenha uma postura acolhedora e empática`;
+- Aguarde o processamento completo da transcrição
+- Verifique a conexão com o serviço de IA
+- Contate o suporte se o problema persistir`;
       }
       
       // Extrair algumas informações básicas do texto
@@ -1227,37 +1227,29 @@ Esta sessão não possui conteúdo suficiente para uma análise detalhada.
       const sentenceCount = text.split(/[.!?]+/).length;
       const paragraphCount = text.split(/\n\s*\n/).length;
       
-      // Criar alguns tópicos baseados no tamanho do texto
+      // Criar alguns tópicos genéricos de terapia sem mensagens específicas
       const topics = [
-        'Comunicação e expressão de sentimentos',
-        'Padrões de pensamento observados',
-        'Aspectos comportamentais relevantes'
+        'Análise de comunicação',
+        'Observações gerais',
+        'Pontos para próxima sessão'
       ];
       
-      // Criar um relatório mais completo
-      return `# Relatório da Sessão
+      // Criar um relatório mais completo sem mensagens que possam parecer falsas
+      return `# Relatório Local da Sessão
 
-## Visão Geral
+## Aviso Importante
 Este relatório foi gerado localmente devido à indisponibilidade temporária do serviço de IA.
+Os dados apresentados são apenas placeholders e não representam uma análise real.
 
 ## Dados Básicos
 - **ID da Sessão**: ${sessionId}
 - **Conteúdo Analisado**: ${wordCount} palavras, ${sentenceCount} frases
 - **Data**: ${new Date().toLocaleDateString()}
 
-## Tópicos Principais
-${topics.map(topic => `- ${topic}`).join('\n')}
+## Aguardando Processamento
+O sistema está aguardando o processamento completo da transcrição pelo serviço remoto.
 
-## Observações
-A comunicação durante a sessão mostrou padrões que podem ser explorados em sessões futuras. 
-Algumas questões emergiram que merecem atenção continuada.
-
-## Recomendações para Próxima Sessão
-- Explorar mais profundamente os temas abordados
-- Considerar técnicas de escuta ativa e validação emocional
-- Observar padrões de comunicação e comportamentos recorrentes
-
-> **Nota**: Este é um relatório simplificado gerado localmente. Um relatório mais detalhado estará disponível quando o serviço de IA estiver operacional.`;
+> **Nota**: Este é apenas um placeholder. O relatório real estará disponível quando o serviço de IA estiver operacional.`;
     } catch (e) {
       console.error('HybridAI: Erro ao gerar relatório simulado:', e);
       return "# Relatório da Sessão\n\nNão foi possível gerar o relatório no momento. Por favor, tente novamente mais tarde.";

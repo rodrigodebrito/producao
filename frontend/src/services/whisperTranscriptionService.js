@@ -2202,7 +2202,10 @@ class WhisperTranscriptionService {
     try {
       console.log(`🔍 SIMULAÇÃO: Verificando sessionStorage/localStorage para buscar transcrições`);
       
-      // Tentar pegar transcrições do sessionStorage
+      // DESATIVADO: Não simular transcrições fictícias, apenas buscar as reais
+      console.log(`📋 SIMULAÇÃO: Função de simulação desativada para evitar mensagens falsas`);
+      
+      // Verificar dados reais no storage apenas
       const storageKeys = Object.keys(sessionStorage).filter(key => 
         key.startsWith('whisper_transcriptions_') && key.includes(this.sessionId)
       );
@@ -2217,6 +2220,7 @@ class WhisperTranscriptionService {
         
         console.log(`🔍 SIMULAÇÃO: Encontradas ${localStorageKeys.length} chaves no localStorage`);
         
+        // Não criar dados fictícios, apenas processar dados reais existentes
         for (const key of localStorageKeys) {
           try {
             const storedData = localStorage.getItem(key);
@@ -2224,12 +2228,15 @@ class WhisperTranscriptionService {
               const transcriptions = JSON.parse(storedData);
               console.log(`📋 SIMULAÇÃO: Dados encontrados no localStorage para ${key}:`, transcriptions);
               
-              // Montar estrutura compatível com o que o backend retornaria
-              const data = {
-                transcripts: transcriptions
-              };
-              
-              this._processOtherTranscriptions(data);
+              // Verificar se os dados são reais antes de processá-los
+              if (Array.isArray(transcriptions) && transcriptions.length > 0) {
+                // Montar estrutura compatível com o que o backend retornaria
+                const data = {
+                  transcripts: transcriptions
+                };
+                
+                this._processOtherTranscriptions(data);
+              }
             }
           } catch (e) {
             console.warn(`❌ SIMULAÇÃO: Erro ao processar transcrições do localStorage (${key}):`, e);
@@ -2247,19 +2254,22 @@ class WhisperTranscriptionService {
             const transcriptions = JSON.parse(storedData);
             console.log(`📋 SIMULAÇÃO: Dados encontrados no sessionStorage para ${key}:`, transcriptions);
             
-            // Montar estrutura compatível com o que o backend retornaria
-            const data = {
-              transcripts: transcriptions
-            };
-            
-            this._processOtherTranscriptions(data);
+            // Verificar se os dados são reais antes de processá-los
+            if (Array.isArray(transcriptions) && transcriptions.length > 0) {
+              // Montar estrutura compatível com o que o backend retornaria
+              const data = {
+                transcripts: transcriptions
+              };
+              
+              this._processOtherTranscriptions(data);
+            }
           }
         } catch (e) {
           console.warn(`❌ SIMULAÇÃO: Erro ao processar transcrições do sessionStorage (${key}):`, e);
         }
       }
     } catch (error) {
-      console.warn(`❌ SIMULAÇÃO: Erro ao simular transcrições de outros participantes:`, error);
+      console.warn(`❌ SIMULAÇÃO: Erro ao processar transcrições de outros participantes:`, error);
     }
   }
   
