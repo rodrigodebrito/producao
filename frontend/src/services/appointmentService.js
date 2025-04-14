@@ -1,7 +1,8 @@
 import api from './api';
 import axios from 'axios';
+import { BASE_API_URL } from '../config';
 
-const BASE_API_URL = 'https://theraconnect-prd.onrender.com';
+console.log(`[AppointmentService] BASE_API_URL: ${BASE_API_URL}`);
 
 // Obter agendamentos do terapeuta
 export const getTherapistAppointments = async (therapistId) => {
@@ -215,10 +216,41 @@ export const updateAppointment = async (id, data) => {
 
 export const cancelAppointment = async (id) => {
   try {
-    const response = await api.delete(`/appointments/${id}`);
+    console.log(`🚀 Iniciando cancelamento do agendamento ID: ${id}`);
+    
+    // Obter token de autenticação
+    const token = localStorage.getItem('token');
+    if (!token) {
+      throw new Error('Token de autenticação não encontrado');
+    }
+    
+    // Usar a URL base completa para evitar problemas de rota
+    const apiUrl = BASE_API_URL;
+    console.log(`🌐 URL da API para cancelamento: ${apiUrl}/appointments/${id}`);
+    
+    // Fazer a requisição diretamente com a URL completa para garantir que chegue ao endpoint correto
+    const response = await axios.delete(`${apiUrl}/appointments/${id}`, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      }
+    });
+    
+    console.log('✅ Agendamento cancelado com sucesso:', response.data);
     return response.data;
   } catch (error) {
-    console.error('Erro ao cancelar agendamento:', error);
+    console.error('❌ Erro ao cancelar agendamento:', error);
+    if (error.response) {
+      console.error('📊 Detalhes do erro:', {
+        status: error.response.status,
+        data: error.response.data,
+        headers: error.response.headers
+      });
+    } else if (error.request) {
+      console.error('🌐 Problema de rede - Requisição enviada mas sem resposta');
+    } else {
+      console.error(`⚠️ Erro ao configurar requisição: ${error.message}`);
+    }
     throw error;
   }
 };
@@ -242,7 +274,7 @@ export const createAppointmentDirect = async (appointmentData) => {
     `);
     
     console.log(`📤 Enviando requisição POST...`);
-    const result = await axios.post(`${apiUrl}/api/appointments`, appointmentData, {
+    const result = await axios.post(`${apiUrl}/appointments`, appointmentData, {
       headers: { 'Content-Type': 'application/json' }
     });
     
