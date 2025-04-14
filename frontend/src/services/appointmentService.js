@@ -508,24 +508,69 @@ export const syncPendingCancellations = async () => {
     
     console.log(`🔄 Tentando sincronizar ${pendingCancellations.length} cancelamentos pendentes`);
     
+    // Definir tempo máximo para manter tentativas (7 dias em milissegundos)
+    const MAX_RETRY_AGE = 7 * 24 * 60 * 60 * 1000; // 7 dias
+    const now = new Date().getTime();
+    
+    // Filtrar agendamentos muito antigos para evitar tentativas infinitas
+    const filteredPendingCancellations = pendingCancellations.filter(item => {
+      const timestamp = new Date(item.timestamp).getTime();
+      const age = now - timestamp;
+      
+      // Se for muito antigo, vamos remover
+      if (age > MAX_RETRY_AGE) {
+        console.log(`⏱️ Removendo cancelamento pendente antigo: ${item.id} (idade: ${Math.round(age / (24 * 60 * 60 * 1000))} dias)`);
+        return false;
+      }
+      return true;
+    });
+    
+    // Se removemos alguns itens antigos, atualizar imediatamente
+    if (filteredPendingCancellations.length < pendingCancellations.length) {
+      const removedCount = pendingCancellations.length - filteredPendingCancellations.length;
+      console.log(`🧹 Removidos ${removedCount} cancelamentos pendentes antigos (> 7 dias)`);
+      localStorage.setItem('pendingCancellations', JSON.stringify(filteredPendingCancellations));
+      
+      // Se não sobrou nada para sincronizar após a limpeza
+      if (filteredPendingCancellations.length === 0) {
+        console.log('✅ Não há mais cancelamentos pendentes válidos para sincronizar');
+        return { 
+          success: true, 
+          synced: 0, 
+          total: 0,
+          cleaned: removedCount,
+          message: `${removedCount} cancelamentos antigos foram removidos da fila`
+        };
+      }
+    }
+    
     // Resultados da sincronização
     const results = {
       success: true,
-      total: pendingCancellations.length,
+      total: filteredPendingCancellations.length,
       synced: 0,
       failed: 0,
+      cleaned: pendingCancellations.length - filteredPendingCancellations.length,
       errors: []
     };
     
     // Lista atualizada de pendências (removeremos os bem-sucedidos)
-    const updatedPendingCancellations = [...pendingCancellations];
+    const updatedPendingCancellations = [...filteredPendingCancellations];
     
-    // Tentar sincronizar cada cancelamento pendente
-    for (let i = 0; i < pendingCancellations.length; i++) {
-      const pendingItem = pendingCancellations[i];
+    // Limitar a 3 tentativas por vez para evitar sobrecarga e bloquear a interface
+    const MAX_SYNC_ATTEMPTS = 3;
+    const attemptsCount = Math.min(filteredPendingCancellations.length, MAX_SYNC_ATTEMPTS);
+    
+    if (filteredPendingCancellations.length > MAX_SYNC_ATTEMPTS) {
+      console.log(`⚠️ Limitando a ${MAX_SYNC_ATTEMPTS} tentativas por vez (total: ${filteredPendingCancellations.length})`);
+    }
+    
+    // Tentar sincronizar cada cancelamento pendente (limitado)
+    for (let i = 0; i < attemptsCount; i++) {
+      const pendingItem = filteredPendingCancellations[i];
       
       try {
-        console.log(`🔄 Sincronizando cancelamento ${i+1}/${pendingCancellations.length}: ${pendingItem.id}`);
+        console.log(`🔄 Sincronizando cancelamento ${i+1}/${attemptsCount}: ${pendingItem.id}`);
         
         // Tentar primeiro método (PUT direto)
         try {
@@ -539,6 +584,21 @@ export const syncPendingCancellations = async () => {
             updatedPendingCancellations.splice(index, 1);
           }
         } catch (putError) {
+          // Verificar se é erro 404 (agendamento não existe mais)
+          if (putError.response && putError.response.status === 404) {
+            console.log(`🗑️ Agendamento ${pendingItem.id} não encontrado (404), removendo da fila`);
+            
+            // Remover da lista de pendências se for 404
+            const index = updatedPendingCancellations.findIndex(item => item.id === pendingItem.id);
+            if (index !== -1) {
+              updatedPendingCancellations.splice(index, 1);
+            }
+            
+            // Não contar como falha
+            results.cleaned++;
+            continue;
+          }
+          
           // Tentar método alternativo (status)
           try {
             await api.put(`/appointments/${pendingItem.id}/status`, { 
@@ -555,7 +615,38 @@ export const syncPendingCancellations = async () => {
               updatedPendingCancellations.splice(index, 1);
             }
           } catch (statusError) {
+            // Verificar se também é 404 na rota alternativa
+            if (statusError.response && statusError.response.status === 404) {
+              console.log(`🗑️ Agendamento ${pendingItem.id} não encontrado (404) na rota alternativa, removendo da fila`);
+              
+              // Remover da lista de pendências
+              const index = updatedPendingCancellations.findIndex(item => item.id === pendingItem.id);
+              if (index !== -1) {
+                updatedPendingCancellations.splice(index, 1);
+              }
+              
+              // Não contar como falha
+              results.cleaned++;
+              continue;
+            }
+            
             console.error(`❌ Falha ao sincronizar cancelamento ${pendingItem.id}:`, statusError);
+            
+            // Incrementar o contador de tentativas no item
+            const index = updatedPendingCancellations.findIndex(item => item.id === pendingItem.id);
+            if (index !== -1) {
+              // Se já tem contagem de tentativas, incrementar
+              updatedPendingCancellations[index].attempts = (updatedPendingCancellations[index].attempts || 0) + 1;
+              
+              // Se já tentou mais de 5 vezes, remover da fila
+              if (updatedPendingCancellations[index].attempts >= 5) {
+                console.log(`🚫 Cancelamento ${pendingItem.id} falhou 5 vezes, removendo da fila`);
+                updatedPendingCancellations.splice(index, 1);
+                results.cleaned++;
+                continue;
+              }
+            }
+            
             results.failed++;
             results.errors.push({
               id: pendingItem.id,
@@ -576,7 +667,7 @@ export const syncPendingCancellations = async () => {
     // Atualizar a lista de pendências no localStorage
     localStorage.setItem('pendingCancellations', JSON.stringify(updatedPendingCancellations));
     
-    console.log(`🔄 Sincronização finalizada: ${results.synced} sucesso, ${results.failed} falhas`);
+    console.log(`🔄 Sincronização finalizada: ${results.synced} sucesso, ${results.failed} falhas, ${results.cleaned} removidos`);
     
     return results;
   } catch (error) {

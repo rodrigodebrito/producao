@@ -40,9 +40,17 @@ function Appointments() {
         try {
           console.log('Tentando sincronizar cancelamentos pendentes...');
           const syncResult = await syncPendingCancellations();
+          
+          // Notificar apenas se houver sucesso real ou limpeza
           if (syncResult.synced > 0) {
             toast.success(`${syncResult.synced} agendamento(s) cancelado(s) foram sincronizados com sucesso!`);
           }
+          
+          // Notificar sobre limpeza apenas se não houve sucessos
+          if (syncResult.synced === 0 && syncResult.cleaned > 0) {
+            toast.info(`${syncResult.cleaned} agendamento(s) antigo(s) foram removidos da fila por não poderem ser sincronizados.`);
+          }
+          
         } catch (syncError) {
           console.error('Erro ao sincronizar cancelamentos pendentes:', syncError);
         }
