@@ -21,8 +21,11 @@ class WhisperTranscriptionService {
     this.transcriptEndpoint = 'https://theraconnect-prd.onrender.com/api/ai/transcript'; // Manter URL absoluta conforme solicitado
     this.allTranscriptsEndpoint = this.isProd ? `${backendBaseUrl}/api/ai/transcriptions/session` : '/api/ai/transcriptions/session';
     
-    console.log(`Whisper: Inicializando em ambiente ${this.isProd ? 'de produção' : 'de desenvolvimento'}`);
-    console.log(`Whisper: Usando endpoint de transcrições: ${this.allTranscriptsEndpoint}`);
+    // FIXADO: Flag para controlar se o serviço já foi inicializado
+    this.serviceInitialized = false;
+    
+    console.log(`Whisper: Serviço criado em ambiente ${this.isProd ? 'de produção' : 'de desenvolvimento'}`);
+    console.log(`Whisper: Endpoints configurados, aguardando inicialização manual`);
     
     this.transcriptionInProgress = false;
     this.useCredentials = false; // Por padrão, NÃO enviar credenciais para testes
@@ -60,7 +63,7 @@ class WhisperTranscriptionService {
     this.lastFetchTimestamp = null;
     this.transcriptionFetchInterval = null;
     
-    // Extrair sessionId ao inicializar
+    // Extrair sessionId ao inicializar, mas não iniciar processamento automático
     this.sessionId = this.extractSessionId();
     this.speakerRole = this._determineSpeakerRole();
     
@@ -93,10 +96,47 @@ class WhisperTranscriptionService {
     // Adicionar event listener para limpar dados ao entrar em nova sessão
     this._setupSessionChangeDetection();
     
-    // NOVO: Iniciar busca de transcrições de outros participantes
+    // NÃO iniciar busca de transcrições automaticamente
+    // Será iniciado quando o usuário começar a gravação
+    
+    console.log(`WhisperTranscriptionService construído - sessionId: ${this.sessionId}, papel: ${this.speakerIdentifier}, host: ${this.isHost}`);
+  }
+  
+  /**
+   * NOVO: Método público para inicializar completamente o serviço
+   * Deve ser chamado quando o usuário entrar na sala
+   */
+  initializeService() {
+    if (this.serviceInitialized) {
+      console.log('Whisper: Serviço já inicializado anteriormente');
+      return;
+    }
+    
+    // Atualizar sessionId com o valor mais recente
+    const latestSessionId = this.extractSessionId();
+    if (latestSessionId !== this.sessionId) {
+      this.updateSessionId(latestSessionId);
+    }
+    
+    // Iniciar busca de transcrições de outros participantes
     this._startFetchingOtherTranscriptions();
     
-    console.log(`WhisperTranscriptionService inicializado - sessionId: ${this.sessionId}, papel: ${this.speakerIdentifier}, host: ${this.isHost}`);
+    this.serviceInitialized = true;
+    console.log(`Whisper: Serviço inicializado completamente - sessionId: ${this.sessionId}`);
+  }
+  
+  /**
+   * NOVO: Método público que combina inicialização e início de gravação
+   * Para ser chamado quando o usuário clicar no botão do microfone
+   */
+  async startRecordingSession() {
+    // Inicializar o serviço se ainda não foi feito
+    if (!this.serviceInitialized) {
+      this.initializeService();
+    }
+    
+    // Iniciar gravação
+    return await this.startRecording();
   }
   
   /**
@@ -464,6 +504,12 @@ class WhisperTranscriptionService {
    */
   async startRecording() {
     try {
+      // FIXADO: Verificar se o serviço foi inicializado, se não, inicializá-lo
+      if (!this.serviceInitialized) {
+        console.log('Whisper: Serviço não inicializado, inicializando agora...');
+        this.initializeService();
+      }
+      
       console.log('=== INICIANDO NOVA GRAVAÇÃO WAV ===');
       
       // NOVO: Atualizar timestamp de atividade
