@@ -51,6 +51,10 @@ class WhisperTranscriptionService {
     this.sessionId = this.extractSessionId();
     this.speakerRole = this._determineSpeakerRole();
     
+    // NOVO: Determinar status de host e identificador completo
+    this.isHost = this._isSessionHost();
+    this.speakerIdentifier = this._getSpeakerIdentifier();
+    
     // NOVO: Controle de sessão e transcrições
     this.sessionStartTime = Date.now();
     this.lastActivityTime = Date.now();
@@ -76,7 +80,7 @@ class WhisperTranscriptionService {
     // Adicionar event listener para limpar dados ao entrar em nova sessão
     this._setupSessionChangeDetection();
     
-    console.log(`WhisperTranscriptionService inicializado - sessionId: ${this.sessionId}, papel: ${this.speakerRole}`);
+    console.log(`WhisperTranscriptionService inicializado - sessionId: ${this.sessionId}, papel: ${this.speakerIdentifier}, host: ${this.isHost}`);
   }
   
   /**
@@ -229,6 +233,89 @@ class WhisperTranscriptionService {
       console.error('Whisper: Erro ao determinar papel do usuário:', e);
       return 'unknown';
     }
+  }
+
+  /**
+   * NOVO: Verifica se o usuário atual é o host (anfitrião/dono) da sessão
+   * Isso é útil para diferenciar quando dois terapeutas estão em uma sessão
+   * @returns {boolean} True se o usuário atual é o host da sessão
+   * @private
+   */
+  _isSessionHost() {
+    try {
+      // 1. Verificar no AIContext se temos informação de host
+      if (window.__AI_CONTEXT && typeof window.__AI_CONTEXT.isHost === 'boolean') {
+        return window.__AI_CONTEXT.isHost;
+      }
+      
+      // 2. Verificar se temos informação de sessão no sessionStorage
+      const sessionData = sessionStorage.getItem(`session_${this.sessionId}`);
+      if (sessionData) {
+        try {
+          const session = JSON.parse(sessionData);
+          if (session && typeof session.isHost === 'boolean') {
+            return session.isHost;
+          }
+          
+          // Verificar se o usuário atual é o criador da sessão
+          if (session && session.ownerId) {
+            const userData = localStorage.getItem('user') || sessionStorage.getItem('user');
+            if (userData) {
+              const user = JSON.parse(userData);
+              if (user && user.id && user.id === session.ownerId) {
+                return true;
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('Whisper: Erro ao analisar dados da sessão para determinar host:', e);
+        }
+      }
+      
+      // 3. Verificar se existe um elemento DOM com data-is-host
+      const hostElement = document.querySelector('[data-is-host]');
+      if (hostElement) {
+        const isHostAttr = hostElement.getAttribute('data-is-host');
+        if (isHostAttr === 'true') return true;
+        if (isHostAttr === 'false') return false;
+      }
+      
+      // 4. Para terapeutas: assumir que são host por padrão
+      if (this.speakerRole === 'therapist') {
+        console.log('Whisper: Usuário é terapeuta, assumindo que é host por padrão');
+        return true;
+      }
+      
+      // 5. Para clientes: assumir que não são host por padrão
+      if (this.speakerRole === 'client') {
+        return false;
+      }
+      
+      // Fallback: se não conseguimos determinar, assumir false
+      return false;
+    } catch (e) {
+      console.error('Whisper: Erro ao determinar status de host:', e);
+      return false;
+    }
+  }
+  
+  /**
+   * NOVO: Determina o identificador do papel com base no papel do usuário e status de host
+   * Útil para quando dois terapeutas estão na mesma sessão
+   * @returns {string} Identificador do papel (therapist_host, therapist_guest, client)
+   * @private
+   */
+  _getSpeakerIdentifier() {
+    const role = this.speakerRole;
+    const isHost = this._isSessionHost();
+    
+    // Caso especial: dois terapeutas na mesma sessão
+    if (role === 'therapist') {
+      return isHost ? 'therapist_host' : 'therapist_guest';
+    }
+    
+    // Para clientes, manter identificação simples
+    return role;
   }
 
   /**
@@ -1549,11 +1636,31 @@ class WhisperTranscriptionService {
       
       const transcription = response.data.text || response.data.transcript || response.data;
       
+      // Obter identificador completo do papel (inclui status de host)
+      const speakerIdentifier = this._getSpeakerIdentifier();
+      const isHost = this._isSessionHost();
+      
       // MELHORIA: Adicionar formatação melhorada para visualização no console
-      // Mostrar claramente quem é o falante (terapeuta ou cliente) e usar cores distintas
+      // Mostrar claramente quem é o falante com distinção entre host e convidado
+      let speakerLabel = this.speakerRole.toUpperCase();
+      let bgColor = this.speakerRole === 'therapist' ? '#4CAF50' : '#2196F3';
+      
+      // Adicionar indicador de host para terapeutas
+      if (this.speakerRole === 'therapist') {
+        if (isHost) {
+          speakerLabel = 'TERAPEUTA (ANFITRIÃO)';
+          bgColor = '#4CAF50'; // Verde para terapeuta anfitrião
+        } else {
+          speakerLabel = 'TERAPEUTA (CONVIDADO)';
+          bgColor = '#009688'; // Verde azulado para terapeuta convidado
+        }
+      } else if (this.speakerRole === 'client') {
+        speakerLabel = 'CLIENTE';
+      }
+      
       console.log(
-        `\n%c ${this.speakerRole.toUpperCase()} DISSE: %c ${transcription.substring(0, 200)}${transcription.length > 200 ? '...' : ''}\n`, 
-        `background: ${this.speakerRole === 'therapist' ? '#4CAF50' : '#2196F3'}; 
+        `\n%c ${speakerLabel} DISSE: %c ${transcription.substring(0, 200)}${transcription.length > 200 ? '...' : ''}\n`, 
+        `background: ${bgColor}; 
          color: white; 
          font-weight: bold; 
          padding: 5px; 
@@ -1562,12 +1669,14 @@ class WhisperTranscriptionService {
          color: #333; 
          padding: 5px; 
          border-radius: 0 3px 3px 0; 
-         border-left: 5px solid ${this.speakerRole === 'therapist' ? '#4CAF50' : '#2196F3'};`
+         border-left: 5px solid ${bgColor};`
       );
       
       // Log adicional da sessão para rastreamento
       console.log(
-        `%c SESSÃO: %c ${this.sessionId} %c TIMESTAMP: %c ${new Date().toLocaleTimeString()}`, 
+        `%c SESSÃO: %c ${this.sessionId} %c PAPEL: %c ${speakerIdentifier} %c TIMESTAMP: %c ${new Date().toLocaleTimeString()}`, 
+        'font-weight: bold; color: #9E9E9E;', 
+        'color: #9E9E9E;',
         'font-weight: bold; color: #9E9E9E;', 
         'color: #9E9E9E;',
         'font-weight: bold; color: #9E9E9E;', 
@@ -1584,6 +1693,8 @@ class WhisperTranscriptionService {
       const transcriptionData = {
         sessionId: this.sessionId,
         speaker: this.speakerRole,
+        speakerIdentifier: speakerIdentifier, // Novo campo com identificador completo
+        isHost: isHost, // Novo campo indicando se é o anfitrião
         content: transcription.trim(),
         timestamp: new Date().toISOString()
       };
