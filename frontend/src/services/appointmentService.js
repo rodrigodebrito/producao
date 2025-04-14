@@ -224,10 +224,10 @@ export const cancelAppointment = async (id) => {
       throw new Error('Token de autenticação não encontrado');
     }
     
-    console.log(`🌐 Usando api.delete para cancelar agendamento ID: ${id}`);
+    console.log(`🌐 Usando api.put para mudar status do agendamento ID: ${id} para CANCELED`);
     
-    // Usar o objeto api configurado para fazer a requisição
-    const response = await api.delete(`/appointments/${id}`);
+    // Usar o método PUT para atualizar o status para CANCELED, já que o método DELETE não está funcionando
+    const response = await api.put(`/appointments/${id}/status`, { status: 'CANCELED' });
     
     console.log('✅ Agendamento cancelado com sucesso:', response.data);
     return response.data;
