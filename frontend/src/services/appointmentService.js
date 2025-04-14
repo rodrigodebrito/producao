@@ -224,10 +224,28 @@ export const cancelAppointment = async (id) => {
       throw new Error('Token de autenticação não encontrado');
     }
     
+    // Obter informações do usuário do localStorage para incluir no payload
+    const userJson = localStorage.getItem('user');
+    if (!userJson) {
+      throw new Error('Usuário não encontrado no localStorage');
+    }
+    
+    const user = JSON.parse(userJson);
+    
     console.log(`🌐 Usando api.put para mudar status do agendamento ID: ${id} para CANCELLED`);
     
-    // Usar o método PUT para atualizar o status para CANCELLED, já que o método DELETE não está funcionando
-    const response = await api.put(`/appointments/${id}/status`, { status: 'CANCELLED' });
+    // Usar o método PUT para atualizar o status para CANCELLED, incluindo mais dados no payload
+    const payload = { 
+      status: 'CANCELLED',
+      userId: user.id,
+      userName: user.name,
+      canceledBy: user.id,
+      cancelationReason: 'Cancelado pelo usuário via interface'
+    };
+    
+    console.log('Enviando payload:', payload);
+    
+    const response = await api.put(`/appointments/${id}/status`, payload);
     
     console.log('✅ Agendamento cancelado com sucesso:', response.data);
     return response.data;
