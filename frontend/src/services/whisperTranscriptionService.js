@@ -12,12 +12,12 @@ class WhisperTranscriptionService {
     this.audioStream = null;
     this.isRecording = false;
     
-    // Usar a URL configurada na configuração global para garantir consistência
-    this.apiEndpoint = 'https://theraconnect-prd.onrender.com/api/ai/whisper/transcribe';
-    this.transcriptEndpoint = 'https://theraconnect-prd.onrender.com/api/ai/transcript';
+    // CORRIGIDO: Usar caminhos relativos para os endpoints principais
+    this.apiEndpoint = '/api/ai/whisper/transcribe';
+    this.transcriptEndpoint = '/api/ai/transcript';
     
     // NOVO: Endpoint para buscar todas as transcrições da sessão
-    this.allTranscriptsEndpoint = 'https://theraconnect-prd.onrender.com/api/ai/session-transcripts';
+    this.allTranscriptsEndpoint = '/api/ai/transcriptions/session';
     
     this.transcriptionInProgress = false;
     this.useCredentials = false; // Por padrão, NÃO enviar credenciais para testes
@@ -2124,12 +2124,14 @@ class WhisperTranscriptionService {
         return;
       }
       
-      // Construir a URL com o sessionId e timestamp da última busca
-      let url = `${this.allTranscriptsEndpoint}?sessionId=${this.sessionId}`;
+      // Construir a URL com o sessionId e timestamp da última busca (CORRIGIDO)
+      let url = `${this.allTranscriptsEndpoint}/${this.sessionId}`;
       
       // Adicionar timestamp para buscar apenas as novas desde a última vez
       if (this.lastFetchTimestamp) {
-        url += `&since=${encodeURIComponent(this.lastFetchTimestamp)}`;
+        // Usar ? se for a primeira query param, & se não for
+        url += url.includes('?') ? '&' : '?';
+        url += `since=${encodeURIComponent(this.lastFetchTimestamp)}`;
       }
       
       console.log(`🌐 BUSCA: Buscando transcrições no endpoint: ${url}`);
@@ -2149,7 +2151,8 @@ class WhisperTranscriptionService {
         
         // Verificar status 404 (endpoint não existe)
         if (response.status === 404) {
-          const alternativeEndpoint = this.allTranscriptsEndpoint.replace('/api/ai/session-transcripts', '/api/transcripts/session');
+          // CORRIGIDO: Ajustar o endpoint alternativo para o formato correto
+          const alternativeEndpoint = '/api/transcripts';
           const alternativeUrl = `${alternativeEndpoint}/${this.sessionId}`;
           
           console.log(`🔄 BUSCA: Tentando endpoint alternativo: ${alternativeUrl}`);
@@ -2268,16 +2271,19 @@ class WhisperTranscriptionService {
   _processOtherTranscriptions(data) {
     try {
       // Verificar se temos dados válidos
-      if (!data || !data.transcripts || !Array.isArray(data.transcripts)) {
+      // CORRIGIDO: Verificar o formato correto retornado pelo backend
+      const transcripts = data.data || data.transcripts || (Array.isArray(data) ? data : null);
+      
+      if (!transcripts || !Array.isArray(transcripts)) {
         console.warn(`⚠️ PROCESSAMENTO: Dados inválidos recebidos:`, data);
         return;
       }
       
-      console.log(`📊 PROCESSAMENTO: Processando ${data.transcripts.length} transcrições recebidas`);
+      console.log(`📊 PROCESSAMENTO: Processando ${transcripts.length} transcrições recebidas`);
       console.log(`📊 PROCESSAMENTO: Minha identificação: speaker=${this.speakerRole}, identifier=${this.speakerIdentifier}`);
       
       // Filtrar apenas as transcrições de outros participantes (não o usuário atual)
-      const otherTranscriptions = data.transcripts.filter(t => 
+      const otherTranscriptions = transcripts.filter(t => 
         t.speaker !== this.speakerRole && 
         t.speakerIdentifier !== this.speakerIdentifier
       );
