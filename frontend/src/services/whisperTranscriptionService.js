@@ -1548,7 +1548,31 @@ class WhisperTranscriptionService {
       }
       
       const transcription = response.data.text || response.data.transcript || response.data;
-      console.log(`Transcrição recebida (${transcription.length} caracteres): ${transcription.substring(0, 100)}...`);
+      
+      // MELHORIA: Adicionar formatação melhorada para visualização no console
+      // Mostrar claramente quem é o falante (terapeuta ou cliente) e usar cores distintas
+      console.log(
+        `\n%c ${this.speakerRole.toUpperCase()} DISSE: %c ${transcription.substring(0, 200)}${transcription.length > 200 ? '...' : ''}\n`, 
+        `background: ${this.speakerRole === 'therapist' ? '#4CAF50' : '#2196F3'}; 
+         color: white; 
+         font-weight: bold; 
+         padding: 5px; 
+         border-radius: 3px 0 0 3px;`,
+        `background: #f8f8f8; 
+         color: #333; 
+         padding: 5px; 
+         border-radius: 0 3px 3px 0; 
+         border-left: 5px solid ${this.speakerRole === 'therapist' ? '#4CAF50' : '#2196F3'};`
+      );
+      
+      // Log adicional da sessão para rastreamento
+      console.log(
+        `%c SESSÃO: %c ${this.sessionId} %c TIMESTAMP: %c ${new Date().toLocaleTimeString()}`, 
+        'font-weight: bold; color: #9E9E9E;', 
+        'color: #9E9E9E;',
+        'font-weight: bold; color: #9E9E9E;', 
+        'color: #9E9E9E;'
+      );
       
       // Validar transcrição
       if (!transcription || transcription.trim().length === 0) {
