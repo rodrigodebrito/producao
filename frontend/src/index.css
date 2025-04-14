@@ -320,3 +320,94 @@ button[style*="bottom: 10px"] {
   width: 100% !important;
   height: 100% !important;
 }
+
+/* Ajustes para os controles laterais na página de teste */
+.constellation-test-container .controls-panel {
+  padding: 15px !important;
+  width: 220px !important; /* Aumentar largura para evitar quebra de texto */
+}
+
+.constellation-test-container .controls-section {
+  margin-bottom: 20px !important;
+}
+
+.constellation-test-container .controls-section h3 {
+  margin-bottom: 12px !important;
+  font-size: 16px !important;
+  width: 100% !important;
+  text-overflow: ellipsis !important;
+  overflow: hidden !important;
+  white-space: nowrap !important;
+}
+
+.constellation-test-container .representative-form input,
+.constellation-test-container .representative-form select {
+  width: 100% !important;
+  padding: 8px 10px !important;
+  margin-bottom: 10px !important;
+  box-sizing: border-box !important;
+  font-size: 14px !important;
+}
+
+.constellation-test-container .representative-form button {
+  padding: 8px 12px !important;
+  margin: 5px 0 !important;
+  width: 100% !important;
+  text-align: center !important;
+  font-size: 14px !important;
+}
+
+.constellation-test-container .representative-list {
+  margin-top: 10px !important;
+}
+
+.constellation-test-container .representative-item {
+  padding: 8px 10px !important;
+  margin-bottom: 5px !important;
+  width: 100% !important;
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+}
+
+.constellation-test-container .representative-item span {
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  max-width: 170px !important;
+}
+
+.constellation-test-container .footer-buttons {
+  margin-top: 15px !important;
+  display: flex !important;
+  justify-content: space-between !important;
+  width: 100% !important;
+}
+
+.constellation-test-container .footer-buttons button {
+  padding: 8px 12px !important;
+  min-width: 80px !important;
+  white-space: nowrap !important;
+}
+
+/* Ajustes para os botões de cores */
+.constellation-test-container .color-picker {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 8px !important;
+  margin: 10px 0 !important;
+  justify-content: center !important;
+}
+
+.constellation-test-container .color-option {
+  width: 25px !important;
+  height: 25px !important;
+  border-radius: 50% !important;
+  cursor: pointer !important;
+  border: 2px solid transparent !important;
+}
+
+.constellation-test-container .color-option.selected {
+  border-color: #fff !important;
+  box-shadow: 0 0 0 2px #000 !important;
+}

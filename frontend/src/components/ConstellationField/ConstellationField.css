@@ -24,6 +24,76 @@
   box-sizing: border-box;
 }
 
+/* Estilos específicos para a página de teste pública */
+.constellation-test-container .constellation-controls {
+  width: 220px;
+  min-width: 220px;
+  padding: 1rem;
+}
+
+.constellation-test-container .panel-title {
+  font-size: 1.2rem;
+  margin-bottom: 1rem;
+  padding-bottom: 0.7rem;
+  white-space: normal;
+  overflow: visible;
+}
+
+.constellation-test-container .name-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+}
+
+.constellation-test-container .type-dropdown {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+}
+
+.constellation-test-container .add-btn {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 10px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.constellation-test-container .representative-item {
+  padding: 8px 10px;
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  margin-bottom: 5px;
+}
+
+.constellation-test-container .representative-item .name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
+}
+
+.constellation-test-container .control-buttons {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 15px;
+  width: 100%;
+}
+
+.constellation-test-container .control-button {
+  padding: 8px 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: auto;
+}
+
 .canvas-container {
   position: relative;
   width: calc(100% - 280px);
@@ -32,6 +102,12 @@
   padding: 0;
   margin: 0;
   background: #1a1a1a;
+}
+
+/* Ajuste para o container de teste */
+.constellation-test-container .canvas-container {
+  width: calc(100% - 220px);
+  height: 100vh;
 }
 
 .canvas-container canvas {
