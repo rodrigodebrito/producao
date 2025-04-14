@@ -253,16 +253,51 @@ export const cancelAppointment = async (id) => {
     } catch (putError) {
       console.error('❌ Erro ao usar PUT para cancelar:', putError);
       
-      // Tentar método alternativo com a rota de status
-      console.log('🔄 Tentando método alternativo com rota de status...');
-      const statusResponse = await api.put(`/appointments/${id}/status`, { 
-        status: 'CANCELLED',
-        userId: user.id,
-        userName: user.name
-      });
-      
-      console.log('✅ Agendamento cancelado com sucesso (método 2):', statusResponse.data);
-      return statusResponse.data;
+      try {
+        // Tentar método alternativo com a rota de status
+        console.log('🔄 Tentando método alternativo com rota de status...');
+        const statusResponse = await api.put(`/appointments/${id}/status`, { 
+          status: 'CANCELLED',
+          userId: user.id,
+          userName: user.name
+        });
+        
+        console.log('✅ Agendamento cancelado com sucesso (método 2):', statusResponse.data);
+        return statusResponse.data;
+      } catch (statusError) {
+        console.error('❌ Erro ao usar PUT /status para cancelar:', statusError);
+        
+        // Se ambos os métodos falharem, retornar um objeto simulado para permitir que a UI continue funcionando
+        console.log('⚠️ Todos os métodos falharam, retornando resposta simulada localmente');
+        const simulatedResponse = {
+          id: id,
+          status: 'CANCELLED',
+          cancellationSynced: false,
+          cancelledAt: new Date().toISOString(),
+          cancelledBy: user.id,
+          cancelledByName: user.name,
+          _local: true,
+          message: 'Este agendamento foi marcado como cancelado localmente, mas não foi possível sincronizar com o servidor. O sistema tentará sincronizar novamente mais tarde.'
+        };
+        
+        // Opcional: Armazenar no localStorage para tentar sincronizar posteriormente
+        try {
+          // Obter agendamentos pendentes de cancelamento do localStorage
+          const pendingCancellations = JSON.parse(localStorage.getItem('pendingCancellations') || '[]');
+          pendingCancellations.push({
+            id: id,
+            updateData: updateData,
+            timestamp: new Date().toISOString()
+          });
+          localStorage.setItem('pendingCancellations', JSON.stringify(pendingCancellations));
+          console.log('📝 Agendamento adicionado à fila de cancelamentos pendentes para tentativa futura');
+        } catch (localStorageError) {
+          console.error('⚠️ Erro ao salvar no localStorage:', localStorageError);
+        }
+        
+        console.log('🔄 Retornando resposta simulada:', simulatedResponse);
+        return simulatedResponse;
+      }
     }
   } catch (error) {
     console.error('❌ Erro ao cancelar agendamento:', error);
@@ -450,5 +485,106 @@ export const createAppointmentSmart = async (appointmentData) => {
   } catch (error) {
     console.error('Erro no agendamento inteligente:', error);
     throw error;
+  }
+};
+
+// Tentar sincronizar cancelamentos pendentes
+export const syncPendingCancellations = async () => {
+  try {
+    // Verificar se há token de autenticação
+    const token = localStorage.getItem('token');
+    if (!token) {
+      console.log('⚠️ Não foi possível sincronizar cancelamentos pendentes: usuário não autenticado');
+      return { success: false, message: 'Usuário não autenticado' };
+    }
+    
+    // Obter agendamentos pendentes de cancelamento
+    const pendingCancellations = JSON.parse(localStorage.getItem('pendingCancellations') || '[]');
+    
+    if (pendingCancellations.length === 0) {
+      console.log('✅ Não há cancelamentos pendentes para sincronizar');
+      return { success: true, synced: 0, total: 0 };
+    }
+    
+    console.log(`🔄 Tentando sincronizar ${pendingCancellations.length} cancelamentos pendentes`);
+    
+    // Resultados da sincronização
+    const results = {
+      success: true,
+      total: pendingCancellations.length,
+      synced: 0,
+      failed: 0,
+      errors: []
+    };
+    
+    // Lista atualizada de pendências (removeremos os bem-sucedidos)
+    const updatedPendingCancellations = [...pendingCancellations];
+    
+    // Tentar sincronizar cada cancelamento pendente
+    for (let i = 0; i < pendingCancellations.length; i++) {
+      const pendingItem = pendingCancellations[i];
+      
+      try {
+        console.log(`🔄 Sincronizando cancelamento ${i+1}/${pendingCancellations.length}: ${pendingItem.id}`);
+        
+        // Tentar primeiro método (PUT direto)
+        try {
+          await api.put(`/appointments/${pendingItem.id}`, pendingItem.updateData);
+          console.log(`✅ Cancelamento sincronizado com sucesso: ${pendingItem.id}`);
+          results.synced++;
+          
+          // Remover da lista de pendências
+          const index = updatedPendingCancellations.findIndex(item => item.id === pendingItem.id);
+          if (index !== -1) {
+            updatedPendingCancellations.splice(index, 1);
+          }
+        } catch (putError) {
+          // Tentar método alternativo (status)
+          try {
+            await api.put(`/appointments/${pendingItem.id}/status`, { 
+              status: 'CANCELLED',
+              userId: pendingItem.updateData.cancelledBy,
+              userName: pendingItem.updateData.cancelledByName
+            });
+            console.log(`✅ Cancelamento sincronizado com sucesso (método alternativo): ${pendingItem.id}`);
+            results.synced++;
+            
+            // Remover da lista de pendências
+            const index = updatedPendingCancellations.findIndex(item => item.id === pendingItem.id);
+            if (index !== -1) {
+              updatedPendingCancellations.splice(index, 1);
+            }
+          } catch (statusError) {
+            console.error(`❌ Falha ao sincronizar cancelamento ${pendingItem.id}:`, statusError);
+            results.failed++;
+            results.errors.push({
+              id: pendingItem.id,
+              error: statusError.message
+            });
+          }
+        }
+      } catch (error) {
+        console.error(`❌ Erro ao processar cancelamento pendente ${pendingItem.id}:`, error);
+        results.failed++;
+        results.errors.push({
+          id: pendingItem.id,
+          error: error.message
+        });
+      }
+    }
+    
+    // Atualizar a lista de pendências no localStorage
+    localStorage.setItem('pendingCancellations', JSON.stringify(updatedPendingCancellations));
+    
+    console.log(`🔄 Sincronização finalizada: ${results.synced} sucesso, ${results.failed} falhas`);
+    
+    return results;
+  } catch (error) {
+    console.error('❌ Erro ao sincronizar cancelamentos pendentes:', error);
+    return {
+      success: false,
+      message: 'Erro ao sincronizar cancelamentos pendentes',
+      error: error.message
+    };
   }
 }; 
