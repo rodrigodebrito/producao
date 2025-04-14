@@ -78,6 +78,13 @@ function App() {
                 <Route path="/login" element={<Login />} />
                 <Route path="/register" element={<Register />} />
                 
+                {/* Rota pública para o teste de Constelação */}
+                <Route path="/teste-constelacao" element={
+                  <div className="constellation-test-container">
+                    <ConstellationField isHost={true} sessionId={"teste-publico"} />
+                  </div>
+                } />
+                
                 {/* Redirecionamento da rota antiga para a nova */}
                 <Route path="/therapists" element={<Navigate to="/directory" replace />} />
                 

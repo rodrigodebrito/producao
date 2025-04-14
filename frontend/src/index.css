@@ -302,3 +302,21 @@ button[style*="bottom: 10px"] {
     display: none;
   }
 }
+
+/* Estilos para o container de teste de constelação */
+.constellation-test-container {
+  width: 100%;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background-color: #f0f2f5;
+  overflow: hidden;
+  position: relative;
+}
+
+.constellation-test-container canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
