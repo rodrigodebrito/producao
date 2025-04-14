@@ -6,25 +6,21 @@ console.log(`[AppointmentService] BASE_API_URL: ${BASE_API_URL}`);
 
 // Função utilitária para construir URLs de API corretamente
 const _buildApiUrl = (endpoint) => {
+  // Remover /api do final do BASE_API_URL se existir
+  const baseUrl = BASE_API_URL.endsWith('/api') 
+    ? BASE_API_URL.substring(0, BASE_API_URL.length - 4) 
+    : BASE_API_URL;
+  
   // Garantir que o endpoint começa com /
   const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
   
-  // Verificar se BASE_API_URL já termina com /api
-  if (BASE_API_URL.endsWith('/api')) {
-    // Remover o prefixo /api do endpoint se existir
-    const endpointWithoutApi = normalizedEndpoint.startsWith('/api/') 
-      ? normalizedEndpoint.substring(4) // Remove o /api do início
-      : normalizedEndpoint;
-      
-    return `${BASE_API_URL}${endpointWithoutApi}`;
-  } else {
-    // Se BASE_API_URL não termina com /api, garantir que o endpoint inclui /api/
-    const endpointWithApi = normalizedEndpoint.startsWith('/api/') 
-      ? normalizedEndpoint
-      : `/api${normalizedEndpoint}`;
-      
-    return `${BASE_API_URL}${endpointWithApi}`;
-  }
+  // Construir a URL completa no formato correto
+  const apiEndpoint = `/api${normalizedEndpoint}`;
+  const fullUrl = `${baseUrl}${apiEndpoint}`;
+  
+  console.log(`🔧 URL construída: ${fullUrl} (base: ${baseUrl}, endpoint: ${apiEndpoint})`);
+  
+  return fullUrl;
 };
 
 // Obter agendamentos do terapeuta
