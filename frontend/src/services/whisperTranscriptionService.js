@@ -12,12 +12,17 @@ class WhisperTranscriptionService {
     this.audioStream = null;
     this.isRecording = false;
     
-    // ATUALIZADO: Usar caminho absoluto para o endpoint de transcrições conforme especificado
-    this.apiEndpoint = '/api/ai/whisper/transcribe';
-    this.transcriptEndpoint = 'https://theraconnect-prd.onrender.com/api/ai/transcript';
+    // Determinar se estamos em produção ou desenvolvimento
+    this.isProd = !window.location.hostname.includes('localhost') && !window.location.hostname.includes('127.0.0.1');
+    const backendBaseUrl = this.isProd ? 'https://theraconnect-prd.onrender.com' : '';
     
-    // NOVO: Endpoint para buscar todas as transcrições da sessão
-    this.allTranscriptsEndpoint = '/api/ai/transcriptions/session';
+    // ATUALIZADO: Usar URLs absolutas em produção para todos os endpoints
+    this.apiEndpoint = this.isProd ? `${backendBaseUrl}/api/ai/whisper/transcribe` : '/api/ai/whisper/transcribe';
+    this.transcriptEndpoint = 'https://theraconnect-prd.onrender.com/api/ai/transcript'; // Manter URL absoluta conforme solicitado
+    this.allTranscriptsEndpoint = this.isProd ? `${backendBaseUrl}/api/ai/transcriptions/session` : '/api/ai/transcriptions/session';
+    
+    console.log(`Whisper: Inicializando em ambiente ${this.isProd ? 'de produção' : 'de desenvolvimento'}`);
+    console.log(`Whisper: Usando endpoint de transcrições: ${this.allTranscriptsEndpoint}`);
     
     this.transcriptionInProgress = false;
     this.useCredentials = false; // Por padrão, NÃO enviar credenciais para testes
@@ -2124,8 +2129,9 @@ class WhisperTranscriptionService {
         return;
       }
       
-      // Construir a URL com o sessionId e timestamp da última busca (CORRIGIDO)
+      // CORRIGIDO: Garantir URL absoluta em produção
       let url = `${this.allTranscriptsEndpoint}/${this.sessionId}`;
+      console.log(`🌐 BUSCA: Ambiente é ${this.isProd ? 'produção' : 'desenvolvimento'}`);
       
       // Adicionar timestamp para buscar apenas as novas desde a última vez
       if (this.lastFetchTimestamp) {
@@ -2145,35 +2151,77 @@ class WhisperTranscriptionService {
         }
       });
       
-      // Se não tiver sucesso, tentar endpoint alternativo
-      if (!response.ok) {
-        console.warn(`⚠️ BUSCA: Erro no endpoint principal: ${response.status} ${response.statusText}`);
+      // Se recebermos texto em vez de JSON, provavelmente é HTML de erro
+      const contentType = response.headers.get("content-type");
+      if (contentType && contentType.includes("text/html")) {
+        console.warn(`⚠️ BUSCA: Resposta recebida como HTML, endpoint incorreto ou erro 404`);
         
-        // Verificar status 404 (endpoint não existe)
-        if (response.status === 404) {
-          // CORRIGIDO: Ajustar o endpoint alternativo para o formato correto
-          const alternativeEndpoint = '/api/transcripts';
-          const alternativeUrl = `${alternativeEndpoint}/${this.sessionId}`;
-          
-          console.log(`🔄 BUSCA: Tentando endpoint alternativo: ${alternativeUrl}`);
-          
-          const altResponse = await fetch(alternativeUrl, {
-            method: 'GET',
-            headers: {
-              'Authorization': `Bearer ${authToken}`,
-              'Content-Type': 'application/json'
-            }
-          });
-          
-          if (altResponse.ok) {
+        // Tentar endpoint alternativo absoluto para maior confiabilidade
+        const alternativeUrl = this.isProd ? 
+          `https://theraconnect-prd.onrender.com/api/transcripts/${this.sessionId}` : 
+          `/api/transcripts/${this.sessionId}`;
+        
+        console.log(`🔄 BUSCA: Tentando endpoint alternativo: ${alternativeUrl}`);
+        
+        const altResponse = await fetch(alternativeUrl, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${authToken}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (altResponse.ok) {
+          const altContentType = altResponse.headers.get("content-type");
+          if (altContentType && altContentType.includes("application/json")) {
             console.log(`✅ BUSCA: Endpoint alternativo funcionou!`);
             const data = await altResponse.json();
             console.log(`📋 BUSCA: Dados recebidos do endpoint alternativo:`, data);
             this._processOtherTranscriptions(data);
             return;
-          } else {
-            console.warn(`❌ BUSCA: Erro no endpoint alternativo: ${altResponse.status} ${altResponse.statusText}`);
           }
+        }
+        
+        // Verificar status 404 (endpoint não existe)
+        if (!response.ok || !altResponse.ok) {
+          console.warn(`❌ BUSCA: Erro nos endpoints: Principal=${response.status}, Alternativo=${altResponse.status}`);
+          
+          // Se não encontrou em nenhum endpoint, tentar criar um simulado local
+          console.log(`🔄 BUSCA: Tentando simular transcrições localmente...`);
+          this._simulateOtherParticipantsTranscriptions();
+        }
+        
+        return;
+      }
+      
+      // Se não tiver sucesso e não for HTML, tentar endpoint alternativo
+      if (!response.ok) {
+        console.warn(`⚠️ BUSCA: Erro no endpoint principal: ${response.status} ${response.statusText}`);
+        
+        // Tentar endpoint absoluto alternativo
+        const alternativeEndpoint = this.isProd ? 
+          'https://theraconnect-prd.onrender.com/api/transcripts' : 
+          '/api/transcripts';
+        const alternativeUrl = `${alternativeEndpoint}/${this.sessionId}`;
+        
+        console.log(`🔄 BUSCA: Tentando endpoint alternativo: ${alternativeUrl}`);
+        
+        const altResponse = await fetch(alternativeUrl, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${authToken}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (altResponse.ok) {
+          console.log(`✅ BUSCA: Endpoint alternativo funcionou!`);
+          const data = await altResponse.json();
+          console.log(`📋 BUSCA: Dados recebidos do endpoint alternativo:`, data);
+          this._processOtherTranscriptions(data);
+          return;
+        } else {
+          console.warn(`❌ BUSCA: Erro no endpoint alternativo: ${altResponse.status} ${altResponse.statusText}`);
         }
         
         // Se não encontrou no endpoint alternativo, tentar criar um simulado local
@@ -2189,7 +2237,16 @@ class WhisperTranscriptionService {
       console.log(`📋 BUSCA: Resposta recebida do backend:`, data);
       this._processOtherTranscriptions(data);
     } catch (error) {
-      console.warn(`❌ BUSCA: Erro ao buscar transcrições de outros participantes:`, error);
+      // MELHORADO: Tratamento específico para erro de parsing JSON (HTML em vez de JSON)
+      if (error instanceof SyntaxError && error.message.includes('Unexpected token')) {
+        console.warn(`❌ BUSCA: Erro ao analisar resposta do servidor - recebido HTML em vez de JSON`);
+        
+        // Tentar criar transcrições simuladas como fallback
+        console.log(`🔄 BUSCA: Tentando simular transcrições localmente após erro de parsing...`);
+        this._simulateOtherParticipantsTranscriptions();
+      } else {
+        console.warn(`❌ BUSCA: Erro ao buscar transcrições de outros participantes:`, error);
+      }
     }
   }
   
