@@ -153,6 +153,12 @@
   color: #dc3545;
 }
 
+.appointment-status.cancelled.local-only {
+  background-color: #ffe0b2;
+  color: #e65100;
+  border: 1px dashed #e65100;
+}
+
 .appointment-details {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -340,4 +346,22 @@
   background: #007bff;
   color: white;
   border-color: #007bff;
+}
+
+.sync-pending-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  background-color: #fff3cd;
+  color: #856404;
+  border-radius: 12px;
+  font-size: 0.8em;
+  font-weight: bold;
+  margin-left: 5px;
+  border: 1px solid #ffeeba;
+  cursor: help;
+}
+
+.sync-pending-badge:hover {
+  background-color: #fff0b3;
 } 

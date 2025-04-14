@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { getAppointments, cancelAppointment } from '../services/appointmentService';
+import { getAppointments, cancelAppointment, syncPendingCancellations } from '../services/appointmentService';
 import './ClientAppointments.css';
 import { toast } from 'react-hot-toast';
 import api from '../services/api';
@@ -36,11 +36,49 @@ function Appointments() {
       try {
         setLoading(true);
         
+        // Tentar sincronizar cancelamentos pendentes
+        try {
+          console.log('Tentando sincronizar cancelamentos pendentes...');
+          const syncResult = await syncPendingCancellations();
+          if (syncResult.synced > 0) {
+            toast.success(`${syncResult.synced} agendamento(s) cancelado(s) foram sincronizados com sucesso!`);
+          }
+        } catch (syncError) {
+          console.error('Erro ao sincronizar cancelamentos pendentes:', syncError);
+        }
+        
         // Buscar todos os agendamentos do usuário atual
         const data = await getAppointments();
         console.log('Agendamentos recebidos:', data);
         
-        setAppointments(data);
+        // Verificar se há cancelamentos pendentes no localStorage
+        try {
+          const pendingCancellations = JSON.parse(localStorage.getItem('pendingCancellations') || '[]');
+          
+          // Marcar agendamentos com cancelamento pendente
+          if (pendingCancellations.length > 0) {
+            const updatedData = data.map(appointment => {
+              const pendingCancel = pendingCancellations.find(pc => pc.id === appointment.id);
+              if (pendingCancel) {
+                return {
+                  ...appointment,
+                  status: 'CANCELLED',
+                  _localCancellation: true,
+                  cancellationSynced: false
+                };
+              }
+              return appointment;
+            });
+            
+            setAppointments(updatedData);
+          } else {
+            setAppointments(data);
+          }
+        } catch (localStorageError) {
+          console.error('Erro ao processar cancelamentos pendentes do localStorage:', localStorageError);
+          setAppointments(data);
+        }
+        
         setError(null);
       } catch (err) {
         console.error('Erro ao buscar agendamentos:', err);
@@ -149,6 +187,14 @@ function Appointments() {
     } catch (error) {
       toast.error('Não foi possível acessar a sala de sessão. Tente novamente.');
     }
+  };
+
+  const handleViewTherapist = (therapistId) => {
+    if (!therapistId) {
+      toast.error('ID do terapeuta não disponível');
+      return;
+    }
+    navigate(`/therapist/${therapistId}`);
   };
 
   if (loading) {
@@ -261,10 +307,16 @@ function Appointments() {
                     <span className={`appointment-type-badge ${appointment.appointmentType}`}>
                       {appointment.appointmentType === 'client' ? 'Como Cliente' : 'Como Terapeuta'}
                     </span>
-                    <span className={`appointment-status ${appointment.status.toLowerCase()}`}>
+                    <span className={`appointment-status ${appointment.status.toLowerCase()} ${appointment._localCancellation ? 'local-only' : ''}`}>
                       {appointment.status === 'SCHEDULED' ? 'Agendada' :
-                       appointment.status === 'COMPLETED' ? 'Realizada' : 'Cancelada'}
+                       appointment.status === 'COMPLETED' ? 'Realizada' : 
+                       appointment._localCancellation ? 'Cancelada (pendente)' : 'Cancelada'}
                     </span>
+                    {appointment._localCancellation && (
+                      <span className="sync-pending-badge" title="Este cancelamento ainda não foi sincronizado com o servidor">
+                        ⚠️ Pendente
+                      </span>
+                    )}
                   </div>
                 </div>
                 
