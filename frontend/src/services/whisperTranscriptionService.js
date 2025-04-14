@@ -16,6 +16,9 @@ class WhisperTranscriptionService {
     this.apiEndpoint = 'https://theraconnect-prd.onrender.com/api/ai/whisper/transcribe';
     this.transcriptEndpoint = 'https://theraconnect-prd.onrender.com/api/ai/transcript';
     
+    // NOVO: Endpoint para buscar todas as transcrições da sessão
+    this.allTranscriptsEndpoint = 'https://theraconnect-prd.onrender.com/api/ai/session-transcripts';
+    
     this.transcriptionInProgress = false;
     this.useCredentials = false; // Por padrão, NÃO enviar credenciais para testes
     this.supportedMimeTypes = [
@@ -46,6 +49,11 @@ class WhisperTranscriptionService {
     
     // Estado de transcrição contínua
     this.transcriptionHistory = [];
+    
+    // NOVO: Armazenamento de transcrições de outros participantes
+    this.otherParticipantsTranscriptions = [];
+    this.lastFetchTimestamp = null;
+    this.transcriptionFetchInterval = null;
     
     // Extrair sessionId ao inicializar
     this.sessionId = this.extractSessionId();
@@ -79,6 +87,9 @@ class WhisperTranscriptionService {
     
     // Adicionar event listener para limpar dados ao entrar em nova sessão
     this._setupSessionChangeDetection();
+    
+    // NOVO: Iniciar busca de transcrições de outros participantes
+    this._startFetchingOtherTranscriptions();
     
     console.log(`WhisperTranscriptionService inicializado - sessionId: ${this.sessionId}, papel: ${this.speakerIdentifier}, host: ${this.isHost}`);
   }
@@ -1909,25 +1920,46 @@ class WhisperTranscriptionService {
         data.transcript = data.content;
       }
       
+      // NOVO: Adicionar identificador único para esta transcrição
+      data.id = data.id || `${this.speakerRole}_${Date.now()}`;
+      
+      // NOVO: Adicionar informação sobre speakerIdentifier
+      if (!data.speakerIdentifier) {
+        data.speakerIdentifier = this.speakerIdentifier;
+      }
+      
+      // NOVO: Adicionar informação sobre ser host
+      if (typeof data.isHost !== 'boolean') {
+        data.isHost = this.isHost;
+      }
+      
       console.log('Whisper: Enviando transcrição para backend:', {
         sessionId: data.sessionId,
         speaker: data.speaker,
+        speakerIdentifier: data.speakerIdentifier,
         contentLength: data.content?.length || 0,
         endpoint: this.transcriptEndpoint
       });
       
       // CORREÇÃO: Construir payload apropriado para cada endpoint
       const transcriptionsPayload = {
+        id: data.id,
         sessionId: sessionId,
         speaker: data.speaker,
+        speakerIdentifier: data.speakerIdentifier,
+        isHost: data.isHost,
         content: data.content,
         timestamp: data.timestamp || new Date().toISOString()
       };
       
       const transcriptPayload = {
+        id: data.id,
         sessionId: sessionId,
         transcript: data.content || data.transcript,
-        speaker: data.speaker
+        speaker: data.speaker,
+        speakerIdentifier: data.speakerIdentifier,
+        isHost: data.isHost,
+        timestamp: data.timestamp || new Date().toISOString()
       };
       
       // Tenta o endpoint principal (transcriptions) primeiro
@@ -1943,6 +1975,10 @@ class WhisperTranscriptionService {
         
         if (response.ok) {
           console.log(`Whisper: Transcrição enviada com sucesso para: ${this.transcriptEndpoint}`);
+          
+          // NOVO: Atualizar transcrições imediatamente
+          this._fetchOtherParticipantsTranscriptions();
+          
           return { success: true };
         } else {
           const errorText = await response.text();
@@ -1964,6 +2000,10 @@ class WhisperTranscriptionService {
             
             if (altResponse.ok) {
               console.log(`Whisper: Transcrição enviada com sucesso para endpoint alternativo: ${alternativeEndpoint}`);
+              
+              // NOVO: Atualizar transcrições imediatamente
+              this._fetchOtherParticipantsTranscriptions();
+              
               return { success: true };
             }
           }
@@ -2035,6 +2075,385 @@ class WhisperTranscriptionService {
     } catch (e) {
       console.warn('Erro ao salvar transcrição no sessionStorage:', e);
       return false;
+    }
+  }
+
+  /**
+   * NOVO: Inicia o intervalo para buscar transcrições de outros participantes
+   * @private
+   */
+  _startFetchingOtherTranscriptions() {
+    // Limpar qualquer intervalo existente
+    if (this.transcriptionFetchInterval) {
+      clearInterval(this.transcriptionFetchInterval);
+    }
+    
+    // Definir intervalo para buscar as transcrições a cada 5 segundos
+    this.transcriptionFetchInterval = setInterval(() => {
+      this._fetchOtherParticipantsTranscriptions();
+    }, 5000); // A cada 5 segundos
+    
+    // Buscar imediatamente
+    this._fetchOtherParticipantsTranscriptions();
+    
+    console.log('Iniciado intervalo para buscar transcrições de outros participantes');
+  }
+  
+  /**
+   * NOVO: Busca transcrições de outros participantes da mesma sessão
+   * @private
+   */
+  async _fetchOtherParticipantsTranscriptions() {
+    try {
+      // Verificar se temos um ID de sessão válido
+      if (!this.sessionId || this.sessionId.startsWith('temp_') || this.sessionId.startsWith('error_')) {
+        return;
+      }
+      
+      // Obter token de autenticação
+      const authToken = localStorage.getItem('authToken') || 
+                        sessionStorage.getItem('authToken') || 
+                        localStorage.getItem('token') || 
+                        sessionStorage.getItem('token');
+      
+      if (!authToken) {
+        console.warn('Token de autenticação não encontrado para buscar transcrições');
+        return;
+      }
+      
+      // Construir a URL com o sessionId e timestamp da última busca
+      let url = `${this.allTranscriptsEndpoint}?sessionId=${this.sessionId}`;
+      
+      // Adicionar timestamp para buscar apenas as novas desde a última vez
+      if (this.lastFetchTimestamp) {
+        url += `&since=${encodeURIComponent(this.lastFetchTimestamp)}`;
+      }
+      
+      // Fazer a requisição para o backend
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      // Se não tiver sucesso, tentar endpoint alternativo
+      if (!response.ok) {
+        // Verificar status 404 (endpoint não existe)
+        if (response.status === 404) {
+          const alternativeEndpoint = this.allTranscriptsEndpoint.replace('/api/ai/session-transcripts', '/api/transcripts/session');
+          
+          const alternativeUrl = `${alternativeEndpoint}/${this.sessionId}`;
+          const altResponse = await fetch(alternativeUrl, {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${authToken}`,
+              'Content-Type': 'application/json'
+            }
+          });
+          
+          if (altResponse.ok) {
+            const data = await altResponse.json();
+            this._processOtherTranscriptions(data);
+            return;
+          }
+        }
+        
+        // Se não encontrou no endpoint alternativo, tentar criar um simulado local
+        this._simulateOtherParticipantsTranscriptions();
+        
+        // Se ainda não retornou, lançar erro
+        throw new Error(`Erro ao buscar transcrições: ${response.status} ${response.statusText}`);
+      }
+      
+      // Processar resposta
+      const data = await response.json();
+      this._processOtherTranscriptions(data);
+    } catch (error) {
+      console.warn('Erro ao buscar transcrições de outros participantes:', error);
+    }
+  }
+  
+  /**
+   * NOVO: Simula transcrições de outros participantes a partir do localStorage
+   * Útil quando o backend não tem um endpoint para recuperar todas as transcrições
+   * @private
+   */
+  _simulateOtherParticipantsTranscriptions() {
+    try {
+      // Tentar pegar transcrições do sessionStorage
+      const storageKeys = Object.keys(sessionStorage).filter(key => 
+        key.startsWith('whisper_transcriptions_') && key.includes(this.sessionId)
+      );
+      
+      // Se não encontrar, verificar no localStorage
+      if (storageKeys.length === 0) {
+        const localStorageKeys = Object.keys(localStorage).filter(key => 
+          key.startsWith('whisper_transcript_') && key.includes(this.sessionId)
+        );
+        
+        for (const key of localStorageKeys) {
+          try {
+            const storedData = localStorage.getItem(key);
+            if (storedData) {
+              const transcriptions = JSON.parse(storedData);
+              
+              // Montar estrutura compatível com o que o backend retornaria
+              const data = {
+                transcripts: transcriptions
+              };
+              
+              this._processOtherTranscriptions(data);
+            }
+          } catch (e) {
+            console.warn(`Erro ao processar transcrições do localStorage (${key}):`, e);
+          }
+        }
+        
+        return;
+      }
+      
+      // Processar cada chave do sessionStorage
+      for (const key of storageKeys) {
+        try {
+          const storedData = sessionStorage.getItem(key);
+          if (storedData) {
+            const transcriptions = JSON.parse(storedData);
+            
+            // Montar estrutura compatível com o que o backend retornaria
+            const data = {
+              transcripts: transcriptions
+            };
+            
+            this._processOtherTranscriptions(data);
+          }
+        } catch (e) {
+          console.warn(`Erro ao processar transcrições do sessionStorage (${key}):`, e);
+        }
+      }
+    } catch (error) {
+      console.warn('Erro ao simular transcrições de outros participantes:', error);
+    }
+  }
+  
+  /**
+   * NOVO: Processa as transcrições recebidas de outros participantes
+   * @param {Object} data - Dados recebidos do backend
+   * @private
+   */
+  _processOtherTranscriptions(data) {
+    try {
+      // Verificar se temos dados válidos
+      if (!data || !data.transcripts || !Array.isArray(data.transcripts)) {
+        return;
+      }
+      
+      // Filtrar apenas as transcrições de outros participantes (não o usuário atual)
+      const otherTranscriptions = data.transcripts.filter(t => 
+        t.speaker !== this.speakerRole && 
+        t.speakerIdentifier !== this.speakerIdentifier
+      );
+      
+      // Se não há novas transcrições, retornar
+      if (otherTranscriptions.length === 0) {
+        return;
+      }
+      
+      console.log(`Recebidas ${otherTranscriptions.length} transcrições de outros participantes`);
+      
+      // Percorrer as novas transcrições
+      for (const transcription of otherTranscriptions) {
+        // Verificar se já processamos esta transcrição
+        const isDuplicate = this.otherParticipantsTranscriptions.some(
+          t => t.id === transcription.id || 
+              (t.timestamp === transcription.timestamp && 
+               t.speaker === transcription.speaker && 
+               t.content === transcription.content)
+        );
+        
+        // Se for duplicada, pular
+        if (isDuplicate) {
+          continue;
+        }
+        
+        // Adicionar ao nosso array local
+        this.otherParticipantsTranscriptions.push(transcription);
+        
+        // Processar e exibir cada transcrição
+        this._displayOtherParticipantTranscription(transcription);
+      }
+      
+      // Atualizar timestamp da última busca
+      this.lastFetchTimestamp = new Date().toISOString();
+    } catch (error) {
+      console.warn('Erro ao processar transcrições de outros participantes:', error);
+    }
+  }
+  
+  /**
+   * NOVO: Exibe a transcrição de outro participante no console
+   * @param {Object} transcription - Dados da transcrição
+   * @private
+   */
+  _displayOtherParticipantTranscription(transcription) {
+    try {
+      // Determinar rótulo e cor do falante
+      let speakerLabel = 'DESCONHECIDO';
+      let bgColor = '#9E9E9E';
+      
+      // Verificar papel do falante
+      if (transcription.speaker === 'therapist' || transcription.speakerIdentifier?.includes('therapist')) {
+        if (transcription.speakerIdentifier === 'therapist_host') {
+          speakerLabel = 'TERAPEUTA (ANFITRIÃO)';
+          bgColor = '#4CAF50';
+        } else if (transcription.speakerIdentifier === 'therapist_guest') {
+          speakerLabel = 'TERAPEUTA (CONVIDADO)';
+          bgColor = '#009688';
+        } else {
+          speakerLabel = 'TERAPEUTA';
+          bgColor = '#4CAF50';
+        }
+      } else if (transcription.speaker === 'client' || transcription.speakerIdentifier === 'client') {
+        speakerLabel = 'CLIENTE';
+        bgColor = '#2196F3';
+      }
+      
+      // Obter o conteúdo da transcrição
+      const content = transcription.content || transcription.transcript || transcription.text || '';
+      
+      // Exibir no console com formato adequado
+      console.log(
+        `\n%c ${speakerLabel} DISSE: %c ${content.substring(0, 200)}${content.length > 200 ? '...' : ''}\n`, 
+        `background: ${bgColor}; 
+         color: white; 
+         font-weight: bold; 
+         padding: 5px; 
+         border-radius: 3px 0 0 3px;`,
+        `background: #f8f8f8; 
+         color: #333; 
+         padding: 5px; 
+         border-radius: 0 3px 3px 0; 
+         border-left: 5px solid ${bgColor};`
+      );
+      
+      // Log adicional da sessão para rastreamento
+      console.log(
+        `%c SESSÃO: %c ${this.sessionId} %c PAPEL: %c ${transcription.speakerIdentifier || transcription.speaker} %c TIMESTAMP: %c ${new Date(transcription.timestamp).toLocaleTimeString()}`, 
+        'font-weight: bold; color: #9E9E9E;', 
+        'color: #9E9E9E;',
+        'font-weight: bold; color: #9E9E9E;', 
+        'color: #9E9E9E;',
+        'font-weight: bold; color: #9E9E9E;', 
+        'color: #9E9E9E;'
+      );
+      
+      // Disparar evento para notificar sobre nova transcrição de outro participante
+      this._dispatchEvent('otherParticipantTranscription', {
+        transcript: content,
+        speaker: transcription.speaker,
+        speakerIdentifier: transcription.speakerIdentifier,
+        sessionId: this.sessionId,
+        timestamp: transcription.timestamp
+      });
+    } catch (error) {
+      console.warn('Erro ao exibir transcrição de outro participante:', error);
+    }
+  }
+  
+  /**
+   * NOVO: Limpa os recursos quando o componente é destruído
+   */
+  destroy() {
+    try {
+      // Parar a gravação se estiver ativa
+      if (this.isRecording) {
+        this.stopRecording(false);
+      }
+      
+      // Liberar recursos de áudio
+      this._releaseAllAudioResources();
+      
+      // Limpar o intervalo de busca de transcrições
+      if (this.transcriptionFetchInterval) {
+        clearInterval(this.transcriptionFetchInterval);
+        this.transcriptionFetchInterval = null;
+      }
+      
+      // Limpar detector de voz
+      if (this.voiceDetectionInterval) {
+        clearInterval(this.voiceDetectionInterval);
+        this.voiceDetectionInterval = null;
+      }
+      
+      console.log('WhisperTranscriptionService destruído e recursos liberados');
+    } catch (error) {
+      console.error('Erro ao destruir WhisperTranscriptionService:', error);
+    }
+  }
+  
+  /**
+   * NOVO: Retorna todas as transcrições consolidadas (próprias e de outros participantes)
+   * @returns {Array} Array de transcrições ordenadas por timestamp
+   */
+  getAllTranscriptions() {
+    try {
+      // Combinar transcrições próprias e de outros participantes
+      const allTranscriptions = [
+        ...this.transcriptionHistory,
+        ...this.otherParticipantsTranscriptions
+      ];
+      
+      // Ordenar por timestamp
+      return allTranscriptions.sort((a, b) => {
+        const timestampA = new Date(a.timestamp).getTime();
+        const timestampB = new Date(b.timestamp).getTime();
+        return timestampA - timestampB;
+      });
+    } catch (error) {
+      console.warn('Erro ao obter todas as transcrições:', error);
+      return [];
+    }
+  }
+  
+  /**
+   * NOVO: Retorna um texto consolidado com todas as transcrições, formatado como diálogo
+   * @returns {string} Texto formatado com todas as transcrições
+   */
+  getConsolidatedTranscriptionText() {
+    try {
+      const allTranscriptions = this.getAllTranscriptions();
+      
+      if (allTranscriptions.length === 0) {
+        return 'Nenhuma transcrição disponível';
+      }
+      
+      // Construir o texto formatado
+      return allTranscriptions.map(t => {
+        // Determinar o rótulo do falante
+        let speakerLabel = '';
+        
+        if (t.speakerIdentifier === 'therapist_host') {
+          speakerLabel = 'Terapeuta (anfitrião)';
+        } else if (t.speakerIdentifier === 'therapist_guest') {
+          speakerLabel = 'Terapeuta (convidado)';
+        } else if (t.speaker === 'therapist') {
+          speakerLabel = 'Terapeuta';
+        } else if (t.speaker === 'client') {
+          speakerLabel = 'Cliente';
+        } else {
+          speakerLabel = t.speaker || 'Desconhecido';
+        }
+        
+        // Formatar hora
+        const time = new Date(t.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        
+        // Retornar linha formatada
+        return `[${time}] ${speakerLabel}: ${t.content || t.transcript}`;
+      }).join('\n');
+    } catch (error) {
+      console.warn('Erro ao gerar texto consolidado de transcrições:', error);
+      return 'Erro ao processar transcrições';
     }
   }
 }
