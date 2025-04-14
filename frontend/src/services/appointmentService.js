@@ -232,19 +232,10 @@ export const cancelAppointment = async (id) => {
     
     const user = JSON.parse(userJson);
     
-    // Obter dados atuais do agendamento
-    console.log(`🔍 Buscando dados atuais do agendamento ${id} antes de cancelar`);
-    const appointment = await getAppointmentById(id);
+    console.log(`🌐 Usando api.put para cancelar diretamente o agendamento ${id}`);
     
-    if (!appointment) {
-      throw new Error(`Agendamento ${id} não encontrado`);
-    }
-    
-    console.log(`🌐 Atualizando agendamento ${id} com status CANCELLED`);
-    
-    // Atualizar todo o objeto do agendamento em vez de apenas o status
-    const updatedAppointment = {
-      ...appointment,
+    // Enviar apenas os dados essenciais para o cancelamento, sem buscar o agendamento completo
+    const updateData = {
       status: 'CANCELLED',
       cancelledBy: user.id,
       cancelledByName: user.name,
@@ -252,13 +243,27 @@ export const cancelAppointment = async (id) => {
       cancellationReason: 'Cancelado pelo usuário via interface'
     };
     
-    console.log('Enviando dados de atualização:', updatedAppointment);
+    console.log('Enviando dados de cancelamento:', updateData);
     
-    // Usar updateAppointment em vez da rota específica de status
-    const response = await api.put(`/appointments/${id}`, updatedAppointment);
-    
-    console.log('✅ Agendamento cancelado com sucesso:', response.data);
-    return response.data;
+    try {
+      // Tentar a atualização direta
+      const response = await api.put(`/appointments/${id}`, updateData);
+      console.log('✅ Agendamento cancelado com sucesso (método 1):', response.data);
+      return response.data;
+    } catch (putError) {
+      console.error('❌ Erro ao usar PUT para cancelar:', putError);
+      
+      // Tentar método alternativo com a rota de status
+      console.log('🔄 Tentando método alternativo com rota de status...');
+      const statusResponse = await api.put(`/appointments/${id}/status`, { 
+        status: 'CANCELLED',
+        userId: user.id,
+        userName: user.name
+      });
+      
+      console.log('✅ Agendamento cancelado com sucesso (método 2):', statusResponse.data);
+      return statusResponse.data;
+    }
   } catch (error) {
     console.error('❌ Erro ao cancelar agendamento:', error);
     if (error.response) {
