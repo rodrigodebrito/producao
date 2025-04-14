@@ -65,7 +65,191 @@ class WhisperTranscriptionService {
     this.voiceThreshold = -40; // dB (menos sensível que o silêncio)
     this.voiceDetectionInterval = null;
     
-    console.log(`WhisperTranscriptionService inicializado - sessionId: ${this.sessionId}, papel: ${this.speakerRole}`);
+    // NOVO: Informações de controle de sessão e resiliência
+    this.sessionStartTime = Date.now();
+    this.lastActivityTime = Date.now();
+    this.intentionalDisconnect = false;
+    this.sessionLogicalId = `${this.sessionId}_${this.sessionStartTime}`;
+    this.recoveryAttempted = false;
+    this.maxInactivityTime = 30 * 60 * 1000; // 30 minutos
+    
+    // NOVO: Verificar e limpar transcrições antigas ao inicializar
+    this._checkAndCleanStaleData();
+    
+    // NOVO: Adicionar event listeners para eventos de sessão
+    this._setupSessionListeners();
+    
+    console.log(`WhisperTranscriptionService inicializado - sessionId: ${this.sessionId}, papel: ${this.speakerRole}, logicalId: ${this.sessionLogicalId}`);
+  }
+  
+  /**
+   * NOVO: Configura listeners para eventos relacionados à sessão
+   * @private
+   */
+  _setupSessionListeners() {
+    // Listener para evento de sessão iniciada
+    window.addEventListener('session-started', (event) => {
+      console.log('Whisper: Evento session-started detectado, verificando dados');
+      
+      // Se houver um ID de sessão específico no evento, usá-lo
+      if (event.detail && event.detail.sessionId) {
+        if (event.detail.sessionId !== this.sessionId) {
+          console.log(`Whisper: Atualizando sessionId para ${event.detail.sessionId} via evento`);
+          this.updateSessionId(event.detail.sessionId);
+        } else {
+          // Mesmo sendo o mesmo ID, forçar limpeza pois é uma nova sessão lógica
+          console.log('Whisper: Mesmo sessionId mas nova sessão lógica, limpando transcrições');
+          this._clearPreviousTranscriptions();
+        }
+      }
+      
+      // Atualizar marcadores de tempo da sessão
+      this.sessionStartTime = Date.now();
+      this.lastActivityTime = Date.now();
+      this.sessionLogicalId = `${this.sessionId}_${this.sessionStartTime}`;
+      this.recoveryAttempted = false;
+      
+      console.log(`Whisper: Nova sessão lógica iniciada: ${this.sessionLogicalId}`);
+    });
+    
+    // Listener para evento de página visível/invisível
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        console.log('Whisper: Página tornou-se visível, verificando timeout de sessão');
+        this._checkSessionValidity();
+      }
+    });
+    
+    // Listener para verificar recarregamento de página
+    window.addEventListener('beforeunload', () => {
+      this.intentionalDisconnect = true;
+      sessionStorage.setItem('whisper_intentional_disconnect', 'true');
+      sessionStorage.setItem('whisper_last_activity_time', String(this.lastActivityTime));
+    });
+    
+    // Verificar se estamos voltando de um reload de página
+    const wasIntentionalDisconnect = sessionStorage.getItem('whisper_intentional_disconnect') === 'true';
+    if (wasIntentionalDisconnect) {
+      const storedLastActivity = parseInt(sessionStorage.getItem('whisper_last_activity_time') || '0');
+      const timeSinceLastActivity = Date.now() - storedLastActivity;
+      
+      // Se voltou em tempo razoável (menos de 2 minutos), considerar mesma sessão
+      if (storedLastActivity > 0 && timeSinceLastActivity < 2 * 60 * 1000) {
+        console.log(`Whisper: Retornando à sessão após reload (${timeSinceLastActivity/1000}s), mantendo transcrições`);
+      } else {
+        // Caso contrário, limpar tudo
+        console.log('Whisper: Tempo desde último uso muito longo, limpando dados antigos');
+        this._clearAllTranscriptionData();
+      }
+      
+      // Limpar flags
+      sessionStorage.removeItem('whisper_intentional_disconnect');
+      sessionStorage.removeItem('whisper_last_activity_time');
+    }
+  }
+  
+  /**
+   * NOVO: Verifica a validade da sessão atual com base no tempo de inatividade
+   * @private
+   */
+  _checkSessionValidity() {
+    const now = Date.now();
+    const timeSinceLastActivity = now - this.lastActivityTime;
+    
+    // Se passou muito tempo desde a última atividade, considerar uma nova sessão
+    if (timeSinceLastActivity > this.maxInactivityTime) {
+      console.log(`Whisper: Inatividade detectada (${Math.round(timeSinceLastActivity/60000)} min). Iniciando nova sessão lógica.`);
+      
+      // Limpar transcrições antigas
+      this._clearPreviousTranscriptions();
+      
+      // Criar nova ID lógica para sessão
+      this.sessionStartTime = now;
+      this.lastActivityTime = now;
+      this.sessionLogicalId = `${this.sessionId}_${this.sessionStartTime}`;
+      
+      // Atualizar sessionId se necessário
+      const currentSessionId = this.extractSessionId();
+      if (currentSessionId !== this.sessionId) {
+        this.updateSessionId(currentSessionId);
+      }
+      
+      console.log(`Whisper: Nova sessão lógica criada após inatividade: ${this.sessionLogicalId}`);
+    } else {
+      console.log(`Whisper: Sessão válida, última atividade há ${Math.round(timeSinceLastActivity/1000)}s`);
+      this.lastActivityTime = now;
+    }
+  }
+  
+  /**
+   * NOVO: Verifica e limpa dados antigos baseado em timestamps
+   * @private
+   */
+  _checkAndCleanStaleData() {
+    try {
+      const now = Date.now();
+      let keysToRemove = [];
+      
+      // Buscar todas as chaves no localStorage que contêm transcrições
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.startsWith('whisper_transcript_') || key.startsWith('whisper_transcriptions_'))) {
+          try {
+            const data = JSON.parse(localStorage.getItem(key));
+            
+            // Verificar se temos uma array de transcrições com timestamps
+            if (Array.isArray(data) && data.length > 0) {
+              // Verificar último item
+              const lastItem = data[data.length - 1];
+              
+              if (lastItem && lastItem.timestamp) {
+                const timestamp = new Date(lastItem.timestamp).getTime();
+                const age = now - timestamp;
+                
+                // Se tiver mais de 12 horas, remover
+                if (age > 12 * 60 * 60 * 1000) {
+                  keysToRemove.push(key);
+                  console.log(`Whisper: Transcrição antiga detectada em ${key}, idade: ${Math.round(age/3600000)}h`);
+                }
+              } else if (lastItem && lastItem.clientTimestamp) {
+                // Alternativa: usar clientTimestamp
+                const age = now - lastItem.clientTimestamp;
+                if (age > 12 * 60 * 60 * 1000) {
+                  keysToRemove.push(key);
+                }
+              }
+            } else {
+              // Para transcrições únicas, verificar se têm mais de 12 horas
+              if (data && data.timestamp) {
+                const timestamp = new Date(data.timestamp).getTime();
+                const age = now - timestamp;
+                
+                if (age > 12 * 60 * 60 * 1000) {
+                  keysToRemove.push(key);
+                }
+              }
+            }
+          } catch (e) {
+            console.warn(`Whisper: Erro ao verificar dados em ${key}:`, e);
+            // Para transcrições com formato inválido, remover
+            keysToRemove.push(key);
+          }
+        }
+      }
+      
+      // Remover chaves antigas
+      if (keysToRemove.length > 0) {
+        console.log(`Whisper: Removendo ${keysToRemove.length} conjuntos de transcrições antigas`);
+        keysToRemove.forEach(key => {
+          localStorage.removeItem(key);
+          sessionStorage.removeItem(key);
+        });
+      } else {
+        console.log('Whisper: Nenhuma transcrição antiga encontrada');
+      }
+    } catch (e) {
+      console.error('Whisper: Erro ao verificar dados antigos:', e);
+    }
   }
 
   /**
@@ -162,8 +346,17 @@ class WhisperTranscriptionService {
   updateSessionId(newSessionId) {
     if (!newSessionId) return;
     
+    // Se o ID está mudando, limpar as transcrições antigas
+    if (this.sessionId && this.sessionId !== newSessionId) {
+      this._clearPreviousTranscriptions();
+    }
+    
     console.log(`Whisper: Atualizando sessionId de "${this.sessionId}" para "${newSessionId}"`);
     this.sessionId = newSessionId;
+    
+    // Atualizar também o ID lógico
+    this.sessionLogicalId = `${this.sessionId}_${this.sessionStartTime}`;
+    this.lastActivityTime = Date.now();
     
     // Salvar também no storage para consistência
     try {
@@ -171,6 +364,136 @@ class WhisperTranscriptionService {
       sessionStorage.setItem('currentSessionId', newSessionId); 
     } catch (e) {
       console.warn('Erro ao salvar sessionId no storage:', e);
+    }
+  }
+  
+  /**
+   * NOVO: Método público para limpar todas as transcrições
+   * Pode ser chamado explicitamente pelo código cliente
+   */
+  clearTranscriptions() {
+    console.log('Whisper: Limpeza explícita de transcrições solicitada');
+    this._clearPreviousTranscriptions();
+    
+    // Disparar evento para informar ao sistema que as transcrições foram limpas
+    window.dispatchEvent(new CustomEvent('whisper-cleared', {
+      detail: { 
+        sessionId: this.sessionId,
+        timestamp: new Date().toISOString()
+      }
+    }));
+  }
+  
+  /**
+   * NOVO: Limpa absolutamente todos os dados de transcrição do sistema
+   * @private
+   */
+  _clearAllTranscriptionData() {
+    console.log('Whisper: Limpando TODOS os dados de transcrição');
+    
+    try {
+      // 1. Limpar o histórico na memória
+      this.transcriptionHistory = [];
+      
+      // 2. Remover todas as entradas de whisper do sessionStorage e localStorage
+      this._removeAllWhisperKeysFromStorage(sessionStorage);
+      this._removeAllWhisperKeysFromStorage(localStorage);
+      
+      // 3. Notificar sobre a limpeza via evento
+      this._dispatchEvent('allTranscriptionsCleared', {});
+      
+      // 4. Se tiver AIContext, limpar o transcript
+      if (window.__AI_CONTEXT) {
+        if (typeof window.__AI_CONTEXT.updateTranscript === 'function') {
+          window.__AI_CONTEXT.updateTranscript('');
+          console.log('Whisper: Transcript limpo no AIContext');
+        }
+      }
+      
+      console.log('Whisper: Limpeza completa de dados concluída');
+      return true;
+    } catch (e) {
+      console.error('Whisper: Erro ao limpar todos os dados:', e);
+      return false;
+    }
+  }
+  
+  /**
+   * NOVO: Remove todas as chaves relacionadas ao Whisper do storage
+   * @param {Storage} storage - Objeto de storage (localStorage ou sessionStorage)
+   * @private
+   */
+  _removeAllWhisperKeysFromStorage(storage) {
+    try {
+      const keysToRemove = [];
+      
+      // Encontrar todas as chaves relacionadas ao whisper
+      for (let i = 0; i < storage.length; i++) {
+        const key = storage.key(i);
+        if (key && (
+          key.startsWith('whisper_') ||
+          key.startsWith('transcript_') ||
+          key.includes('transcription') ||
+          key.includes('_session')
+        )) {
+          keysToRemove.push(key);
+        }
+      }
+      
+      // Remover as chaves encontradas
+      keysToRemove.forEach(key => {
+        storage.removeItem(key);
+        console.log(`Whisper: Removida chave ${key} do storage`);
+      });
+      
+      console.log(`Whisper: Removidas ${keysToRemove.length} chaves do storage`);
+    } catch (e) {
+      console.warn('Whisper: Erro ao limpar chaves do storage:', e);
+    }
+  }
+
+  /**
+   * Limpa transcrições antigas quando uma nova sessão é iniciada
+   * @private
+   */
+  _clearPreviousTranscriptions() {
+    console.log('Whisper: Limpando transcrições de sessões anteriores');
+    
+    try {
+      // 1. Limpar o histórico na memória
+      this.transcriptionHistory = [];
+      
+      // 2. Remover transcrições antigas dessa sessão do sessionStorage
+      if (this.sessionId) {
+        sessionStorage.removeItem(`whisper_transcriptions_${this.sessionId}`);
+        sessionStorage.removeItem(`last_transcript_${this.sessionId}`);
+        console.log(`Whisper: Removido dados da sessão anterior ${this.sessionId} do sessionStorage`);
+      }
+      
+      // 3. Remover transcrições antigas dessa sessão do localStorage
+      if (this.sessionId) {
+        localStorage.removeItem(`whisper_transcript_${this.sessionId}`);
+        console.log(`Whisper: Removido dados da sessão anterior ${this.sessionId} do localStorage`);
+      }
+      
+      // 4. Notificar sobre a limpeza via evento
+      this._dispatchEvent('transcriptionsCleared', {
+        oldSessionId: this.sessionId
+      });
+      
+      // 5. Se tiver AIContext, limpar o transcript
+      if (window.__AI_CONTEXT) {
+        if (typeof window.__AI_CONTEXT.updateTranscript === 'function') {
+          window.__AI_CONTEXT.updateTranscript('');
+          console.log('Whisper: Transcript limpo no AIContext');
+        }
+      }
+      
+      console.log('Whisper: Limpeza de transcrições antigas concluída');
+      return true;
+    } catch (e) {
+      console.error('Whisper: Erro ao limpar transcrições antigas:', e);
+      return false;
     }
   }
 
@@ -181,6 +504,9 @@ class WhisperTranscriptionService {
   async startRecording() {
     try {
       console.log('=== INICIANDO NOVA GRAVAÇÃO WAV ===');
+      
+      // NOVO: Verificar validade da sessão atual antes de iniciar
+      this._checkSessionValidity();
       
       // Garantir que temos o sessionId mais atualizado
       const latestSessionId = this.extractSessionId();
@@ -212,6 +538,7 @@ class WhisperTranscriptionService {
       this.chunkCounter = 0;
       this.isRecording = true;
       this.chunkStartTime = Date.now();
+      this.lastActivityTime = Date.now();
       
       // 5. Verificar sessionId válido
       if (!this.sessionId || this.sessionId.startsWith('temp_') || this.sessionId.startsWith('error_')) {
