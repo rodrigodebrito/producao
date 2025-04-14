@@ -2,7 +2,6 @@
  * WhisperTranscriptionService
  * Serviço para gravar áudio, converter formatos e enviar para a API Whisper
  * Com detecção automática de silêncio e envio de chunks
- * Agora captura áudio de todos os participantes no Daily.co
  */
 import { WHISPER_URL, API_URL } from '../config';
 
@@ -62,15 +61,6 @@ class WhisperTranscriptionService {
     this.voiceDetectionEnabled = true;
     this.voiceThreshold = -40; // dB (menos sensível que o silêncio)
     this.voiceDetectionInterval = null;
-
-    // NOVO: Variáveis para suporte ao Daily.co
-    this.dailyCapturingEnabled = false;
-    this.dailyEventListenerAdded = false;
-    
-    // Adicionar listener para mensagens do iframe do Daily se estiver em produção
-    if (window.location.hostname !== 'localhost') {
-      this._setupDailyMessageListener();
-    }
   }
 
   /**
@@ -115,131 +105,6 @@ class WhisperTranscriptionService {
   }
 
   /**
-   * NOVO: Configura o listener de mensagens do Daily
-   * @private
-   */
-  _setupDailyMessageListener() {
-    if (this.dailyEventListenerAdded) return;
-    
-    window.addEventListener('message', (event) => {
-      try {
-        // Verificar se a mensagem vem do Daily
-        if (!event.data || typeof event.data !== 'object' || !event.data.type) return;
-        
-        // Processar mensagens relacionadas ao áudio
-        if (event.data.type === 'daily-audio-data') {
-          this._handleDailyAudioData(event.data);
-        }
-      } catch (e) {
-        console.error('Erro ao processar mensagem do Daily:', e);
-      }
-    });
-    
-    this.dailyEventListenerAdded = true;
-    console.log('Listener de mensagens do Daily configurado');
-  }
-  
-  /**
-   * NOVO: Processa dados de áudio enviados pelo Daily
-   * @param {Object} data - Dados da mensagem
-   * @private
-   */
-  _handleDailyAudioData(data) {
-    try {
-      if (!data.audioBlob || !this.isRecording) return;
-      
-      // Converter dados Base64 para Blob se necessário
-      let audioBlob;
-      if (typeof data.audioBlob === 'string') {
-        // Converter Base64 para Blob
-        const byteString = atob(data.audioBlob.split(',')[1]);
-        const mimeString = data.audioBlob.split(',')[0].split(':')[1].split(';')[0];
-        const ab = new ArrayBuffer(byteString.length);
-        const ia = new Uint8Array(ab);
-        
-        for (let i = 0; i < byteString.length; i++) {
-          ia[i] = byteString.charCodeAt(i);
-        }
-        
-        audioBlob = new Blob([ab], { type: mimeString });
-      } else {
-        audioBlob = data.audioBlob;
-      }
-      
-      // Adicionar à lista de chunks
-      this.audioChunks.push(audioBlob);
-      
-      console.log(`Áudio do Daily recebido: ${Math.round(audioBlob.size/1024)}KB, participante: ${data.participantId || 'desconhecido'}`);
-    } catch (e) {
-      console.error('Erro ao processar dados de áudio do Daily:', e);
-    }
-  }
-  
-  /**
-   * NOVO: Tenta ativar a captura de áudio do Daily
-   * @returns {Promise<boolean>} Sucesso da ativação
-   * @private
-   */
-  async _tryEnableDailyCapture() {
-    try {
-      // Verificar se já está ativado
-      if (this.dailyCapturingEnabled) {
-        console.log('Captura do Daily já está ativada');
-        return true;
-      }
-      
-      // Verificar se está em produção
-      if (window.location.hostname === 'localhost') {
-        console.log('Em ambiente de desenvolvimento, não tentando comunicação com Daily');
-        return false;
-      }
-      
-      // Garantir que o listener está configurado
-      this._setupDailyMessageListener();
-      
-      // Buscar iframes do Daily
-      const dailyIframes = Array.from(document.querySelectorAll('iframe'))
-        .filter(iframe => 
-          iframe.src && (
-            iframe.src.includes('daily.co') || 
-            iframe.src.includes('terapiaconect') ||
-            iframe.id.includes('daily') ||
-            iframe.className.includes('daily')
-          )
-        );
-      
-      console.log(`Encontrados ${dailyIframes.length} possíveis iframes do Daily`);
-      
-      if (dailyIframes.length > 0) {
-        // Enviar mensagem para ativar captura
-        dailyIframes.forEach(iframe => {
-          try {
-            console.log(`Enviando mensagem para iframe: ${iframe.src}`);
-            
-            // Enviar mensagem de forma segura
-            iframe.contentWindow.postMessage({
-              type: 'whisper-request-audio-capture',
-              sessionId: this.sessionId
-            }, '*');
-          } catch (e) {
-            console.warn(`Não foi possível enviar mensagem para iframe: ${e.message}`);
-          }
-        });
-        
-        // Marcar como ativado (mesmo que não tenhamos garantia de resposta)
-        this.dailyCapturingEnabled = true;
-        console.log('Solicitação de captura enviada para iframes do Daily');
-        return true;
-      }
-      
-      return false;
-    } catch (e) {
-      console.error('Erro ao tentar ativar captura do Daily:', e);
-      return false;
-    }
-  }
-
-  /**
    * Iniciar a gravação de áudio e configurar detecção de silêncio
    * @returns {Promise<boolean>} - Sucesso da inicialização da gravação
    */
@@ -278,17 +143,7 @@ class WhisperTranscriptionService {
         console.log(`SessionID extraído: ${this.sessionId}`);
       }
       
-      // NOVO: Tentar ativar captura de áudio do Daily.co, mas sem bloquear o fluxo
-      this._tryEnableDailyCapture().then(success => {
-        if (success) {
-          console.log('Captura de áudio do Daily.co solicitada com sucesso');
-        } else {
-          console.log('Não foi possível solicitar captura de áudio do Daily.co, usando apenas microfone local');
-        }
-      });
-      
-      // 6. Sempre solicitar permissão do microfone local independentemente do Daily
-      // Isso garante que pelo menos o áudio local será capturado
+      // 6. Solicitar permissão do microfone local
       console.log('Solicitando permissão de microfone local...');
       this.audioStream = await navigator.mediaDevices.getUserMedia({ 
         audio: {
@@ -1062,9 +917,6 @@ class WhisperTranscriptionService {
       
       // Liberar completamente todos os recursos
       await this._releaseAllAudioResources();
-      
-      // Manter o número do chunk para controle de sequência
-      // this.chunkCounter = 0;
       
       // Reiniciar gravação após pequeno intervalo
       console.log("Aguardando 2 segundos antes de reiniciar gravação...");
