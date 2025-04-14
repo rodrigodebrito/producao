@@ -4,6 +4,29 @@ import { BASE_API_URL } from '../config';
 
 console.log(`[AppointmentService] BASE_API_URL: ${BASE_API_URL}`);
 
+// Função utilitária para construir URLs de API corretamente
+const _buildApiUrl = (endpoint) => {
+  // Garantir que o endpoint começa com /
+  const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  
+  // Verificar se BASE_API_URL já termina com /api
+  if (BASE_API_URL.endsWith('/api')) {
+    // Remover o prefixo /api do endpoint se existir
+    const endpointWithoutApi = normalizedEndpoint.startsWith('/api/') 
+      ? normalizedEndpoint.substring(4) // Remove o /api do início
+      : normalizedEndpoint;
+      
+    return `${BASE_API_URL}${endpointWithoutApi}`;
+  } else {
+    // Se BASE_API_URL não termina com /api, garantir que o endpoint inclui /api/
+    const endpointWithApi = normalizedEndpoint.startsWith('/api/') 
+      ? normalizedEndpoint
+      : `/api${normalizedEndpoint}`;
+      
+    return `${BASE_API_URL}${endpointWithApi}`;
+  }
+};
+
 // Obter agendamentos do terapeuta
 export const getTherapistAppointments = async (therapistId) => {
   try {
@@ -224,12 +247,12 @@ export const cancelAppointment = async (id) => {
       throw new Error('Token de autenticação não encontrado');
     }
     
-    // Usar a URL base completa para evitar problemas de rota
-    const apiUrl = BASE_API_URL;
-    console.log(`🌐 URL da API para cancelamento: ${apiUrl}/appointments/${id}`);
+    // Construir URL correta usando a função utilitária
+    const fullUrl = _buildApiUrl(`/appointments/${id}`);
+    console.log(`🌐 URL da API para cancelamento: ${fullUrl}`);
     
-    // Fazer a requisição diretamente com a URL completa para garantir que chegue ao endpoint correto
-    const response = await axios.delete(`${apiUrl}/appointments/${id}`, {
+    // Fazer a requisição com a URL correta
+    const response = await axios.delete(fullUrl, {
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
@@ -261,9 +284,9 @@ export const createAppointmentDirect = async (appointmentData) => {
     console.log(`🚀 DIRECT APPOINTMENT: Iniciando método createAppointmentDirect`);
     console.log(`📦 Dados do agendamento: ${JSON.stringify(appointmentData, null, 2)}`);
     
-    // Usar a URL base definida no início do arquivo
-    const apiUrl = BASE_API_URL;
-    console.log(`🌐 URL da API: ${apiUrl}`);
+    // Construir URL correta usando a função utilitária
+    const fullUrl = _buildApiUrl('/appointments');
+    console.log(`🌐 URL da API: ${fullUrl}`);
     
     console.log(`📋 Informações críticas do agendamento:
       📅 Data: ${appointmentData.date}
@@ -274,7 +297,7 @@ export const createAppointmentDirect = async (appointmentData) => {
     `);
     
     console.log(`📤 Enviando requisição POST...`);
-    const result = await axios.post(`${apiUrl}/appointments`, appointmentData, {
+    const result = await axios.post(fullUrl, appointmentData, {
       headers: { 'Content-Type': 'application/json' }
     });
     
