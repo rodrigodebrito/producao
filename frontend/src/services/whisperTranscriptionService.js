@@ -2164,6 +2164,14 @@ class WhisperTranscriptionService {
         return;
       }
       
+      // Limpar o histórico de transcrições antigas se exceder um limite
+      if (this.otherParticipantsTranscriptions.length > 100) {
+        console.log(`🧹 LIMPEZA: Histórico de transcrições excedeu 100 itens, mantendo apenas as 50 mais recentes`);
+        this.otherParticipantsTranscriptions = this.otherParticipantsTranscriptions
+          .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+          .slice(0, 50);
+      }
+      
       // Obter token de autenticação
       const authToken = localStorage.getItem('authToken') || 
                         sessionStorage.getItem('authToken') || 
@@ -2177,7 +2185,6 @@ class WhisperTranscriptionService {
       
       // CORRIGIDO: Garantir URL absoluta em produção
       let url = `${this.allTranscriptsEndpoint}/${this.sessionId}`;
-      console.log(`🌐 BUSCA: Ambiente é ${this.isProd ? 'produção' : 'desenvolvimento'}`);
       
       // Adicionar timestamp para buscar apenas as novas desde a última vez
       if (this.lastFetchTimestamp) {
@@ -2231,10 +2238,6 @@ class WhisperTranscriptionService {
         // Verificar status 404 (endpoint não existe)
         if (!response.ok || !altResponse.ok) {
           console.warn(`❌ BUSCA: Erro nos endpoints: Principal=${response.status}, Alternativo=${altResponse.status}`);
-          
-          // Se não encontrou em nenhum endpoint, tentar criar um simulado local
-          console.log(`🔄 BUSCA: Tentando simular transcrições localmente...`);
-          this._simulateOtherParticipantsTranscriptions();
         }
         
         return;
@@ -2243,136 +2246,20 @@ class WhisperTranscriptionService {
       // Se não tiver sucesso e não for HTML, tentar endpoint alternativo
       if (!response.ok) {
         console.warn(`⚠️ BUSCA: Erro no endpoint principal: ${response.status} ${response.statusText}`);
-        
-        // Tentar endpoint absoluto alternativo
-        const alternativeEndpoint = this.isProd ? 
-          'https://theraconnect-prd.onrender.com/api/transcripts' : 
-          '/api/transcripts';
-        const alternativeUrl = `${alternativeEndpoint}/${this.sessionId}`;
-        
-        console.log(`🔄 BUSCA: Tentando endpoint alternativo: ${alternativeUrl}`);
-        
-        const altResponse = await fetch(alternativeUrl, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${authToken}`,
-            'Content-Type': 'application/json'
-          }
-        });
-        
-        if (altResponse.ok) {
-          console.log(`✅ BUSCA: Endpoint alternativo funcionou!`);
-          const data = await altResponse.json();
-          console.log(`📋 BUSCA: Dados recebidos do endpoint alternativo:`, data);
-          this._processOtherTranscriptions(data);
-          return;
-        } else {
-          console.warn(`❌ BUSCA: Erro no endpoint alternativo: ${altResponse.status} ${altResponse.statusText}`);
-        }
-        
-        // Se não encontrou no endpoint alternativo, tentar criar um simulado local
-        console.log(`🔄 BUSCA: Tentando simular transcrições localmente...`);
-        this._simulateOtherParticipantsTranscriptions();
-        
-        // Se ainda não retornou, lançar erro
-        throw new Error(`Erro ao buscar transcrições: ${response.status} ${response.statusText}`);
+        return;
       }
       
       // Processar resposta
       const data = await response.json();
-      console.log(`📋 BUSCA: Resposta recebida do backend:`, data);
+      console.log(`📋 BUSCA: Resposta recebida do backend com ${data.data?.length || 0} transcrições`);
       this._processOtherTranscriptions(data);
     } catch (error) {
       // MELHORADO: Tratamento específico para erro de parsing JSON (HTML em vez de JSON)
       if (error instanceof SyntaxError && error.message.includes('Unexpected token')) {
         console.warn(`❌ BUSCA: Erro ao analisar resposta do servidor - recebido HTML em vez de JSON`);
-        
-        // Tentar criar transcrições simuladas como fallback
-        console.log(`🔄 BUSCA: Tentando simular transcrições localmente após erro de parsing...`);
-        this._simulateOtherParticipantsTranscriptions();
       } else {
         console.warn(`❌ BUSCA: Erro ao buscar transcrições de outros participantes:`, error);
       }
-    }
-  }
-  
-  /**
-   * NOVO: Simula transcrições de outros participantes a partir do localStorage
-   * Útil quando o backend não tem um endpoint para recuperar todas as transcrições
-   * @private
-   */
-  _simulateOtherParticipantsTranscriptions() {
-    try {
-      console.log(`🔍 SIMULAÇÃO: Verificando sessionStorage/localStorage para buscar transcrições`);
-      
-      // DESATIVADO: Não simular transcrições fictícias, apenas buscar as reais
-      console.log(`📋 SIMULAÇÃO: Função de simulação desativada para evitar mensagens falsas`);
-      
-      // Verificar dados reais no storage apenas
-      const storageKeys = Object.keys(sessionStorage).filter(key => 
-        key.startsWith('whisper_transcriptions_') && key.includes(this.sessionId)
-      );
-      
-      console.log(`🔍 SIMULAÇÃO: Encontradas ${storageKeys.length} chaves no sessionStorage`);
-      
-      // Se não encontrar, verificar no localStorage
-      if (storageKeys.length === 0) {
-        const localStorageKeys = Object.keys(localStorage).filter(key => 
-          key.startsWith('whisper_transcript_') && key.includes(this.sessionId)
-        );
-        
-        console.log(`🔍 SIMULAÇÃO: Encontradas ${localStorageKeys.length} chaves no localStorage`);
-        
-        // Não criar dados fictícios, apenas processar dados reais existentes
-        for (const key of localStorageKeys) {
-          try {
-            const storedData = localStorage.getItem(key);
-            if (storedData) {
-              const transcriptions = JSON.parse(storedData);
-              console.log(`📋 SIMULAÇÃO: Dados encontrados no localStorage para ${key}:`, transcriptions);
-              
-              // Verificar se os dados são reais antes de processá-los
-              if (Array.isArray(transcriptions) && transcriptions.length > 0) {
-                // Montar estrutura compatível com o que o backend retornaria
-                const data = {
-                  transcripts: transcriptions
-                };
-                
-                this._processOtherTranscriptions(data);
-              }
-            }
-          } catch (e) {
-            console.warn(`❌ SIMULAÇÃO: Erro ao processar transcrições do localStorage (${key}):`, e);
-          }
-        }
-        
-        return;
-      }
-      
-      // Processar cada chave do sessionStorage
-      for (const key of storageKeys) {
-        try {
-          const storedData = sessionStorage.getItem(key);
-          if (storedData) {
-            const transcriptions = JSON.parse(storedData);
-            console.log(`📋 SIMULAÇÃO: Dados encontrados no sessionStorage para ${key}:`, transcriptions);
-            
-            // Verificar se os dados são reais antes de processá-los
-            if (Array.isArray(transcriptions) && transcriptions.length > 0) {
-              // Montar estrutura compatível com o que o backend retornaria
-              const data = {
-                transcripts: transcriptions
-              };
-              
-              this._processOtherTranscriptions(data);
-            }
-          }
-        } catch (e) {
-          console.warn(`❌ SIMULAÇÃO: Erro ao processar transcrições do sessionStorage (${key}):`, e);
-        }
-      }
-    } catch (error) {
-      console.warn(`❌ SIMULAÇÃO: Erro ao processar transcrições de outros participantes:`, error);
     }
   }
   
@@ -2392,44 +2279,51 @@ class WhisperTranscriptionService {
         return;
       }
       
-      console.log(`📊 PROCESSAMENTO: Processando ${transcripts.length} transcrições recebidas`);
-      console.log(`📊 PROCESSAMENTO: Minha identificação: speaker=${this.speakerRole}, identifier=${this.speakerIdentifier}`);
-      
-      // Filtrar apenas as transcrições de outros participantes (não o usuário atual)
-      const otherTranscriptions = transcripts.filter(t => 
-        t.speaker !== this.speakerRole && 
-        t.speakerIdentifier !== this.speakerIdentifier
+      // Criar um conjunto de IDs já processados para verificação rápida
+      const processedIds = new Set(
+        this.otherParticipantsTranscriptions.map(t => t.id || `${t.timestamp}_${t.speaker}_${t.content?.substring(0, 20)}`)
       );
       
-      console.log(`🔍 PROCESSAMENTO: Filtradas ${otherTranscriptions.length} transcrições de outros participantes`);
+      // Filtrar apenas as transcrições de outros participantes (não o usuário atual)
+      // E que ainda não foram processadas (não estão no conjunto de IDs)
+      const newTranscriptions = transcripts.filter(t => {
+        // Verificar se não é do usuário atual
+        const isFromOthers = t.speaker !== this.speakerRole && t.speakerIdentifier !== this.speakerIdentifier;
+        
+        if (!isFromOthers) return false;
+        
+        // Criar um ID único para esta transcrição
+        const transcriptionId = t.id || `${t.timestamp}_${t.speaker}_${t.content?.substring(0, 20)}`;
+        
+        // Verificar se já foi processada
+        const isDuplicate = processedIds.has(transcriptionId);
+        
+        // Se for duplicada, apenas mencionar no log sem poluir com muitas mensagens
+        if (isDuplicate) {
+          // Reduzir logging de duplicados, apenas mencionando o total
+          return false;
+        }
+        
+        // Se chegou aqui, é uma nova transcrição válida
+        return true;
+      });
+      
+      // Log resumido para não poluir o console
+      const duplicatesCount = transcripts.length - newTranscriptions.length;
+      if (duplicatesCount > 0) {
+        console.log(`🔄 PROCESSAMENTO: ${duplicatesCount} transcrições duplicadas ignoradas`);
+      }
+      
+      console.log(`✅ PROCESSAMENTO: ${newTranscriptions.length} novas transcrições de outros participantes`);
       
       // Se não há novas transcrições, retornar
-      if (otherTranscriptions.length === 0) {
-        console.log(`ℹ️ PROCESSAMENTO: Nenhuma transcrição nova de outros participantes`);
+      if (newTranscriptions.length === 0) {
         return;
       }
       
-      console.log(`✅ PROCESSAMENTO: Recebidas ${otherTranscriptions.length} transcrições de outros participantes`);
-      
-      // Percorrer as novas transcrições
-      for (const transcription of otherTranscriptions) {
-        // Verificar se já processamos esta transcrição
-        const isDuplicate = this.otherParticipantsTranscriptions.some(
-          t => t.id === transcription.id || 
-              (t.timestamp === transcription.timestamp && 
-               t.speaker === transcription.speaker && 
-               t.content === transcription.content)
-        );
-        
-        // Se for duplicada, pular
-        if (isDuplicate) {
-          console.log(`🔄 PROCESSAMENTO: Transcrição duplicada ignorada: ${transcription.id || transcription.timestamp}`);
-          continue;
-        }
-        
-        // Adicionar ao nosso array local
+      // Adicionar todas as novas transcrições ao array local
+      for (const transcription of newTranscriptions) {
         this.otherParticipantsTranscriptions.push(transcription);
-        console.log(`➕ PROCESSAMENTO: Nova transcrição adicionada do participante ${transcription.speaker}`);
         
         // Processar e exibir cada transcrição
         this._displayOtherParticipantTranscription(transcription);
@@ -2437,7 +2331,6 @@ class WhisperTranscriptionService {
       
       // Atualizar timestamp da última busca
       this.lastFetchTimestamp = new Date().toISOString();
-      console.log(`🕒 PROCESSAMENTO: Timestamp atualizado para próxima busca: ${this.lastFetchTimestamp}`);
     } catch (error) {
       console.warn(`❌ PROCESSAMENTO: Erro ao processar transcrições de outros participantes:`, error);
     }
