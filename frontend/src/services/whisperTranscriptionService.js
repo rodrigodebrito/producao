@@ -46,7 +46,10 @@ class WhisperTranscriptionService {
     
     // Estado de transcrição contínua
     this.transcriptionHistory = [];
-    this.sessionId = 'f275c5c4-fb58-40e3-9710-2c95e30741b0'; // ID fixo atualizado
+    
+    // Extrair sessionId ao inicializar
+    this.sessionId = this.extractSessionId();
+    this.speakerRole = this._determineSpeakerRole();
     
     // Contador de chunks
     this.chunkCounter = 0;
@@ -61,6 +64,54 @@ class WhisperTranscriptionService {
     this.voiceDetectionEnabled = true;
     this.voiceThreshold = -40; // dB (menos sensível que o silêncio)
     this.voiceDetectionInterval = null;
+    
+    console.log(`WhisperTranscriptionService inicializado - sessionId: ${this.sessionId}, papel: ${this.speakerRole}`);
+  }
+
+  /**
+   * Determina o papel do usuário (terapeuta ou cliente) com base na sessão atual
+   * @returns {string} 'therapist' ou 'client'
+   * @private
+   */
+  _determineSpeakerRole() {
+    try {
+      // Verificar se existe informação de usuário local
+      const userData = localStorage.getItem('user') || sessionStorage.getItem('user');
+      
+      if (userData) {
+        try {
+          const user = JSON.parse(userData);
+          
+          // Se temos informação de role, usar diretamente
+          if (user && user.role) {
+            if (user.role === 'THERAPIST') return 'therapist';
+            if (user.role === 'CLIENT') return 'client';
+          }
+          
+          // Se temos informações como isTherapist ou tipo de usuário
+          if (user && (user.isTherapist || user.userType === 'THERAPIST')) {
+            return 'therapist';
+          }
+        } catch (e) {
+          console.warn('Whisper: Erro ao parse de userData para determinar papel:', e);
+        }
+      }
+      
+      // Segundo método: verificar URL por indicadores de terapeuta/cliente
+      const url = window.location.href.toLowerCase();
+      if (url.includes('therapist') || url.includes('terapeuta')) {
+        return 'therapist';
+      }
+      if (url.includes('client') || url.includes('cliente')) {
+        return 'client';
+      }
+      
+      // Fallback: assumir cliente
+      return 'client';
+    } catch (e) {
+      console.error('Whisper: Erro ao determinar papel do usuário:', e);
+      return 'unknown';
+    }
   }
 
   /**
@@ -103,6 +154,25 @@ class WhisperTranscriptionService {
       return `error_${Date.now()}`;
     }
   }
+  
+  /**
+   * Atualiza o ID da sessão atual
+   * @param {string} newSessionId - Novo ID de sessão
+   */
+  updateSessionId(newSessionId) {
+    if (!newSessionId) return;
+    
+    console.log(`Whisper: Atualizando sessionId de "${this.sessionId}" para "${newSessionId}"`);
+    this.sessionId = newSessionId;
+    
+    // Salvar também no storage para consistência
+    try {
+      localStorage.setItem('currentSessionId', newSessionId);
+      sessionStorage.setItem('currentSessionId', newSessionId); 
+    } catch (e) {
+      console.warn('Erro ao salvar sessionId no storage:', e);
+    }
+  }
 
   /**
    * Iniciar a gravação de áudio e configurar detecção de silêncio
@@ -111,6 +181,12 @@ class WhisperTranscriptionService {
   async startRecording() {
     try {
       console.log('=== INICIANDO NOVA GRAVAÇÃO WAV ===');
+      
+      // Garantir que temos o sessionId mais atualizado
+      const latestSessionId = this.extractSessionId();
+      if (latestSessionId !== this.sessionId) {
+        this.updateSessionId(latestSessionId);
+      }
       
       // ESTRATÉGIA ANTI-CORRUPÇÃO: Forçar liberação máxima entre gravações
       
@@ -137,10 +213,13 @@ class WhisperTranscriptionService {
       this.isRecording = true;
       this.chunkStartTime = Date.now();
       
-      // 5. Extrair sessionId se necessário
-      if (!this.sessionId) {
-        this.sessionId = this.extractSessionId();
-        console.log(`SessionID extraído: ${this.sessionId}`);
+      // 5. Verificar sessionId válido
+      if (!this.sessionId || this.sessionId.startsWith('temp_') || this.sessionId.startsWith('error_')) {
+        const newId = this.extractSessionId();
+        if (newId && !newId.startsWith('temp_') && !newId.startsWith('error_')) {
+          this.updateSessionId(newId);
+        }
+        console.log(`Usando sessionId: ${this.sessionId}`);
       }
       
       // 6. Solicitar permissão do microfone local
@@ -694,9 +773,12 @@ class WhisperTranscriptionService {
           // Preparar FormData
           const formData = new FormData();
           formData.append('file', blobToSend, finalFileName);
-          formData.append('sessionId', 'f275c5c4-fb58-40e3-9710-2c95e30741b0');
+          formData.append('sessionId', this.sessionId);
+          formData.append('chunkCounter', String(this.chunkCounter));
+          formData.append('clientTimestamp', new Date().toISOString());
           formData.append('format', 'json');
           formData.append('language', 'pt');
+          formData.append('speaker', this.speakerRole);
           
           // Detectar protocolo da página atual para usar o mesmo protocolo na API
           const currentProtocol = window.location.protocol;
@@ -811,11 +893,12 @@ class WhisperTranscriptionService {
       // Preparar FormData
       const formData = new FormData();
       formData.append('file', audioBlob, fileName);
-      formData.append('sessionId', 'f275c5c4-fb58-40e3-9710-2c95e30741b0');
+      formData.append('sessionId', this.sessionId);
       formData.append('chunkCounter', String(this.chunkCounter));
       formData.append('clientTimestamp', new Date().toISOString());
       formData.append('format', 'json');
       formData.append('language', 'pt');
+      formData.append('speaker', this.speakerRole);
       
       // Enviar
       xhr.send(formData);
@@ -1162,11 +1245,13 @@ class WhisperTranscriptionService {
       
       // Formato para envio para o AI Context
       const transcriptionData = {
-        sessionId: this.sessionId || this.extractSessionId(),
-        speaker: 'user', // Definimos 'user' como padrão, poderia ser configurável
+        sessionId: this.sessionId,
+        speaker: this.speakerRole,
         content: transcription.trim(),
         timestamp: new Date().toISOString()
       };
+      
+      console.log(`Processando transcrição para sessão ${this.sessionId} como ${this.speakerRole}`);
       
       // NOVO: Salvar no sessionStorage imediatamente como backup
       this._saveTranscriptionToStorage(transcriptionData);
