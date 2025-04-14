@@ -1654,6 +1654,7 @@ class WhisperTranscriptionService {
   }
 }
 
+// Versão estável restaurada
 // Exportar como singleton
 const whisperTranscriptionService = new WhisperTranscriptionService();
 export default whisperTranscriptionService;
