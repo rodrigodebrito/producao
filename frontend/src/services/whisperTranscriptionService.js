@@ -1825,11 +1825,43 @@ class WhisperTranscriptionService {
   async _processTranscription(response, audioBlob) {
     try {
       // Validar resposta
-      if (!response || !response.data) {
-        throw new Error('Resposta de transcrição inválida');
+      if (!response) {
+        console.error('Resposta nula ou indefinida recebida');
+        throw new Error('Resposta de transcrição inválida (null)');
       }
       
-      const transcription = response.data.text || response.data.transcript || response.data;
+      // CORREÇÃO: Lidar com diferentes formatos de resposta
+      let data = response;
+      if (response.data) {
+        data = response.data;
+      } else if (response.text !== undefined || response.transcript !== undefined) {
+        // É possível que tenhamos recebido uma resposta direta com a propriedade text/transcript
+        data = response;
+      } else if (typeof response === 'string') {
+        // Tentar transformar string em objeto
+        try {
+          data = JSON.parse(response);
+        } catch (e) {
+          // Se não for JSON válido, assumir que é o próprio texto
+          data = { text: response };
+        }
+      } else if (response.success && response.text) {
+        // Formato {success: true, text: "..."}
+        data = response;
+      }
+      
+      // Verificar se é o formato esperado
+      console.log('Processando dados de transcrição:', data);
+      
+      // Extrair o texto da transcrição de várias possíveis propriedades
+      const transcription = data.text || data.transcript || data.content || 
+                           (data.data ? data.data.text || data.data.transcript || data.data : null);
+      
+      if (!transcription && typeof data === 'string' && data.length > 0) {
+        // Se o próprio dado for uma string, usar como transcrição
+        console.log('Usando o próprio objeto response como texto da transcrição');
+        transcription = data;
+      }
       
       // NOVO: Adicionar análise de emoção se disponível o blob de áudio
       let emotionAnalysis = null;
@@ -1861,8 +1893,19 @@ class WhisperTranscriptionService {
       }
       
       // NOVO: Extrair informações de emoção/tom se disponíveis na resposta
-      emotionAnalysis = emotionAnalysis || response.data.emotionAnalysis || null;
-      toneAnalysis = toneAnalysis || response.data.toneAnalysis || null;
+      emotionAnalysis = emotionAnalysis || 
+                       (data.emotionAnalysis || 
+                       (data.data && data.data.emotionAnalysis ? data.data.emotionAnalysis : null));
+      
+      toneAnalysis = toneAnalysis || 
+                    (data.toneAnalysis || 
+                    (data.data && data.data.toneAnalysis ? data.data.toneAnalysis : null));
+      
+      // Se ainda não temos uma transcrição válida, não podemos continuar
+      if (!transcription) {
+        console.warn('Transcrição inválida recebida:', data);
+        throw new Error('Resposta não contém texto transcrito');
+      }
       
       // Obter identificador completo do papel (inclui status de host)
       const speakerIdentifier = this._getSpeakerIdentifier();
@@ -1943,12 +1986,6 @@ class WhisperTranscriptionService {
         'font-weight: bold; color: #9E9E9E;', 
         'color: #9E9E9E;'
       );
-      
-      // Validar transcrição
-      if (!transcription || transcription.trim().length === 0) {
-        console.warn('Transcrição vazia recebida, ignorando...');
-        return false;
-      }
       
       // Formato para envio para o AI Context
       const transcriptionData = {
