@@ -663,7 +663,7 @@ class WhisperTranscriptionService {
       
       // Iniciar análise de áudio para detecção de silêncio
       if (this.silenceDetectionEnabled) {
-        await this._setupAudioAnalysis();
+        await this._setupSilenceDetection(this.stream);
       }
       
       // Inicializar ou registrar o contexto de IA se disponível
