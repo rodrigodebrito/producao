@@ -380,33 +380,50 @@ export const AIProvider = ({ children }) => {
         return mockResult;
       }
       
+      // ALTERADO: Verificar se HybridAI está desativado
       let result;
-      try {
-        // Usar o sessionId efetivo para a análise e incluir as emoções detectadas
-        console.log(`[AIContext] Enviando para análise: sessão=${effectiveSessionId}, texto=${effectiveText.length} caracteres`);
-        console.log('[AIContext] Enviando emoções para análise:', JSON.stringify(emotions));
-        result = await hybridAIService.analyzeText(effectiveText, effectiveSessionId, emotions);
-        console.log('[AIContext] Resultado da análise:', result);
-      } catch (error) {
-        console.error('[AIContext] Erro no serviço de análise:', error);
+      
+      // Verificar flag global de desativação
+      if (window.__HYBRID_AI_DISABLED === true || window.__HYBRID_AI_FORCE_DISABLED === true) {
+        console.log('[AIContext] HybridAI está desativado, fornecendo análise simulada');
         
-        // Verificar se é um erro de API da OpenAI
-        const isOpenAIError = error.message?.includes('OpenAI') || 
-                             error.message?.includes('API key') || 
-                             (error.error && error.error.includes('API key'));
-        
-        // Criar um resultado de erro mais amigável e específico
+        // Criar resposta mockada para evitar erros
         result = {
           type: 'analysis',
-          error: isOpenAIError ? 'Serviço de IA temporariamente indisponível' : 'Falha no serviço de análise',
-          message: isOpenAIError 
-            ? 'A API da OpenAI está temporariamente indisponível. O administrador já foi notificado.' 
-            : error.message,
-          analysis: 'Não foi possível analisar a sessão atual devido a um erro técnico.',
-          content: isOpenAIError 
-            ? 'O serviço de IA está temporariamente em manutenção. A transcrição continua funcionando normalmente e todas as informações estão sendo salvas.' 
-            : 'O serviço de IA está temporariamente indisponível.'
+          success: true,
+          analysis: 'A análise de IA está desativada nesta versão do aplicativo. Esta é uma resposta simulada.',
+          content: 'Para obter análises completas, você pode usar o serviço de transcrição para registrar a sessão e depois analisá-la manualmente.'
         };
+      } else {
+        try {
+          // Usar o sessionId efetivo para a análise e incluir as emoções detectadas
+          console.log(`[AIContext] Enviando para análise: sessão=${effectiveSessionId}, texto=${effectiveText.length} caracteres`);
+          console.log('[AIContext] Enviando emoções para análise:', JSON.stringify(emotions));
+          
+          // Verificar se hybridAIService existe antes de tentar usar
+          if (!window.hybridAIService) {
+            throw new Error('HybridAI service não está disponível');
+          }
+          
+          result = await window.hybridAIService.analyzeText(effectiveText, effectiveSessionId, emotions);
+          console.log('[AIContext] Resultado da análise:', result);
+        } catch (error) {
+          console.error('[AIContext] Erro no serviço de análise:', error);
+          
+          // Verificar se é um erro de API da OpenAI
+          const isOpenAIError = error.message?.includes('OpenAI') || 
+                             error.message?.includes('API key') || 
+                             (error.error && error.error.includes('API key'));
+          
+          // Criar um resultado de erro mais amigável e específico
+          result = {
+            type: 'analysis',
+            error: 'Serviço de IA não disponível',
+            message: error.message,
+            analysis: 'A análise de IA está temporariamente indisponível.',
+            content: 'A transcrição continua funcionando normalmente e todas as informações estão sendo salvas.'
+          };
+        }
       }
       
       // Garantir que o resultado possui um formato válido
@@ -522,26 +539,55 @@ export const AIProvider = ({ children }) => {
         return mockResult;
       }
       
+      // ALTERADO: Verificar se hybridAIService está disponível, se não, usar respostas mockadas
       let result;
-      try {
-        // Usar o sessionId efetivo para as sugestões e incluir as emoções detectadas
-        console.log(`[AIContext] Enviando para geração de sugestões: sessão=${effectiveSessionId}, texto=${effectiveText.length} caracteres`);
-        console.log('[AIContext] Enviando emoções para sugestões:', JSON.stringify(emotions));
-        result = await hybridAIService.generateSuggestions(effectiveText, effectiveSessionId, emotions);
-        console.log('[AIContext] Resultado das sugestões:', result);
-      } catch (error) {
-        console.error('[AIContext] Erro no serviço de sugestões:', error);
+      
+      // Verificar flag global de desativação do HybridAI
+      if (window.__HYBRID_AI_DISABLED === true || window.__HYBRID_AI_FORCE_DISABLED === true) {
+        console.log('[AIContext] HybridAI está desativado, fornecendo sugestões simuladas');
+        
+        // Criar resposta mockada para evitar erros
         result = {
           type: 'suggestions',
-          error: 'Falha no serviço de sugestões',
-          message: error.message,
+          success: true,
           suggestions: [
-            'Considere fazer perguntas abertas ao paciente.',
-            'Mantenha um tom empático e acolhedor.',
-            'Observe padrões de comunicação e sentimentos expressos.'
+            'Explore mais sobre os sentimentos expressos.',
+            'Considere fazer perguntas abertas para estimular a reflexão.',
+            'Observe os padrões de comunicação não-verbal.',
+            'Verifique a compreensão com resumos periódicos da conversa.',
+            'Valide os sentimentos expressos para fortalecer o vínculo terapêutico.'
           ],
-          content: 'Sugestões genéricas (o serviço de IA está indisponível no momento).'
+          content: 'Sugestões geradas automaticamente (HybridAI desativado)'
         };
+      } else {
+        try {
+          // Usar o sessionId efetivo para as sugestões e incluir as emoções detectadas
+          console.log(`[AIContext] Enviando para geração de sugestões: sessão=${effectiveSessionId}, texto=${effectiveText.length} caracteres`);
+          console.log('[AIContext] Enviando emoções para sugestões:', JSON.stringify(emotions));
+          
+          // Verificar se hybridAIService existe antes de tentar usar
+          if (!window.hybridAIService) {
+            throw new Error('HybridAI service não está disponível');
+          }
+          
+          result = await window.hybridAIService.generateSuggestions(effectiveText, effectiveSessionId, emotions);
+          console.log('[AIContext] Resultado das sugestões:', result);
+        } catch (error) {
+          console.error('[AIContext] Erro no serviço de sugestões:', error);
+          result = {
+            type: 'suggestions',
+            error: 'Serviço de IA não disponível',
+            message: error.message,
+            suggestions: [
+              'Considere fazer perguntas abertas ao paciente.',
+              'Mantenha um tom empático e acolhedor.',
+              'Observe padrões de comunicação e sentimentos expressos.',
+              'Faça resumos periódicos para verificar o entendimento mútuo.',
+              'Valorize os pequenos insights e progressos demonstrados.'
+            ],
+            content: 'Sugestões genéricas (o serviço de IA está indisponível no momento).'
+          };
+        }
       }
       
       // Garantir que o resultado possui um formato válido
@@ -662,22 +708,46 @@ export const AIProvider = ({ children }) => {
         return mockResult;
       }
       
+      // ALTERADO: Verificar se HybridAI está desativado
       let result;
-      try {
-        // Usar o sessionId efetivo para o relatório e incluir as emoções detectadas
-        console.log(`[AIContext] Enviando para geração de relatório: sessão=${effectiveSessionId}, texto=${effectiveText.length} caracteres`);
-        console.log('[AIContext] Enviando emoções para relatório:', JSON.stringify(emotions));
-        result = await hybridAIService.generateReport(effectiveText, effectiveSessionId, emotions);
-        console.log('[AIContext] Resultado do relatório:', result);
-      } catch (error) {
-        console.error('[AIContext] Erro no serviço de relatório:', error);
+      
+      // Verificar flag global de desativação
+      if (window.__HYBRID_AI_DISABLED === true || window.__HYBRID_AI_FORCE_DISABLED === true) {
+        console.log('[AIContext] HybridAI está desativado, fornecendo relatório simulado');
+        
+        // Criar resposta mockada para evitar erros
         result = {
           type: 'report',
-          error: 'Falha no serviço de relatório',
-          message: error.message,
-          report: 'Não foi possível gerar o relatório devido a um erro técnico.',
-          content: 'O serviço de IA está temporariamente indisponível.'
+          success: true,
+          report: 'Função de geração automática de relatórios desativada nesta versão.\n\nRelatório simplificado baseado nas transcrições disponíveis:\n\n' +
+                 effectiveText.substring(0, 150) + '...\n\n' +
+                 'A sessão contém aproximadamente ' + effectiveText.length + ' caracteres de texto transcrito.',
+          content: 'O serviço de IA está desativado. Este é um relatório básico baseado nos dados disponíveis.'
         };
+      } else {
+        try {
+          // Usar o sessionId efetivo para o relatório e incluir as emoções detectadas
+          console.log(`[AIContext] Enviando para geração de relatório: sessão=${effectiveSessionId}, texto=${effectiveText.length} caracteres`);
+          console.log('[AIContext] Enviando emoções para relatório:', JSON.stringify(emotions));
+          
+          // Verificar se hybridAIService existe antes de tentar usar
+          if (!window.hybridAIService) {
+            throw new Error('HybridAI service não está disponível');
+          }
+          
+          result = await window.hybridAIService.generateReport(effectiveText, effectiveSessionId, emotions);
+          console.log('[AIContext] Resultado do relatório:', result);
+        } catch (error) {
+          console.error('[AIContext] Erro no serviço de relatório:', error);
+          result = {
+            type: 'report',
+            error: 'Serviço de IA não disponível',
+            message: error.message,
+            report: 'O serviço de geração automática de relatórios está temporariamente indisponível.\n\n' +
+                   'A transcrição está sendo salva normalmente e pode ser acessada posteriormente.',
+            content: 'Todas as informações da sessão continuam sendo registradas.'
+          };
+        }
       }
       
       // Garantir que o resultado possui um formato válido
