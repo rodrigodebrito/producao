@@ -216,6 +216,9 @@ router.post('/insights', async (req, res) => {
 
 router.post('/analyze', aiController.analyzeSession);
 
+// Nova rota para análise de texto - para compatibilidade com frontend
+router.post('/analyze/text', aiController.analyzeSession);
+
 if (typeof aiController.analyzeText === 'function') {
     router.post('/analyze-text', aiController.analyzeText);
 }

@@ -690,7 +690,10 @@ const aiController = {
         // Atualizar contador de uso de tokens
         const inputTokens = estimateTokens(transcript);
         const outputTokens = estimateTokens(analysis);
-        tokenUsageService.addUsage('analysis', inputTokens, outputTokens);
+        tokenUsageService.logTokenUsage('gpt-4o-mini', [
+          { role: "system", content: `Você é um assistente especializado em análise terapêutica que ajuda terapeutas a analisar sessões.` },
+          { role: "user", content: transcript }
+        ], analysis);
         
         return res.status(200).json({
           success: true,
@@ -891,7 +894,10 @@ const aiController = {
         // Atualizar contador de uso de tokens
         const inputTokens = estimateTokens(processedTranscript);
         const outputTokens = estimateTokens(suggestionsText);
-        tokenUsageService.addUsage('suggestions', inputTokens, outputTokens);
+        tokenUsageService.logTokenUsage('gpt-4o-mini', [
+          { role: "system", content: `Você é um assistente especializado em terapia que ajuda terapeutas durante sessões.` },
+          { role: "user", content: processedTranscript }
+        ], suggestionsText);
         
         return res.status(200).json({
           success: true,
@@ -1151,7 +1157,10 @@ const aiController = {
         // Atualizar contador de uso de tokens
         const inputTokens = estimateTokens(processedTranscript);
         const outputTokens = estimateTokens(report);
-        tokenUsageService.addUsage('report', inputTokens, outputTokens);
+        tokenUsageService.logTokenUsage('gpt-4o-mini', [
+          { role: "system", content: `Você é um assistente especializado na elaboração de relatórios de sessões de terapia.` },
+          { role: "user", content: processedTranscript }
+        ], report);
         
         return res.status(200).json({
           success: true,
