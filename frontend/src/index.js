@@ -12,8 +12,11 @@ import { BrowserRouter } from 'react-router-dom';
 import hybridAIService from './services/hybridAI.service';
 
 // Disponibilizar o serviço globalmente para fácil acesso
-window.hybridAIService = hybridAIService;
+// DESATIVADO: Serviço HybridAI comentado para evitar inicialização
+// window.hybridAIService = hybridAIService;
 
+// DESATIVADO: Inicialização do HybridAI comentada conforme solicitado
+/*
 // Inicializar o serviço (assíncrono)
 hybridAIService.initService().then(success => {
   console.log('HybridAI: Serviço inicializado com sucesso =', success);
@@ -23,6 +26,12 @@ hybridAIService.initService().then(success => {
 }).catch(error => {
   console.error('Erro ao inicializar HybridAI:', error);
 });
+*/
+
+// Adicionando flag para informar que o HybridAI está desativado
+window.__HYBRID_AI_ACTIVE = false;
+window.__HYBRID_AI_DISABLED = true;
+console.log('HybridAI: Serviço desativado conforme solicitado');
 
 // Configurar default para toasts
 toast.configure = () => {};
