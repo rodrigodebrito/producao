@@ -1,5 +1,12 @@
 Versão com HybridAI Desativado
-Commit: 06bcfc6
+Commit: 16b0674 (atualizado com fix adicional)
 Data: 2024-10-29
 
-Esta versão desativa a inicialização do HybridAI, o que pode resolver problemas de reinício automático indesejado e outros conflitos entre serviços de transcrição. 
+Esta versão desativa a inicialização do HybridAI, o que resolve problemas de reinício automático indesejado e outros conflitos entre serviços de transcrição.
+
+A versão inclui:
+- Comentários no código que inicializava o HybridAI no index.js
+- Flags globais para desativar o serviço completamente
+- Mudanças no construtor do HybridAIService para verificar as flags de desativação
+- Verificações adicionais em métodos críticos para evitar inicialização indesejada
+- Limpeza de referências globais para garantir que o serviço não seja inicializado por outros componentes 
