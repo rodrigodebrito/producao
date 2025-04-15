@@ -1927,6 +1927,290 @@ O sistema está aguardando o processamento completo da transcrição pelo servi�
       throw error;
     }
   }
+
+  /**
+   * Analisa o texto da sessão
+   * @param {string} text - Texto para análise
+   * @param {string} providedSessionId - ID da sessão opcional
+   * @param {Object} emotionsData - Dados de emoções detectadas
+   * @returns {Promise<Object>} - Resultado da análise
+   */
+  async analyzeText(text, providedSessionId = null, emotionsData = null) {
+    try {
+      // Usar sessionId fornecido ou o atual
+      const sessionId = providedSessionId || this.sessionId || this.extractSessionId();
+      console.log(`HybridAI: Analisando texto para sessão ${sessionId}`);
+      
+      // Usar emoções fornecidas ou as detectadas localmente
+      const emotions = emotionsData || this.emotions;
+      
+      // Log detalhado das emoções
+      console.log(`---------- ANÁLISE COM EMOÇÕES ----------`);
+      console.log('Dados de emoções recebidos para análise:');
+      console.log(JSON.stringify(emotions, null, 2));
+      
+      // Log das emoções mais intensas
+      if (emotions) {
+        const sortedEmotions = Object.entries(emotions)
+          .sort(([, a], [, b]) => b - a)
+          .slice(0, 3);
+          
+        if (sortedEmotions.length > 0) {
+          console.log('Emoções predominantes para análise:');
+          sortedEmotions.forEach(([emotion, value]) => {
+            console.log(`- ${emotion}: ${value}`);
+          });
+        }
+      }
+      console.log(`-----------------------------------------`);
+      
+      // Verificar se há transcrição
+      if (!text || text.trim().length === 0) {
+        console.error('HybridAI: Texto vazio para análise');
+        return {
+          error: 'Texto vazio',
+          message: 'Não há texto para analisar',
+          analysis: 'É necessário ter conteúdo para realizar uma análise.',
+          success: false
+        };
+      }
+      
+      try {
+        // Obter token
+        const authToken = this.getAuthToken();
+        if (!authToken) {
+          this.dispatchAuthError();
+          return {
+            error: 'Não autenticado',
+            message: 'Token de autenticação não encontrado',
+            analysis: 'Não foi possível autenticar para realizar a análise.',
+            success: false
+          };
+        }
+        
+        // Chamar o serviço de IA usando o serviço padrão
+        console.log(`HybridAI: Enviando análise para o backend com sessionId=${sessionId} e dados de emoções`);
+        const result = await aiService.analyzeSession(sessionId, emotions);
+        
+        // Processar o resultado
+        if (result && result.success) {
+          console.log('HybridAI: Análise remota bem-sucedida:', result);
+          return result;
+        } else {
+          console.warn('HybridAI: Análise remota retornou erro:', result);
+          
+          // Gerar análise offline simulada como fallback
+          return this._generateSimulatedAnalysis(text, sessionId);
+        }
+      } catch (apiError) {
+        console.error('HybridAI: Erro na chamada da API de análise:', apiError);
+        console.log('HybridAI: Usando análise offline como fallback');
+        
+        // Gerar análise offline simulada como fallback
+        return this._generateSimulatedAnalysis(text, sessionId);
+      }
+    } catch (error) {
+      console.error('HybridAI: Erro geral ao analisar texto:', error);
+      return {
+        error: 'Erro na análise',
+        message: error.message,
+        analysis: 'Ocorreu um erro ao analisar o texto.',
+        success: false
+      };
+    }
+  }
+  
+  /**
+   * Gera sugestões com base no texto da sessão
+   * @param {string} text - Texto para gerar sugestões
+   * @param {string} providedSessionId - ID da sessão opcional
+   * @param {Object} emotionsData - Dados de emoções detectadas
+   * @returns {Promise<Object>} - Resultado com sugestões
+   */
+  async generateSuggestions(text, providedSessionId = null, emotionsData = null) {
+    try {
+      // Usar sessionId fornecido ou o atual
+      const sessionId = providedSessionId || this.sessionId || this.extractSessionId();
+      console.log(`HybridAI: Gerando sugestões para sessão ${sessionId}`);
+      
+      // Usar emoções fornecidas ou as detectadas localmente
+      const emotions = emotionsData || this.emotions;
+      
+      // Log detalhado das emoções
+      console.log(`---------- SUGESTÕES COM EMOÇÕES ----------`);
+      console.log('Dados de emoções recebidos para sugestões:');
+      console.log(JSON.stringify(emotions, null, 2));
+      
+      // Log das emoções mais intensas
+      if (emotions) {
+        const sortedEmotions = Object.entries(emotions)
+          .sort(([, a], [, b]) => b - a)
+          .slice(0, 3);
+          
+        if (sortedEmotions.length > 0) {
+          console.log('Emoções predominantes para sugestões:');
+          sortedEmotions.forEach(([emotion, value]) => {
+            console.log(`- ${emotion}: ${value}`);
+          });
+        }
+      }
+      console.log(`-------------------------------------------`);
+      
+      // Verificar se há transcrição
+      if (!text || text.trim().length === 0) {
+        console.error('HybridAI: Texto vazio para sugestões');
+        return {
+          error: 'Texto vazio',
+          message: 'Não há texto para gerar sugestões',
+          suggestions: [
+            'Inicie ou continue a conversa para receber sugestões personalizadas.'
+          ],
+          success: false
+        };
+      }
+      
+      try {
+        // Obter token de autenticação
+        const authToken = this.getAuthToken();
+        if (!authToken) {
+          this.dispatchAuthError();
+          return {
+            error: 'Não autenticado',
+            message: 'Token de autenticação não encontrado',
+            suggestions: [
+              'Faça login para receber sugestões personalizadas.'
+            ],
+            success: false
+          };
+        }
+        
+        // Chamar o serviço de IA
+        console.log(`HybridAI: Enviando solicitação de sugestões para o backend com sessionId=${sessionId} e dados de emoções`);
+        const result = await aiService.generateSuggestions(sessionId, emotions);
+        
+        // Processar o resultado
+        if (result && result.success) {
+          console.log('HybridAI: Sugestões remotas bem-sucedidas:', result);
+          return result;
+        } else {
+          console.warn('HybridAI: Sugestões remotas retornaram erro:', result);
+          
+          // Fazer sugestões locais/offline como fallback
+          return this._generateSimulatedSuggestions(text, sessionId);
+        }
+      } catch (apiError) {
+        console.error('HybridAI: Erro na chamada da API de sugestões:', apiError);
+        console.log('HybridAI: Usando sugestões offline como fallback');
+        
+        // Fazer sugestões locais/offline como fallback
+        return this._generateSimulatedSuggestions(text, sessionId);
+      }
+    } catch (error) {
+      console.error('HybridAI: Erro geral ao gerar sugestões:', error);
+      return {
+        error: 'Erro nas sugestões',
+        message: error.message,
+        suggestions: [
+          'Faça perguntas abertas.',
+          'Pratique escuta ativa.',
+          'Mantenha contato visual e postura acolhedora.'
+        ],
+        success: false
+      };
+    }
+  }
+  
+  /**
+   * Gera relatório da sessão
+   * @param {string} text - Texto para gerar relatório
+   * @param {string} providedSessionId - ID da sessão opcional
+   * @param {Object} emotionsData - Dados de emoções detectadas
+   * @returns {Promise<Object>} - Resultado com relatório
+   */
+  async generateReport(text, providedSessionId = null, emotionsData = null) {
+    try {
+      // Usar sessionId fornecido ou o atual
+      const sessionId = providedSessionId || this.sessionId || this.extractSessionId();
+      console.log(`HybridAI: Gerando relatório para sessão ${sessionId}`);
+      
+      // Usar emoções fornecidas ou as detectadas localmente
+      const emotions = emotionsData || this.emotions;
+      
+      // Log detalhado das emoções
+      console.log(`---------- RELATÓRIO COM EMOÇÕES ----------`);
+      console.log('Dados de emoções recebidos para relatório:');
+      console.log(JSON.stringify(emotions, null, 2));
+      
+      // Log das emoções mais intensas
+      if (emotions) {
+        const sortedEmotions = Object.entries(emotions)
+          .sort(([, a], [, b]) => b - a)
+          .slice(0, 3);
+          
+        if (sortedEmotions.length > 0) {
+          console.log('Emoções predominantes para relatório:');
+          sortedEmotions.forEach(([emotion, value]) => {
+            console.log(`- ${emotion}: ${value}`);
+          });
+        }
+      }
+      console.log(`-------------------------------------------`);
+      
+      // Verificar se há transcrição
+      if (!text || text.trim().length === 0) {
+        console.error('HybridAI: Texto vazio para relatório');
+        return {
+          error: 'Texto vazio',
+          message: 'Não há texto para gerar relatório',
+          report: 'É necessário ter registro da conversa para gerar um relatório.',
+          success: false
+        };
+      }
+      
+      try {
+        // Obter token de autenticação
+        const authToken = this.getAuthToken();
+        if (!authToken) {
+          this.dispatchAuthError();
+          return {
+            error: 'Não autenticado',
+            message: 'Token de autenticação não encontrado',
+            report: 'Autenticação necessária para gerar relatórios.',
+            success: false
+          };
+        }
+        
+        // Chamar o serviço de IA
+        console.log(`HybridAI: Enviando solicitação de relatório para o backend com sessionId=${sessionId} e dados de emoções`);
+        const result = await aiService.generateReport(sessionId, emotions);
+        
+        // Processar o resultado
+        if (result && (result.success || result.report)) {
+          console.log('HybridAI: Relatório remoto bem-sucedido:', result);
+          return result;
+        } else {
+          console.warn('HybridAI: Relatório remoto retornou erro:', result);
+          
+          // Fazer relatório local/offline como fallback
+          return this._generateSimulatedReport(text, sessionId);
+        }
+      } catch (apiError) {
+        console.error('HybridAI: Erro na chamada da API de relatório:', apiError);
+        console.log('HybridAI: Usando relatório offline como fallback');
+        
+        // Fazer relatório local/offline como fallback
+        return this._generateSimulatedReport(text, sessionId);
+      }
+    } catch (error) {
+      console.error('HybridAI: Erro geral ao gerar relatório:', error);
+      return {
+        error: 'Erro no relatório',
+        message: error.message,
+        report: 'Ocorreu um erro ao gerar o relatório da sessão.',
+        success: false
+      };
+    }
+  }
 }
 
 // Exportar instância única do serviço

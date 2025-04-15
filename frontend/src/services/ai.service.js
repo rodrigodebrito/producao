@@ -37,11 +37,14 @@ const aiService = {
   /**
    * Analisa uma sessão
    * @param {string} sessionId - ID da sessão
+   * @param {Object} emotions - Objeto com emoções detectadas (opcional)
    * @returns {Promise} Análise da sessão
    */
-  async analyzeSession(sessionId) {
+  async analyzeSession(sessionId, emotions = null) {
     try {
-      const response = await api.get(`/api/ai/analyze/session/${sessionId}`);
+      // Incluir emoções na solicitação se fornecidas
+      const payload = emotions ? { sessionId, emotions } : { sessionId };
+      const response = await api.post(`/api/ai/analyze/session`, payload);
       return response.data;
     } catch (error) {
       console.error('Erro ao analisar sessão:', error);
@@ -52,11 +55,14 @@ const aiService = {
   /**
    * Gera sugestões em tempo real
    * @param {string} sessionId - ID da sessão
+   * @param {Object} emotions - Objeto com emoções detectadas (opcional)
    * @returns {Promise} Sugestões para o terapeuta
    */
-  async generateSuggestions(sessionId) {
+  async generateSuggestions(sessionId, emotions = null) {
     try {
-      const response = await api.get(`/api/ai/suggestions/session/${sessionId}`);
+      // Incluir emoções na solicitação se fornecidas
+      const payload = emotions ? { sessionId, emotions } : { sessionId };
+      const response = await api.post(`/api/ai/suggestions/session`, payload);
       return response.data;
     } catch (error) {
       console.error('Erro ao gerar sugestões:', error);
@@ -67,11 +73,14 @@ const aiService = {
   /**
    * Gera relatório da sessão
    * @param {string} sessionId - ID da sessão
+   * @param {Object} emotions - Objeto com emoções detectadas (opcional)
    * @returns {Promise} Relatório da sessão
    */
-  async generateReport(sessionId) {
+  async generateReport(sessionId, emotions = null) {
     try {
-      const response = await api.get(`/api/ai/report/session/${sessionId}`);
+      // Incluir emoções na solicitação se fornecidas
+      const payload = emotions ? { sessionId, emotions } : { sessionId };
+      const response = await api.post(`/api/ai/report/session`, payload);
       return response.data;
     } catch (error) {
       console.error('Erro ao gerar relatório:', error);

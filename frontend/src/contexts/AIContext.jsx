@@ -57,6 +57,11 @@ export const AIProvider = ({ children }) => {
   };
   
   const handleEmotionDetected = (event) => {
+    console.log('===== EMOÇÃO DETECTADA =====');
+    console.log('Emoção:', event.detail.emotion);
+    console.log('Palavra:', event.detail.word);
+    console.log('Emoções acumuladas:', event.detail.accumulated);
+    console.log('===========================');
     setEmotions(event.detail.accumulated);
   };
   
@@ -85,6 +90,16 @@ export const AIProvider = ({ children }) => {
   const updateTranscript = (newTranscript) => {
     if (typeof newTranscript === 'string') {
       setTranscript(newTranscript);
+      return true;
+    }
+    return false;
+  };
+  
+  // Nova função auxiliar para atualizar diretamente o emotions
+  const updateEmotions = (newEmotions) => {
+    if (typeof newEmotions === 'object' && newEmotions !== null) {
+      console.log('[AIContext] Atualizando emoções diretamente:', newEmotions);
+      setEmotions(newEmotions);
       return true;
     }
     return false;
@@ -312,6 +327,25 @@ export const AIProvider = ({ children }) => {
       console.log(`[AIContext] Iniciando análise para sessão: ${effectiveSessionId}`);
       console.log(`[AIContext] Texto para análise (${text?.length || 0} caracteres): ${text?.substring(0, 50)}...`);
       
+      // Adicionar logs detalhados sobre as emoções
+      console.log('===== EMOÇÕES PARA ANÁLISE =====');
+      console.log(JSON.stringify(emotions, null, 2));
+      
+      // Log das emoções mais intensas para uma visualização rápida
+      const topEmotions = Object.entries(emotions || {})
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, 3);
+      
+      if (topEmotions.length > 0) {
+        console.log('Top 3 emoções detectadas:');
+        topEmotions.forEach(([emotion, value]) => {
+          console.log(`- ${emotion}: ${value}`);
+        });
+      } else {
+        console.log('Nenhuma emoção detectada ainda');
+      }
+      console.log('================================');
+      
       // NOVO: Se o texto estiver vazio, buscar as transcrições do backend
       let effectiveText = text;
       if (!effectiveText || effectiveText.trim().length === 0) {
@@ -341,9 +375,10 @@ export const AIProvider = ({ children }) => {
       
       let result;
       try {
-        // Usar o sessionId efetivo para a análise
+        // Usar o sessionId efetivo para a análise e incluir as emoções detectadas
         console.log(`[AIContext] Enviando para análise: sessão=${effectiveSessionId}, texto=${effectiveText.length} caracteres`);
-        result = await hybridAIService.analyzeText(effectiveText, effectiveSessionId);
+        console.log('[AIContext] Enviando emoções para análise:', JSON.stringify(emotions));
+        result = await hybridAIService.analyzeText(effectiveText, effectiveSessionId, emotions);
         console.log('[AIContext] Resultado da análise:', result);
       } catch (error) {
         console.error('[AIContext] Erro no serviço de análise:', error);
@@ -431,6 +466,25 @@ export const AIProvider = ({ children }) => {
       console.log(`[AIContext] Iniciando sugestões para sessão: ${effectiveSessionId}`);
       console.log(`[AIContext] Texto para sugestões (${text?.length || 0} caracteres): ${text?.substring(0, 50)}...`);
       
+      // Adicionar logs detalhados sobre as emoções
+      console.log('===== EMOÇÕES PARA SUGESTÕES =====');
+      console.log(JSON.stringify(emotions, null, 2));
+      
+      // Log das emoções mais intensas para uma visualização rápida
+      const topEmotions = Object.entries(emotions || {})
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, 3);
+      
+      if (topEmotions.length > 0) {
+        console.log('Top 3 emoções detectadas:');
+        topEmotions.forEach(([emotion, value]) => {
+          console.log(`- ${emotion}: ${value}`);
+        });
+      } else {
+        console.log('Nenhuma emoção detectada ainda');
+      }
+      console.log('==================================');
+      
       // NOVO: Se o texto estiver vazio, buscar as transcrições do backend
       let effectiveText = text;
       if (!effectiveText || effectiveText.trim().length === 0) {
@@ -463,9 +517,10 @@ export const AIProvider = ({ children }) => {
       
       let result;
       try {
-        // Usar o sessionId efetivo para as sugestões
+        // Usar o sessionId efetivo para as sugestões e incluir as emoções detectadas
         console.log(`[AIContext] Enviando para geração de sugestões: sessão=${effectiveSessionId}, texto=${effectiveText.length} caracteres`);
-        result = await hybridAIService.generateSuggestions(effectiveText, effectiveSessionId);
+        console.log('[AIContext] Enviando emoções para sugestões:', JSON.stringify(emotions));
+        result = await hybridAIService.generateSuggestions(effectiveText, effectiveSessionId, emotions);
         console.log('[AIContext] Resultado das sugestões:', result);
       } catch (error) {
         console.error('[AIContext] Erro no serviço de sugestões:', error);
@@ -553,6 +608,25 @@ export const AIProvider = ({ children }) => {
       console.log(`[AIContext] Iniciando relatório para sessão: ${effectiveSessionId}`);
       console.log(`[AIContext] Texto para relatório (${text?.length || 0} caracteres): ${text?.substring(0, 50)}...`);
       
+      // Adicionar logs detalhados sobre as emoções
+      console.log('===== EMOÇÕES PARA RELATÓRIO =====');
+      console.log(JSON.stringify(emotions, null, 2));
+      
+      // Log das emoções mais intensas para uma visualização rápida
+      const topEmotions = Object.entries(emotions || {})
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, 3);
+      
+      if (topEmotions.length > 0) {
+        console.log('Top 3 emoções detectadas:');
+        topEmotions.forEach(([emotion, value]) => {
+          console.log(`- ${emotion}: ${value}`);
+        });
+      } else {
+        console.log('Nenhuma emoção detectada ainda');
+      }
+      console.log('==================================');
+      
       // NOVO: Se o texto estiver vazio, buscar as transcrições do backend
       let effectiveText = text;
       if (!effectiveText || effectiveText.trim().length === 0) {
@@ -583,9 +657,10 @@ export const AIProvider = ({ children }) => {
       
       let result;
       try {
-        // Usar o sessionId efetivo para o relatório
+        // Usar o sessionId efetivo para o relatório e incluir as emoções detectadas
         console.log(`[AIContext] Enviando para geração de relatório: sessão=${effectiveSessionId}, texto=${effectiveText.length} caracteres`);
-        result = await hybridAIService.generateReport(effectiveText, effectiveSessionId);
+        console.log('[AIContext] Enviando emoções para relatório:', JSON.stringify(emotions));
+        result = await hybridAIService.generateReport(effectiveText, effectiveSessionId, emotions);
         console.log('[AIContext] Resultado do relatório:', result);
       } catch (error) {
         console.error('[AIContext] Erro no serviço de relatório:', error);
@@ -796,7 +871,8 @@ export const AIProvider = ({ children }) => {
     isCompatible,
     clearTranscript,
     saveTranscript,
-    updateTranscript
+    updateTranscript,
+    updateEmotions
   };
   
   // Exportar para o window para permitir acesso fora do React
