@@ -696,4 +696,13 @@ router.post(
   aiController.analyzeEmotionInAudio
 );
 
+// Rota POST para análise de sessão incluindo emoções
+router.post('/analyze/session', authenticate, aiController.analyzeSession);
+
+// Rota POST para sugestões de sessão incluindo emoções
+router.post('/suggestions/session', authenticate, aiController.generateSuggestions);
+
+// Rota POST para relatório de sessão incluindo emoções
+router.post('/report/session', authenticate, aiController.generateReport);
+
 module.exports = router; 
