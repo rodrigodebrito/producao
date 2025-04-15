@@ -2275,11 +2275,18 @@ class WhisperTranscriptionService {
       clearInterval(this.transcriptionFetchInterval);
     }
     
-    // Definir intervalo para buscar as transcrições a cada 5 segundos
+    // MODIFICADO: Aumentar intervalo para 10 segundos (era 5 segundos)
+    // Isso reduz a quantidade de requisições ao backend
     this.transcriptionFetchInterval = setInterval(() => {
+      // NOVO: Verificar se estamos em modo suspenso
+      if (window.__WHISPER_SUSPENDED === true) {
+        console.log(`🛑 BUSCA SUSPENSA: Whisper está em modo suspenso, ignorando busca de transcrições`);
+        return;
+      }
+      
       console.log(`🔄 BUSCA: Tentando buscar transcrições de outros participantes para sessão ${this.sessionId}`);
       this._fetchOtherParticipantsTranscriptions();
-    }, 5000); // A cada 5 segundos
+    }, 10000); // MODIFICADO: A cada 10 segundos (era 5 segundos)
     
     // Buscar imediatamente
     console.log(`🔄 BUSCA INICIAL: Buscando transcrições de outros participantes para sessão ${this.sessionId}`);
@@ -2294,11 +2301,32 @@ class WhisperTranscriptionService {
    */
   async _fetchOtherParticipantsTranscriptions() {
     try {
+      // NOVO: Verificar se estamos em modo suspenso
+      if (window.__WHISPER_SUSPENDED === true) {
+        console.log(`🛑 BUSCA SUSPENSA: Whisper está em modo suspenso, ignorando busca de transcrições`);
+        return;
+      }
+      
       // Verificar se temos um ID de sessão válido
       if (!this.sessionId || this.sessionId.startsWith('temp_') || this.sessionId.startsWith('error_')) {
         console.log(`⚠️ BUSCA: SessionId inválido: ${this.sessionId}, cancelando busca`);
         return;
       }
+      
+      // NOVO: Controle adicional de frequência de busca
+      const now = Date.now();
+      const lastFetchTime = this._lastFetchTime || 0;
+      const timeSinceLastFetch = now - lastFetchTime;
+      
+      // Não buscar se a última busca foi há menos de 8 segundos
+      // (proteção adicional contra múltiplas chamadas)
+      if (timeSinceLastFetch < 8000) {
+        console.log(`⏱️ BUSCA OTIMIZADA: Ignorando busca, última busca foi há ${Math.round(timeSinceLastFetch/1000)}s (mínimo: 8s)`);
+        return;
+      }
+      
+      // Atualizar timestamp da última tentativa de busca
+      this._lastFetchTime = now;
       
       // Limpar o histórico de transcrições antigas se exceder um limite
       if (this.otherParticipantsTranscriptions.length > 100) {
@@ -2322,12 +2350,27 @@ class WhisperTranscriptionService {
       // CORRIGIDO: Garantir URL absoluta em produção
       let url = `${this.allTranscriptsEndpoint}/${this.sessionId}`;
       
+      // MODIFICADO: Usar timestamp mais preciso para evitar duplicações
       // Adicionar timestamp para buscar apenas as novas desde a última vez
       if (this.lastFetchTimestamp) {
         // Usar ? se for a primeira query param, & se não for
         url += url.includes('?') ? '&' : '?';
-        url += `since=${encodeURIComponent(this.lastFetchTimestamp)}`;
+        
+        // MODIFICADO: Adicionar milissegundos de margem para evitar perder transcrições
+        // devido a diferenças de precisão entre cliente e servidor
+        const lastFetchDate = new Date(this.lastFetchTimestamp);
+        
+        // Subtrair 2 segundos para garantir sobreposição e não perder nenhuma transcrição
+        lastFetchDate.setSeconds(lastFetchDate.getSeconds() - 2);
+        
+        // Usar o timestamp ajustado
+        url += `since=${encodeURIComponent(lastFetchDate.toISOString())}`;
       }
+      
+      // NOVO: Adicionar parâmetro para limitar as transcrições recebidas
+      // Se o backend aceitar este parâmetro vai evitar o recebimento de muitas transcrições
+      url += url.includes('?') ? '&' : '?';
+      url += 'limit=20'; // Limite de 20 transcrições por request
       
       console.log(`🌐 BUSCA: Buscando transcrições no endpoint: ${url}`);
       

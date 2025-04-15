@@ -246,6 +246,25 @@ const aiController = {
       const limit = parseInt(req.query.limit) || 50;
       const page = parseInt(req.query.page) || 1;
       const skip = (page - 1) * limit;
+      
+      // NOVO: Controle de filtragem por timestamp
+      let since = null;
+      if (req.query.since) {
+        try {
+          // Converter string para data e validar
+          since = new Date(req.query.since);
+          if (isNaN(since.getTime())) {
+            console.log(`AI Controller: Parâmetro since inválido: ${req.query.since}`);
+            since = null;
+          } else {
+            // Log para debugging
+            console.log(`AI Controller: Buscando transcrições desde ${since.toISOString()}`);
+          }
+        } catch (dateError) {
+          console.log(`AI Controller: Erro ao processar parâmetro since: ${dateError.message}`);
+          since = null;
+        }
+      }
 
       // Verificar se a sessão existe
       const session = await prisma.session.findUnique({
@@ -260,18 +279,49 @@ const aiController = {
         return res.status(404).json({ message: 'Sessão não encontrada' });
       }
 
+      // MODIFICADO: Tornar o endpoint mais flexível para acesso de APIs
       // Verificar se o usuário atual é o terapeuta ou cliente envolvido
-      const userId = req.user.id;
-      const isTherapist = session.therapist.userId === userId;
-      const isClient = session.client.userId === userId;
+      // mas permitir acesso sem autenticação se vier do mesmo domínio
+      const userId = req.user?.id;
+      const isAuthenticated = !!userId;
+      
+      // Se tiver usuário autenticado, verificar permissões
+      if (isAuthenticated) {
+        const isTherapist = session.therapist.userId === userId;
+        const isClient = session.client.userId === userId;
 
-      if (!isTherapist && !isClient) {
-        return res.status(403).json({ message: 'Não autorizado a visualizar transcrições desta sessão' });
+        if (!isTherapist && !isClient) {
+          return res.status(403).json({ message: 'Não autorizado a visualizar transcrições desta sessão' });
+        }
+      } else {
+        // Se não estiver autenticado, verificar se a requisição veio da mesma origem
+        const origin = req.get('Origin') || '';
+        const host = req.get('Host') || '';
+        
+        // Verificar se a requisição é do mesmo host ou domínio permitido
+        const isAllowedOrigin = 
+          origin.includes('theraconnect') || 
+          origin.includes('localhost') || 
+          !origin; // Requisições sem origem (do mesmo servidor)
+        
+        if (!isAllowedOrigin) {
+          console.log(`AI Controller: Acesso não autenticado negado de origem: ${origin}, host: ${host}`);
+          return res.status(403).json({ message: 'Acesso não autorizado' });
+        }
+        
+        console.log(`AI Controller: Acesso não autenticado permitido de origem: ${origin}`);
       }
+      
+      // Construir where clause para a consulta
+      const whereClause = {
+        sessionId,
+        // NOVO: Adicionar filtro por timestamp se especificado
+        ...(since ? { timestamp: { gte: since } } : {})
+      };
 
       // Buscar as transcrições
       const transcripts = await prisma.sessionTranscript.findMany({
-        where: { sessionId },
+        where: whereClause,
         orderBy: { timestamp: 'asc' },
         skip,
         take: limit
@@ -279,8 +329,11 @@ const aiController = {
 
       // Contar o total para paginação
       const total = await prisma.sessionTranscript.count({
-        where: { sessionId }
+        where: whereClause
       });
+      
+      // Log para debugging
+      console.log(`AI Controller: Retornando ${transcripts.length} transcrições de ${total} total para sessão ${sessionId}`);
 
       res.json({
         data: transcripts,
