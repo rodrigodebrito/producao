@@ -40,22 +40,22 @@ class WhisperTranscriptionService {
     this.chunkCounter = 0;
     this.transcriptionHistory = [];
     this.chunkStartTime = 0;
-    this.maxChunkDuration = 10000; // MODIFICADO: Reduzido de 15000 para 10000 (10 segundos por chunk)
-    this.minChunkDuration = 1500;  // MODIFICADO: Reduzido de 3000 para 1500 (1.5 segundos mínimo)
+    this.maxChunkDuration = 8000;   // MODIFICADO: Reduzido para 8 segundos por chunk
+    this.minChunkDuration = 1000;   // MODIFICADO: Reduzido para 1 segundo mínimo
     this.maxChunkTimer = null;
     this.transcriptionInProgress = false;
     
     // Detecção de silêncio
     this.silenceDetectionEnabled = true;
-    this.silenceThreshold = -45; // em dB
-    this.silenceDuration = 2000; // MODIFICADO: Reduzido de 3000 para 2000 (2 segundos de silêncio para processar)
+    this.silenceThreshold = -45;    // em dB
+    this.silenceDuration = 1500;    // MODIFICADO: Reduzido para 1.5 segundos de silêncio para processar
     this.silenceStart = null;
     this.silenceTimer = null;
     this.audioContext = null;
     this.audioAnalyser = null;
     
     // Controle de reinício automático
-    this.autoRestart = false;
+    this.autoRestart = true;        // MODIFICADO: Habilitado por padrão
     this.pausedForSilence = false;
     this.manualStopped = false;
     this.voiceDetectionInterval = null;
@@ -71,9 +71,11 @@ class WhisperTranscriptionService {
     this.aiContextCheckInterval = null;
     
     // NOVO: Processamento contínuo durante gravação
-    this.continuousProcessingEnabled = true; // ADICIONADO: Flag para habilitar processamento contínuo
-    this.continuousProcessingInterval = 8000; // ADICIONADO: Processar a cada 8 segundos mesmo sem silêncio
-    this.continuousProcessingTimer = null; // ADICIONADO: Timer para processamento contínuo
+    this.continuousProcessingEnabled = true;   // Habilitado
+    this.continuousProcessingInterval = 4000;  // MODIFICADO: Reduzido para 4 segundos
+    this.continuousProcessingTimer = null;
+    this.lastProcessedTime = 0;                // ADICIONADO: Para controlar quando foi o último processamento
+    this.continuousProcessingStarted = false;  // ADICIONADO: Flag para controlar se o processamento contínuo já começou
     
     // Tentar inicializar automaticamente na criação
     this.initializeService();
@@ -491,6 +493,8 @@ class WhisperTranscriptionService {
       
       // NOVO: Atualizar timestamp de atividade
       this.lastActivityTime = Date.now();
+      this.lastProcessedTime = Date.now();  // ADICIONADO: Inicializar o timestamp de último processamento
+      this.continuousProcessingStarted = false; // ADICIONADO: Resetar flag de processamento contínuo
       
       // Garantir que temos o sessionId mais atualizado
       const latestSessionId = this.extractSessionId();
@@ -576,6 +580,14 @@ class WhisperTranscriptionService {
           const sizeKB = Math.round(event.data.size/1024);
           console.log(`Chunk #${chunkNum} recebido: ${sizeKB}KB, tipo: ${event.data.type}`);
           this.audioChunks.push(event.data);
+          
+          // ADICIONADO: Iniciar o processamento contínuo após acumular alguns dados
+          // Esta é uma melhoria para garantir que o processamento contínuo sempre começa
+          if (!this.continuousProcessingStarted && this.audioChunks.length >= 3) {
+            this.continuousProcessingStarted = true;
+            console.log("Iniciando processamento contínuo após acumular dados iniciais");
+            this._setupContinuousProcessingTimer();
+          }
         }
       };
       
@@ -778,10 +790,19 @@ class WhisperTranscriptionService {
       clearTimeout(this.continuousProcessingTimer);
     }
     
+    const timeSinceLastProcess = Date.now() - this.lastProcessedTime;
+    // Se o último processamento foi recente, aguardar um pouco mais
+    const adjustedInterval = timeSinceLastProcess < 2000 
+      ? this.continuousProcessingInterval + 2000 
+      : this.continuousProcessingInterval;
+    
+    console.log(`Configurando próximo processamento contínuo para daqui a ${adjustedInterval/1000} segundos`);
+    
     this.continuousProcessingTimer = setTimeout(() => {
       if (!this.isRecording) return;
       
       console.log('Timer de processamento contínuo acionado');
+      this.lastProcessedTime = Date.now(); // ADICIONADO: Atualizar timestamp de último processamento
       
       // Verificar se temos dados suficientes
       if (this.audioChunks && this.audioChunks.length > 0) {
@@ -826,7 +847,7 @@ class WhisperTranscriptionService {
         console.log('Processamento contínuo: sem chunks de áudio disponíveis');
         this._setupContinuousProcessingTimer();
       }
-    }, this.continuousProcessingInterval);
+    }, adjustedInterval); // MODIFICADO: Usa o intervalo ajustado
   }
 
   /**
