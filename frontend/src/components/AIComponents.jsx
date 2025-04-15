@@ -85,6 +85,13 @@ export const MicButton = ({ transcriptionMode = 'auto' }) => {
     if (window.whisperService) {
       try {
         console.log('🛑 Parando serviço Whisper com flag de parada manual');
+        
+        // NOVO: Desativar explicitamente o reinício automático
+        if (typeof window.whisperService.setAutoRestart === 'function') {
+          window.whisperService.setAutoRestart(false);
+          console.log('🛑 Auto-restart do Whisper desativado explicitamente');
+        }
+        
         // Passar true como segundo parâmetro para indicar parada manual
         window.whisperService.stopRecording(true, true);
       } catch (e) {
@@ -184,10 +191,29 @@ export const MicButton = ({ transcriptionMode = 'auto' }) => {
     try {
       if (isRecording) {
         // Parar gravação
-        console.log('🛑 Parando gravação de voz');
-        stopAllRecordings();
+        console.log('🛑 Parando gravação de voz - AÇÃO DO USUÁRIO');
+        
+        // Atualizar a UI imediatamente para feedback visual rápido
         setIsRecording(false);
         toast.info('Reconhecimento de voz parado');
+        
+        // Parar todos os serviços de gravação com flag de parada manual
+        stopAllRecordings();
+        
+        // Evitar reinícios automáticos adicionando um ouvinte de evento
+        const checkRestartAttempt = (event) => {
+          console.log('Detectada tentativa de reinício - bloqueando');
+          if (window.whisperService && typeof window.whisperService.setAutoRestart === 'function') {
+            window.whisperService.setAutoRestart(false);
+          }
+          // Remover o listener após um tempo
+          setTimeout(() => {
+            document.removeEventListener('whisper:recordingStarted', checkRestartAttempt);
+          }, 5000);
+        };
+        
+        // Adicionar ouvinte temporário
+        document.addEventListener('whisper:recordingStarted', checkRestartAttempt);
       } else {
         // Iniciar gravação
         startRecordingWithMode();

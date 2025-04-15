@@ -930,8 +930,17 @@ class WhisperTranscriptionService {
   async stopRecording(processCurrentChunk = true, manualStop = false) {
     console.log('=== PARANDO GRAVAÇÃO WAV ===');
     
-    // Marcar se a parada foi manual
-    this.manualStopped = manualStop;
+    // Adicionar log explícito sobre o tipo de parada
+    console.log(`Tipo de parada: ${manualStop ? 'MANUAL (por usuário)' : 'Automática (por sistema)'}`);
+    
+    // Marcar se a parada foi manual (de forma mais explícita)
+    this.manualStopped = manualStop === true;
+    
+    // NOVO: Se for parada manual, desativar explicitamente o autoRestart
+    if (manualStop) {
+      console.log('🛑 Desativando autoRestart devido a parada manual');
+      this.autoRestart = false;
+    }
     
     // Se for parada manual, desativar completamente o detector de voz
     if (manualStop) {
@@ -1487,6 +1496,14 @@ class WhisperTranscriptionService {
       
       // Usar setTimeout para garantir que haja um atraso antes do reinício
       setTimeout(async () => {
+        // VERIFICAR se foi parado manualmente - NÃO reiniciar se foi
+        if (this.manualStopped) {
+          console.log("🛑 NÃO reiniciando gravação pois foi parada manualmente pelo usuário");
+          // Emitir um evento adicional para garantir que a UI sincronize
+          this._dispatchEvent('manualStopConfirmed', { message: 'Gravação permanece parada conforme solicitado pelo usuário' });
+          return; // Sair do setTimeout sem reiniciar
+        }
+        
         console.log("Reiniciando gravação automaticamente...");
         try {
           // Forçar a flag autoRestart para true
