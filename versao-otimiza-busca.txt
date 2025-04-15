@@ -1,0 +1,15 @@
+# Versão com Otimização de Busca e Processamento
+
+Commit: 7800fa1
+Data: 2024-10-29
+
+Esta versão inclui otimizações importantes no sistema de busca e processamento de transcrições:
+
+1. Melhoria na performance da busca de transcrições
+2. Redução de chamadas desnecessárias ao backend
+3. Otimização no processamento de respostas
+4. Filtros mais eficientes para evitar duplicação de dados
+5. Melhor controle sobre o fluxo de processamento
+
+As otimizações implementadas reduzem significativamente o consumo de recursos do sistema,
+tornando a aplicação mais responsiva e estável durante sessões prolongadas. 
