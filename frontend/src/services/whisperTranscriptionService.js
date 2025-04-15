@@ -24,8 +24,15 @@ class WhisperTranscriptionService {
     this.transcriptEndpoint = 'https://theraconnect-prd.onrender.com/api/ai/transcript'; // Manter URL absoluta conforme solicitado
     this.allTranscriptsEndpoint = this.isProd ? `${backendBaseUrl}/api/ai/transcriptions/session` : '/api/ai/transcriptions/session';
     
-    // NOVO: Endpoint para análise de tom/emoção
-    this.emotionAnalysisEndpoint = this.isProd ? `${backendBaseUrl}/api/ai/emotion/analyze` : '/api/ai/emotion/analyze';
+    // CORRIGIDO: Endpoint para análise de tom/emoção com URL absoluta em ambiente de produção
+    this.emotionAnalysisEndpoint = this.isProd ? 
+      `${backendBaseUrl}/api/ai/emotion/analyze` : 
+      '/api/ai/emotion/analyze';
+    
+    // ADICIONADO: Endpoint alternativo para análise de texto
+    this.analysisEndpoint = this.isProd ? 
+      `${backendBaseUrl}/api/ai/analyze/text` : 
+      '/api/ai/analyze/text';
     
     // FIXADO: Flag para controlar se o serviço já foi inicializado
     this.serviceInitialized = false;
@@ -35,6 +42,7 @@ class WhisperTranscriptionService {
     
     console.log(`Whisper: Serviço criado em ambiente ${this.isProd ? 'de produção' : 'de desenvolvimento'}`);
     console.log(`Whisper: Endpoint de transcrição: ${this.apiEndpoint}`);
+    console.log(`Whisper: Endpoint de análise de emoções: ${this.emotionAnalysisEndpoint}`);
     
     // Configuração de transcrição em chunks
     this.chunkCounter = 0;
@@ -1864,10 +1872,16 @@ class WhisperTranscriptionService {
    */
   async _processTranscription(data, audioFile) {
     try {
-      // Extração do texto (compatível com várias estruturas de resposta)
-      const text = data.text || data.transcript || data.content || data.result;
-      if (!text) throw new Error('Formato de transcrição inválido');
-
+      // Extrair texto da resposta ou usar mensagem padrão
+      const text = data.text || data.transcript || 'Nenhum texto transcrito';
+      
+      // Verificar se temos um texto válido para processar
+      if (!text || text.trim().length === 0) {
+        console.warn('Texto transcrito vazio, não processando');
+        return null;
+      }
+      
+      // Construir objeto de transcrição
       const transcript = {
         text: text,
         id: generateId(),
@@ -1877,14 +1891,30 @@ class WhisperTranscriptionService {
       };
 
       // Analisar sentimentos e emoções no texto
+      let emotions = null;
       try {
-        const emotions = await this._analyzeEmotions(text);
-        if (emotions) {
-          transcript.emotions = emotions;
+        // Verificar se análise de emoções está habilitada
+        if (this.emotionAnalysisEnabled) {
+          emotions = await this._analyzeEmotions(text);
+          if (emotions) {
+            transcript.emotions = emotions;
+          }
+        } else {
+          console.log('Análise de emoções desabilitada, pulando esta etapa');
         }
       } catch (emotionError) {
         console.warn('Erro ao analisar emoções:', emotionError);
-        // Não falhar completamente se apenas a análise de emoções falhar
+        // Fornecer valores padrão para não interromper o fluxo
+        transcript.emotions = {
+          dominant: 'neutral',
+          sentiment: 'neutral',
+          scores: {
+            neutral: 1.0,
+            positive: 0,
+            negative: 0
+          },
+          error: emotionError.message
+        };
       }
 
       // Disparar evento de sucesso
@@ -1911,18 +1941,50 @@ class WhisperTranscriptionService {
     }
 
     try {
-      // Verificar se temos um serviço de análise configurado
-      const apiUrl = this.analysisEndpoint || 'https://api.emocoes.ai/analyze';
+      // Usar o endpoint de análise de emoções do backend ou retornar valores padrão
+      // Removido endpoint api.emocoes.ai que não está mais disponível
+      if (!this.emotionAnalysisEndpoint) {
+        console.log('Endpoint de análise de emoções não configurado, retornando valores padrão');
+        return {
+          dominant: 'neutral',
+          sentiment: 'neutral',
+          scores: {
+            neutral: 1.0,
+            positive: 0,
+            negative: 0
+          }
+        };
+      }
+      
+      // Obter token de autenticação
+      const authToken = localStorage.getItem('authToken') || 
+                      sessionStorage.getItem('authToken') || 
+                      localStorage.getItem('token') || 
+                      sessionStorage.getItem('token');
+      
+      if (!authToken) {
+        console.warn('Token de autenticação não encontrado para análise de emoções');
+        return {
+          dominant: 'neutral',
+          sentiment: 'neutral',
+          scores: {
+            neutral: 1.0,
+            positive: 0,
+            negative: 0
+          }
+        };
+      }
       
       // Limitar o texto para evitar problemas com APIs
       const limitedText = text.substring(0, 500);
       
-      // Fazer a requisição para a API de análise de emoções
-      const response = await fetch(apiUrl, {
+      // Fazer a requisição para a API de análise de emoções do backend
+      const response = await fetch(this.emotionAnalysisEndpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Accept': 'application/json'
+          'Accept': 'application/json',
+          'Authorization': `Bearer ${authToken}`
         },
         body: JSON.stringify({ text: limitedText }),
       });
@@ -2458,6 +2520,20 @@ class WhisperTranscriptionService {
       console.error('Erro ao salvar transcrição no sessionStorage:', error);
       return false;
     }
+  }
+
+  /**
+   * Define se análise de emoções está habilitada
+   * @param {boolean} enable - Habilitar ou desabilitar análise
+   */
+  setEmotionAnalysis(enable) {
+    this.emotionAnalysisEnabled = !!enable;
+    console.log(`Análise de emoções ${this.emotionAnalysisEnabled ? 'habilitada' : 'desabilitada'}`);
+    this._dispatchEvent('statusChange', { 
+      status: 'config', 
+      emotionAnalysis: this.emotionAnalysisEnabled,
+      message: `Análise de emoções ${this.emotionAnalysisEnabled ? 'habilitada' : 'desabilitada'}`
+    });
   }
 }
 
