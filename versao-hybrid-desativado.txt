@@ -1,0 +1,5 @@
+Versão com HybridAI Desativado
+Commit: 06bcfc6
+Data: 2024-10-29
+
+Esta versão desativa a inicialização do HybridAI, o que pode resolver problemas de reinício automático indesejado e outros conflitos entre serviços de transcrição. 
