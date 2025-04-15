@@ -380,50 +380,72 @@ export const AIProvider = ({ children }) => {
         return mockResult;
       }
       
-      // ALTERADO: Verificar se HybridAI está desativado
+      // ALTERADO: Usar diretamente a API do backend
       let result;
       
-      // Verificar flag global de desativação
-      if (window.__HYBRID_AI_DISABLED === true || window.__HYBRID_AI_FORCE_DISABLED === true) {
-        console.log('[AIContext] HybridAI está desativado, fornecendo análise simulada');
+      try {
+        // Obter token de autenticação
+        const authToken = localStorage.getItem('authToken') || 
+                        sessionStorage.getItem('authToken') || 
+                        localStorage.getItem('token') || 
+                        sessionStorage.getItem('token');
         
-        // Criar resposta mockada para evitar erros
+        if (!authToken) {
+          console.warn('[AIContext] Token de autenticação não encontrado');
+          throw new Error('Token de autenticação não encontrado');
+        }
+        
+        console.log(`[AIContext] Chamando API do backend para análise da sessão: ${effectiveSessionId}`);
+        
+        // Chamada direta à API do backend
+        const apiUrl = 'https://theraconnect-prd.onrender.com/api/ai/analyze';
+        const response = await fetch(apiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+          },
+          body: JSON.stringify({
+            sessionId: effectiveSessionId,
+            content: effectiveText,
+            emotions: emotions || {}
+          })
+        });
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error(`[AIContext] Erro na API de análise (${response.status}): ${errorText}`);
+          throw new Error(`Erro na API de análise: ${response.status} ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        console.log('[AIContext] Resposta da API de análise:', data);
+        
+        // Formatar o resultado da API
         result = {
           type: 'analysis',
           success: true,
-          analysis: 'A análise de IA está desativada nesta versão do aplicativo. Esta é uma resposta simulada.',
-          content: 'Para obter análises completas, você pode usar o serviço de transcrição para registrar a sessão e depois analisá-la manualmente.'
+          analysis: data.analysis || data.content || (data.data && data.data.analysis) || 'Análise da sessão concluída',
+          content: data.detail || 'Análise baseada nas transcrições da Whisper',
+          data: data.data || {}
         };
-      } else {
-        try {
-          // Usar o sessionId efetivo para a análise e incluir as emoções detectadas
-          console.log(`[AIContext] Enviando para análise: sessão=${effectiveSessionId}, texto=${effectiveText.length} caracteres`);
-          console.log('[AIContext] Enviando emoções para análise:', JSON.stringify(emotions));
-          
-          // Verificar se hybridAIService existe antes de tentar usar
-          if (!window.hybridAIService) {
-            throw new Error('HybridAI service não está disponível');
-          }
-          
-          result = await window.hybridAIService.analyzeText(effectiveText, effectiveSessionId, emotions);
-          console.log('[AIContext] Resultado da análise:', result);
-        } catch (error) {
-          console.error('[AIContext] Erro no serviço de análise:', error);
-          
-          // Verificar se é um erro de API da OpenAI
-          const isOpenAIError = error.message?.includes('OpenAI') || 
-                             error.message?.includes('API key') || 
-                             (error.error && error.error.includes('API key'));
-          
-          // Criar um resultado de erro mais amigável e específico
-          result = {
-            type: 'analysis',
-            error: 'Serviço de IA não disponível',
-            message: error.message,
-            analysis: 'A análise de IA está temporariamente indisponível.',
-            content: 'A transcrição continua funcionando normalmente e todas as informações estão sendo salvas.'
-          };
-        }
+        
+      } catch (error) {
+        console.error('[AIContext] Erro ao chamar API de análise:', error);
+        
+        // Verificar se é um erro de API da OpenAI
+        const isOpenAIError = error.message?.includes('OpenAI') || 
+                           error.message?.includes('API key') || 
+                           (error.error && error.error.includes('API key'));
+        
+        // Criar um resultado de erro mais amigável e específico
+        result = {
+          type: 'analysis',
+          error: isOpenAIError ? 'Serviço de IA temporariamente indisponível' : 'Falha no serviço de análise',
+          message: error.message,
+          analysis: 'Não foi possível analisar a sessão atual devido a um erro técnico.',
+          content: 'A transcrição continua funcionando normalmente e todas as informações estão sendo salvas.'
+        };
       }
       
       // Garantir que o resultado possui um formato válido
@@ -539,55 +561,91 @@ export const AIProvider = ({ children }) => {
         return mockResult;
       }
       
-      // ALTERADO: Verificar se hybridAIService está disponível, se não, usar respostas mockadas
+      // ALTERADO: Usar diretamente a API do backend
       let result;
       
-      // Verificar flag global de desativação do HybridAI
-      if (window.__HYBRID_AI_DISABLED === true || window.__HYBRID_AI_FORCE_DISABLED === true) {
-        console.log('[AIContext] HybridAI está desativado, fornecendo sugestões simuladas');
+      try {
+        // Obter token de autenticação
+        const authToken = localStorage.getItem('authToken') || 
+                         sessionStorage.getItem('authToken') || 
+                         localStorage.getItem('token') || 
+                         sessionStorage.getItem('token');
         
-        // Criar resposta mockada para evitar erros
+        if (!authToken) {
+          console.warn('[AIContext] Token de autenticação não encontrado');
+          throw new Error('Token de autenticação não encontrado');
+        }
+        
+        console.log(`[AIContext] Chamando API do backend para sugestões da sessão: ${effectiveSessionId}`);
+        
+        // Chamada direta à API do backend
+        const apiUrl = 'https://theraconnect-prd.onrender.com/api/ai/suggest';
+        const response = await fetch(apiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+          },
+          body: JSON.stringify({
+            sessionId: effectiveSessionId,
+            content: effectiveText,
+            emotions: emotions || {}
+          })
+        });
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error(`[AIContext] Erro na API de sugestões (${response.status}): ${errorText}`);
+          throw new Error(`Erro na API de sugestões: ${response.status} ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        console.log('[AIContext] Resposta da API de sugestões:', data);
+        
+        // Extrair as sugestões da resposta
+        let suggestions = [];
+        if (data.suggestions && Array.isArray(data.suggestions)) {
+          suggestions = data.suggestions;
+        } else if (data.data && data.data.suggestions && Array.isArray(data.data.suggestions)) {
+          suggestions = data.data.suggestions;
+        } else if (typeof data.suggestions === 'string') {
+          // Se for uma string única, dividir por quebras de linha ou pontos
+          suggestions = data.suggestions.split(/\n|\.\s+/).filter(s => s.trim().length > 0);
+        } else if (data.content && typeof data.content === 'string') {
+          // Tentar extrair de content
+          suggestions = data.content.split(/\n|\.\s+/).filter(s => s.trim().length > 0);
+        } else {
+          // Se não encontrar nenhum formato válido
+          suggestions = [
+            'Considere fazer perguntas abertas ao paciente.',
+            'Mantenha um tom empático e acolhedor.',
+            'Observe padrões de comunicação e sentimentos expressos.'
+          ];
+        }
+        
+        // Formatar o resultado da API
         result = {
           type: 'suggestions',
           success: true,
-          suggestions: [
-            'Explore mais sobre os sentimentos expressos.',
-            'Considere fazer perguntas abertas para estimular a reflexão.',
-            'Observe os padrões de comunicação não-verbal.',
-            'Verifique a compreensão com resumos periódicos da conversa.',
-            'Valide os sentimentos expressos para fortalecer o vínculo terapêutico.'
-          ],
-          content: 'Sugestões geradas automaticamente (HybridAI desativado)'
+          suggestions: suggestions,
+          content: data.detail || 'Sugestões baseadas nas transcrições da Whisper'
         };
-      } else {
-        try {
-          // Usar o sessionId efetivo para as sugestões e incluir as emoções detectadas
-          console.log(`[AIContext] Enviando para geração de sugestões: sessão=${effectiveSessionId}, texto=${effectiveText.length} caracteres`);
-          console.log('[AIContext] Enviando emoções para sugestões:', JSON.stringify(emotions));
-          
-          // Verificar se hybridAIService existe antes de tentar usar
-          if (!window.hybridAIService) {
-            throw new Error('HybridAI service não está disponível');
-          }
-          
-          result = await window.hybridAIService.generateSuggestions(effectiveText, effectiveSessionId, emotions);
-          console.log('[AIContext] Resultado das sugestões:', result);
-        } catch (error) {
-          console.error('[AIContext] Erro no serviço de sugestões:', error);
-          result = {
-            type: 'suggestions',
-            error: 'Serviço de IA não disponível',
-            message: error.message,
-            suggestions: [
-              'Considere fazer perguntas abertas ao paciente.',
-              'Mantenha um tom empático e acolhedor.',
-              'Observe padrões de comunicação e sentimentos expressos.',
-              'Faça resumos periódicos para verificar o entendimento mútuo.',
-              'Valorize os pequenos insights e progressos demonstrados.'
-            ],
-            content: 'Sugestões genéricas (o serviço de IA está indisponível no momento).'
-          };
-        }
+        
+      } catch (error) {
+        console.error('[AIContext] Erro ao chamar API de sugestões:', error);
+        result = {
+          type: 'suggestions',
+          error: 'Falha no serviço de sugestões',
+          message: error.message,
+          suggestions: [
+            'Considere fazer perguntas abertas ao paciente.',
+            'Mantenha um tom empático e acolhedor.',
+            'Observe padrões de comunicação e sentimentos expressos.',
+            'Faça resumos periódicos para verificar o entendimento mútuo.',
+            'Valorize os pequenos insights e progressos demonstrados.'
+          ],
+          content: 'Sugestões genéricas (o serviço de IA está indisponível no momento).'
+        };
       }
       
       // Garantir que o resultado possui um formato válido
@@ -708,46 +766,65 @@ export const AIProvider = ({ children }) => {
         return mockResult;
       }
       
-      // ALTERADO: Verificar se HybridAI está desativado
+      // ALTERADO: Usar diretamente a API do backend
       let result;
       
-      // Verificar flag global de desativação
-      if (window.__HYBRID_AI_DISABLED === true || window.__HYBRID_AI_FORCE_DISABLED === true) {
-        console.log('[AIContext] HybridAI está desativado, fornecendo relatório simulado');
+      try {
+        // Obter token de autenticação
+        const authToken = localStorage.getItem('authToken') || 
+                         sessionStorage.getItem('authToken') || 
+                         localStorage.getItem('token') || 
+                         sessionStorage.getItem('token');
         
-        // Criar resposta mockada para evitar erros
+        if (!authToken) {
+          console.warn('[AIContext] Token de autenticação não encontrado');
+          throw new Error('Token de autenticação não encontrado');
+        }
+        
+        console.log(`[AIContext] Chamando API do backend para relatório da sessão: ${effectiveSessionId}`);
+        
+        // Chamada direta à API do backend
+        const apiUrl = 'https://theraconnect-prd.onrender.com/api/ai/report';
+        const response = await fetch(apiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+          },
+          body: JSON.stringify({
+            sessionId: effectiveSessionId,
+            content: effectiveText,
+            emotions: emotions || {}
+          })
+        });
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error(`[AIContext] Erro na API de relatório (${response.status}): ${errorText}`);
+          throw new Error(`Erro na API de relatório: ${response.status} ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        console.log('[AIContext] Resposta da API de relatório:', data);
+        
+        // Formatar o resultado da API
         result = {
           type: 'report',
           success: true,
-          report: 'Função de geração automática de relatórios desativada nesta versão.\n\nRelatório simplificado baseado nas transcrições disponíveis:\n\n' +
-                 effectiveText.substring(0, 150) + '...\n\n' +
-                 'A sessão contém aproximadamente ' + effectiveText.length + ' caracteres de texto transcrito.',
-          content: 'O serviço de IA está desativado. Este é um relatório básico baseado nos dados disponíveis.'
+          report: data.report || data.content || (data.data && data.data.report) || 'Relatório gerado com sucesso.',
+          content: data.detail || 'Relatório baseado nas transcrições da Whisper',
+          data: data.data || {}
         };
-      } else {
-        try {
-          // Usar o sessionId efetivo para o relatório e incluir as emoções detectadas
-          console.log(`[AIContext] Enviando para geração de relatório: sessão=${effectiveSessionId}, texto=${effectiveText.length} caracteres`);
-          console.log('[AIContext] Enviando emoções para relatório:', JSON.stringify(emotions));
-          
-          // Verificar se hybridAIService existe antes de tentar usar
-          if (!window.hybridAIService) {
-            throw new Error('HybridAI service não está disponível');
-          }
-          
-          result = await window.hybridAIService.generateReport(effectiveText, effectiveSessionId, emotions);
-          console.log('[AIContext] Resultado do relatório:', result);
-        } catch (error) {
-          console.error('[AIContext] Erro no serviço de relatório:', error);
-          result = {
-            type: 'report',
-            error: 'Serviço de IA não disponível',
-            message: error.message,
-            report: 'O serviço de geração automática de relatórios está temporariamente indisponível.\n\n' +
-                   'A transcrição está sendo salva normalmente e pode ser acessada posteriormente.',
-            content: 'Todas as informações da sessão continuam sendo registradas.'
-          };
-        }
+        
+      } catch (error) {
+        console.error('[AIContext] Erro ao chamar API de relatório:', error);
+        result = {
+          type: 'report',
+          error: 'Falha no serviço de relatório',
+          message: error.message,
+          report: 'Não foi possível gerar o relatório automático devido a um erro técnico.',
+          content: 'Você pode acessar as transcrições manualmente para criar seu relatório.'
+        };
       }
       
       // Garantir que o resultado possui um formato válido
