@@ -515,134 +515,174 @@ class WhisperTranscriptionService {
   }
 
   /**
-   * Iniciar a gravação de áudio e configurar detecção de silêncio
-   * @returns {Promise<boolean>} - Sucesso da inicialização da gravação
+   * Inicia a gravação de áudio
+   * @returns {Promise<boolean>} - Verdadeiro se a gravação foi iniciada com sucesso
    */
   async startRecording() {
     try {
-      // FIXADO: Verificar se o serviço foi inicializado, se não, inicializá-lo
+      if (this.isRecording) {
+        console.warn('Tentando iniciar gravação, mas já está gravando. Ignorando.');
+        return true;
+      }
+      
+      // Verificar mudanças de estado, para debug
+      console.log('=== INICIANDO GRAVAÇÃO WAV ===');
+      console.log(`Estado atual: isRecording=${this.isRecording}, autoRestart=${this.autoRestart}, pausedForSilence=${this.pausedForSilence}`);
+      
+      // Força inicialização do serviço se ainda não estiver pronto
       if (!this.serviceInitialized) {
-        console.log('Whisper: Serviço não inicializado, inicializando agora...');
-        this.initializeService();
+        await this.initialize();
       }
       
-      console.log('=== INICIANDO NOVA GRAVAÇÃO WAV ===');
-      
-      // NOVO: Atualizar timestamp de atividade
-      this.lastActivityTime = Date.now();
-      
-      // Garantir que temos o sessionId mais atualizado
-      const latestSessionId = this.extractSessionId();
-      if (latestSessionId !== this.sessionId) {
-        this.updateSessionId(latestSessionId);
-      }
-      
-      // ESTRATÉGIA ANTI-CORRUPÇÃO: Forçar liberação máxima entre gravações
-      
-      // 1. Forçar parada de qualquer gravação existente
-      if (this.isRecording || this.mediaRecorder) {
-        console.log('Gravação anterior detectada, parando completamente...');
-        await this.stopRecording(false);
-        
-        // Aguardar liberação de recursos pelo SO
-        console.log('Aguardando 800ms para garantir liberação de recursos...');
-        await new Promise(resolve => setTimeout(resolve, 800));
-      }
-
-      // 2. Liberação COMPLETA de todos os recursos
-      await this._releaseAllAudioResources();
-      
-      // 3. Pausa extra para garantir que o sistema operacional libere handles de arquivos
-      console.log('Pausa adicional para garantir liberação total...');
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // 4. Reiniciar completamente o estado
-      this.audioChunks = [];
-      this.chunkCounter = 0;
+      // IMPORTANTE: Preparar um estado limpo para esta nova gravação
       this.isRecording = true;
+      this.manualStopped = false;
+      this.autoRestart = true;
+      this.pausedForSilence = false;
+      
+      // GARANTIR que os chunks estão vazios quando iniciar nova gravação
+      if (this.audioChunks && this.audioChunks.length > 0) {
+        console.log(`Limpando ${this.audioChunks.length} chunks residuais antes de iniciar nova gravação`);
+        this.audioChunks = [];
+      }
+      
+      // Inicializar ou reiniciar o chunkStartTime
       this.chunkStartTime = Date.now();
       
-      // 5. Verificar sessionId válido
-      if (!this.sessionId || this.sessionId.startsWith('temp_') || this.sessionId.startsWith('error_')) {
-        const newId = this.extractSessionId();
-        if (newId && !newId.startsWith('temp_') && !newId.startsWith('error_')) {
-          this.updateSessionId(newId);
-        }
-        console.log(`Usando sessionId: ${this.sessionId}`);
-      }
-      
-      // 6. Solicitar permissão do microfone local
-      console.log('Solicitando permissão de microfone local...');
-      this.audioStream = await navigator.mediaDevices.getUserMedia({ 
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        }
-      });
-      
-      console.log('Permissão de microfone concedida, criando novo MediaRecorder');
-      
-      // 7. Priorizar WAV como formato para compatibilidade com Whisper
-      let mimeType = null;
-      
-      // Verificar suporte a WAV (prioridade para Whisper API)
-      if (MediaRecorder.isTypeSupported('audio/wav')) {
-        mimeType = 'audio/wav';
-      } else if (MediaRecorder.isTypeSupported('audio/mp3')) {
-        mimeType = 'audio/mp3'; 
-      } else if (MediaRecorder.isTypeSupported('audio/mpeg')) {
-        mimeType = 'audio/mpeg';
-      } else if (MediaRecorder.isTypeSupported('audio/webm')) {
-        mimeType = 'audio/webm';
-      }
-      
-      console.log(`Formato de gravação selecionado: ${mimeType || 'padrão do navegador'}`);
-      
-      // 8. Configurar opções avançadas para MediaRecorder
-      const options = mimeType ? {
-        mimeType,
-        audioBitsPerSecond: 128000 // Qualidade mais baixa para evitar problemas
-      } : undefined;
-      
-      // 9. Criar nova instância do MediaRecorder
-      this.mediaRecorder = new MediaRecorder(this.audioStream, options);
-      
-      // 10. Configurar evento para chunks pequenos e frequentes
-      this.mediaRecorder.ondataavailable = (event) => {
-        if (event.data && event.data.size > 0) {
-          const chunkNum = this.audioChunks.length;
-          const sizeKB = Math.round(event.data.size/1024);
-          console.log(`Chunk #${chunkNum} recebido: ${sizeKB}KB, tipo: ${event.data.type}`);
-          this.audioChunks.push(event.data);
-        }
-      };
-      
-      // 11. Capturar erros do MediaRecorder
-      this.mediaRecorder.onerror = (event) => {
-        console.error('Erro no MediaRecorder:', event);
-        this._dispatchEvent('recordingError', { error: 'Erro na gravação de áudio' });
-      };
-      
-      // 12. Iniciar gravação com chunks MUITO pequenos para melhor controle
-      this.mediaRecorder.start(300); // 300ms por chunk para maior controle
-      console.log('Gravação WAV iniciada com nova instância de MediaRecorder');
-      
-      // 13. Configurar detecção de silêncio
-      if (this.silenceDetectionEnabled) {
-        this._setupSilenceDetection(this.audioStream);
-      }
-      
-      // 14. Configurar timer para chunk máximo
+      // Configurar temporizador de tamanho máximo
       this._setupMaxChunkTimer();
       
-      // 15. Disparar evento de início
+      console.log(`Acessando microfone... (tente #${this.microphoneAccessAttempts + 1})`);
+      
+      if (!this.stream) {
+        try {
+          // NOVO: usar um timeout para evitar travamentos na inicialização do microfone
+          const streamPromise = new Promise(async (resolve, reject) => {
+            try {
+              // Incrementar contador de tentativas
+              this.microphoneAccessAttempts++;
+              
+              // Usar um timeout para evitar travamentos
+              const timeoutId = setTimeout(() => {
+                reject(new Error('Timeout ao acessar microfone'));
+              }, 15000); // 15 segundos de timeout
+              
+              // Tentar obter acesso ao microfone com parâmetros atualizados
+              const stream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                  echoCancellation: true,
+                  noiseSuppression: true,
+                  autoGainControl: true,
+                  sampleRate: 44100, // Taxa de amostragem padrão para melhor compatibilidade
+                  channelCount: 1 // Mono é suficiente para transcrição
+                }
+              });
+              
+              // Limpar o timeout se conseguimos o stream
+              clearTimeout(timeoutId);
+              
+              // Resolver com o stream obtido
+              resolve(stream);
+            } catch (error) {
+              reject(error);
+            }
+          });
+          
+          // Aguardar a promise com timeout
+          this.stream = await streamPromise;
+          
+          // Resetar contador de tentativas se sucesso
+          this.microphoneAccessAttempts = 0;
+          
+          console.log('Acesso ao microfone concedido com sucesso');
+        } catch (microphoneError) {
+          console.error('Erro ao acessar microfone:', microphoneError);
+          
+          this.isRecording = false;
+          this._dispatchEvent('recordingError', {
+            error: `Erro ao acessar microfone: ${microphoneError.message || 'Permissão negada'}`
+          });
+          
+          // Lançar erro para ser tratado pelo chamador
+          throw microphoneError;
+        }
+      } else {
+        console.log('Usando stream de áudio existente');
+      }
+      
+      // Verificar se temos stream
+      if (!this.stream) {
+        throw new Error('Stream de áudio não disponível após tentativa de inicialização');
+      }
+      
+      // Criar Media Recorder com formato compatível
+      this.mediaRecorder = new MediaRecorder(this.stream, {
+        mimeType: this.selectedMimeType,
+        audioBitsPerSecond: 128000 // 128kbps para melhor qualidade
+      });
+      
+      console.log(`MediaRecorder criado com formato: ${this.mediaRecorder.mimeType}`);
+      
+      // Inicializar ou resetar o array de chunks de áudio 
+      this.audioChunks = [];
+      
+      // Configurar handler para capturar os chunks
+      this.mediaRecorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          this.audioChunks.push(event.data);
+          
+          // Log detalhado sobre o chunk recebido
+          console.log(`Chunk recebido: #${this.audioChunks.length}, tamanho: ${Math.round(event.data.size/1024)}KB`);
+          
+          // IMPORTANTE: Atualizar o detector de silêncio com o novo áudio
+          // apenas se não estamos pausados para processar
+          if (!this.pausedForSilence && this.silenceDetectionEnabled) {
+            this._detectSilence();
+          }
+        }
+      };
+      
+      // Configurar handler para quando a gravação parar
+      this.mediaRecorder.onstop = () => {
+        console.log('MediaRecorder parou (evento onstop)');
+        // Não processar aqui, apenas notificar. O processamento acontecerá em stopRecording()
+      };
+      
+      // Configurar handler para erros
+      this.mediaRecorder.onerror = (event) => {
+        console.error('Erro no MediaRecorder:', event.error);
+        this._dispatchEvent('recordingError', { error: 'Erro na gravação: ' + (event.error?.message || 'desconhecido') });
+      };
+      
+      // Iniciar a gravação
+      this.mediaRecorder.start(500); // Obter chunks a cada 500ms
+      console.log('MediaRecorder iniciado com intervalo de 500ms');
+      
+      // Registrar o tempo de início
+      this.chunkStartTime = Date.now();
+      
+      // Iniciar análise de áudio para detecção de silêncio
+      if (this.silenceDetectionEnabled) {
+        await this._setupAudioAnalysis();
+      }
+      
+      // Inicializar ou registrar o contexto de IA se disponível
+      this._checkAIContext();
+      
+      // Notificar que a gravação iniciou
       this._dispatchEvent('recordingStarted', { isRecording: true });
       
+      console.log('Gravação iniciada com sucesso');
       return true;
     } catch (error) {
-      console.error('Erro ao iniciar gravação de áudio:', error);
+      // Garantir que estados são resetados em caso de erro
+      this.isRecording = false;
       this._dispatchEvent('recordingError', { error: error.message });
+      
+      // Limpar recursos se houver erro
+      await this._releaseAllAudioResources();
+      
+      console.error('Erro ao iniciar gravação:', error);
       return false;
     }
   }
@@ -736,16 +776,28 @@ class WhisperTranscriptionService {
    * @private
    */
   _setupMaxChunkTimer() {
-    // Limpar qualquer timer existente
+    // Limpar temporizador existente
     if (this.maxChunkTimer) {
       clearTimeout(this.maxChunkTimer);
+      this.maxChunkTimer = null;
     }
     
-    // Configurar novo timer
+    // Configurar novo temporizador
     this.maxChunkTimer = setTimeout(() => {
-      console.log(`Chunk máximo de ${this.maxChunkDuration/1000}s atingido, processando áudio...`);
-      this._processCurrentChunk();
+      console.log(`Temporizador de duração máxima atingido (${Math.round(this.maxChunkDuration/1000)}s)`);
+      
+      // Processar apenas se estamos gravando e não estamos pausados
+      if (this.isRecording && !this.pausedForSilence) {
+        console.log('Processando chunk devido à duração máxima');
+        
+        // Processar o chunk atual
+        this._processCurrentChunk();
+      } else {
+        console.log('Ignorando temporizador, gravação não está ativa ou está pausada');
+      }
     }, this.maxChunkDuration);
+    
+    console.log(`Temporizador configurado para processar chunk após ${Math.round(this.maxChunkDuration/1000)}s`);
   }
 
   /**
@@ -1224,7 +1276,8 @@ class WhisperTranscriptionService {
         console.log(`Áudio grande detectado (${Math.round(audioBlob.size/1024)}KB), convertendo para qualidade menor`);
         try {
           // Usar abordagem com XMLHttpRequest em vez de fetch (mais estável para uploads grandes)
-          return await this._sendAudioWithXHR(blobToSend, finalFileName);
+          const result = await this._sendAudioWithXHR(blobToSend, finalFileName);
+          return await this._processResponse(result);
         } catch (conversionError) {
           console.warn('Erro ao converter áudio, tentando enviar original:', conversionError);
           // Continuar com o blob original se a conversão falhar
@@ -1264,7 +1317,9 @@ class WhisperTranscriptionService {
         console.log(`Tentando enviar áudio via XHR: ${this.apiEndpoint}, formato: ${mimeType}, arquivo: ${finalFileName}`);
         
         // Usar XHR pode evitar problemas HTTP/2 em certos navegadores
-        return await this._sendAudioWithXHR(blobToSend, finalFileName);
+        const response = await this._sendAudioWithXHR(blobToSend, finalFileName);
+        const result = await this._processResponse(response);
+        return result;
         
       } catch (xhrError) {
         console.error('Erro ao enviar áudio via XHR:', xhrError);
@@ -1313,6 +1368,8 @@ class WhisperTranscriptionService {
     } catch (error) {
       console.error('Erro ao processar chunks de áudio:', error);
       this._dispatchEvent('transcriptionError', { error: error.message });
+      // Garantir que o estado de gravação seja limpo em caso de erro
+      this._resetRecording();
     }
   }
   
@@ -1345,16 +1402,8 @@ class WhisperTranscriptionService {
             const response = JSON.parse(xhr.responseText);
             console.log('Transcrição recebida via XHR:', response);
             
-            // Processar a resposta como uma resposta fetch
-            const mockResponse = {
-              ok: true,
-              json: () => Promise.resolve(response)
-            };
-            
-            // Processar através do método padrão
-            this._processResponse(mockResponse)
-              .then(result => resolve(result))
-              .catch(error => reject(error));
+            // Passar diretamente o objeto de resposta para processamento
+            resolve(response);
           } catch (parseError) {
             console.error('Erro ao processar resposta XHR:', parseError);
             reject(parseError);
@@ -1416,137 +1465,80 @@ class WhisperTranscriptionService {
    */
   async _processResponse(response) {
     try {
-      // Verificar se a resposta é válida
-      if (!response.ok) {
-        let errorText = 'Erro desconhecido';
-        try {
-          // Tentar obter mensagens de erro detalhadas
-          if (response.json) {
-            try {
-              const errorData = await response.json();
-              errorText = errorData.message || errorData.error || response.statusText;
-            } catch (e) {
-              // Se não conseguir como JSON, tentar como texto
-              errorText = await response.text();
-            }
-          } else if (typeof response.statusText === 'string') {
-            errorText = response.statusText;
-          }
-        } catch (e) {
-          errorText = `Erro HTTP ${response.status || 'desconhecido'}`;
+      // Se tivermos uma resposta HTTP, tentar extrair JSON
+      if (response instanceof Response) {
+        if (!response.ok) {
+          throw new Error(`Erro HTTP ao processar áudio: ${response.status} ${response.statusText}`);
         }
-
-        console.error(`Erro na resposta do servidor (${response.status}): ${errorText}`);
-        this._dispatchEvent('transcriptionError', { error: errorText });
-        throw new Error(`Erro ${response.status}: ${errorText}`);
-      }
-
-      // Processar a resposta JSON
-      let data;
-      
-      // Verificar se é um mock de resposta XHR
-      if (response.json && typeof response.json === 'function') {
-        data = await response.json();
-      } else if (response.data) {
-        // Se já é um objeto de dados (do XHR)
-        data = response.data;
-      } else {
-        console.error('Formato de resposta desconhecido:', response);
-        throw new Error('Formato de resposta inválido');
-      }
-
-      // Validar os dados
-      if (!data) {
-        throw new Error('Resposta vazia do servidor');
-      }
-
-      // Verificar formatação da resposta
-      const text = data.text || data.transcript || data.content || data.result || (data.data ? data.data.text : null);
-      
-      if (!text) {
-        console.error('Resposta sem texto:', data);
-        this._dispatchEvent('transcriptionError', { error: 'Resposta sem texto reconhecível' });
-        throw new Error('Resposta sem texto reconhecível');
-      }
-
-      console.log('Transcrição recebida:', text.substring(0, 100) + (text.length > 100 ? '...' : ''));
-
-      // Normalizar a resposta
-      const normalizedData = {
-        text: text,
-        format: data.format || 'text',
-        duration: data.duration || 0,
-        sessionId: data.sessionId || this.sessionId
-      };
-
-      // Enviar o evento de transcrição
-      this._dispatchEvent('transcription', {
-        text: normalizedData.text,
-        format: normalizedData.format,
-        duration: normalizedData.duration,
-        chunkCounter: this.chunkCounter
-      });
-      
-      // Processar a transcrição no contexto do app
-      this._processTranscription({ data: normalizedData }, null);
-
-      // Incrementar o contador de chunks
-      this.chunkCounter++;
-
-      // Solução: reiniciar completamente a gravação para o próximo chunk
-      console.log('SOLUÇÃO: Reiniciando gravação para evitar problemas nos áudios subsequentes');
-      
-      // Parar a gravação atual se estiver ativa
-      if (this.isRecording || this.mediaRecorder) {
-        await this.stopRecording(false);
+        response = await response.json();
       }
       
-      // Liberar completamente todos os recursos
-      await this._releaseAllAudioResources();
+      // 2. Obter texto transcrito da resposta
+      let transcript = '';
       
-      // Reiniciar gravação após pequeno intervalo
-      console.log("Aguardando 2 segundos antes de reiniciar gravação...");
+      if (response.data && response.data.text) {
+        transcript = response.data.text;
+      } else if (response.text) {
+        transcript = response.text;
+      } else if (response.transcript) {
+        transcript = response.transcript;
+      }
       
-      // Usar setTimeout para garantir que haja um atraso antes do reinício
-      setTimeout(async () => {
-        // VERIFICAR se foi parado manualmente - NÃO reiniciar se foi
-        if (this.manualStopped) {
-          console.log("🛑 NÃO reiniciando gravação pois foi parada manualmente pelo usuário");
-          // Emitir um evento adicional para garantir que a UI sincronize
-          this._dispatchEvent('manualStopConfirmed', { message: 'Gravação permanece parada conforme solicitado pelo usuário' });
-          return; // Sair do setTimeout sem reiniciar
-        }
+      // 3. Limpar o texto se necessário
+      if (transcript) {
+        console.log(`Whisper: Texto transcrito recebido - "${transcript}"`);
         
-        console.log("Reiniciando gravação automaticamente...");
-        try {
-          // Forçar a flag autoRestart para true
-          this.autoRestart = true;
-          
-          const result = await this.startRecording();
-          console.log(`Resultado do reinício automático: ${result ? 'SUCESSO' : 'FALHA'}`);
-          
-          if (!result) {
-            console.error("Falha no reinício automático, tentando novamente em 3 segundos");
-            setTimeout(() => {
-              console.log("Tentativa de recuperação após falha no reinício");
-              this.startRecording();
-            }, 3000);
-          }
-        } catch (e) {
-          console.error("Erro ao reiniciar gravação automaticamente:", e);
-          // Tentar novamente após um intervalo maior
-          setTimeout(() => {
-            console.log("Tentativa de recuperação após ERRO no reinício");
-            this.startRecording();
-          }, 4000);
-        }
-      }, 2000);
-
-      return normalizedData;
+        // Disparar evento de transcrição
+        this._dispatchEvent('transcriptionSuccess', {
+          text: transcript,
+          raw: response,
+          chunkCounter: this.chunkCounter,
+          duration: Math.round((Date.now() - this.chunkStartTime) / 1000)
+        });
+        
+        // Enviar transcrição para o backend
+        await this._sendTranscriptionToBackend({
+          text: transcript,
+          timestamp: new Date().toISOString(),
+          speaker: this.speakerRole,
+          sessionId: this.sessionId,
+          transcript: transcript
+        });
+        
+        // IMPORTANTE: Garantir que o estado seja limpo após processamento 
+        // para permitir novo ciclo
+        this._resetRecording();
+        
+        return {
+          success: true,
+          transcript,
+          fullResponse: response
+        };
+      } else {
+        console.warn('Whisper: Resposta sem texto transcrito');
+        this._dispatchEvent('transcriptionError', {
+          error: 'Transcrição vazia recebida do servidor'
+        });
+        
+        // IMPORTANTE: Garantir que o estado seja limpo mesmo em caso de transcrição vazia
+        this._resetRecording();
+        
+        return {
+          success: false,
+          error: 'Transcrição vazia'
+        };
+      }
     } catch (error) {
-      console.error('Erro ao processar resposta:', error);
+      console.error('Whisper: Erro ao processar resposta:', error);
       this._dispatchEvent('transcriptionError', { error: error.message });
-      throw error;
+      
+      // IMPORTANTE: Limpar estado mesmo em caso de erro
+      this._resetRecording();
+      
+      return {
+        success: false,
+        error: error.message
+      };
     }
   }
 
@@ -2902,6 +2894,72 @@ class WhisperTranscriptionService {
    */
   _generateId() {
     return `tr_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+  }
+
+  /**
+   * Processa o áudio quando silêncio é detectado
+   * @private
+   */
+  _handleSilence() {
+    try {
+      console.log('Silêncio detectado por tempo suficiente, processando chunk atual');
+      
+      // Limpar temporizador de silêncio
+      if (this.silenceTimer) {
+        clearTimeout(this.silenceTimer);
+        this.silenceTimer = null;
+      }
+      
+      // Verificar duração do chunk atual
+      const chunkDuration = Date.now() - this.chunkStartTime;
+      
+      if (chunkDuration < this.minChunkDuration) {
+        console.log(`Duração do chunk (${Math.round(chunkDuration/1000)}s) menor que o mínimo (${Math.round(this.minChunkDuration/1000)}s), ignorando`);
+        
+        // Resetar detecção de silêncio, mas manter o chunk atual
+        this.silenceStart = null;
+        return;
+      }
+      
+      // Pausar a gravação para processar
+      this.pausedForSilence = true;
+      
+      // Processar chunk atual
+      this._processCurrentChunk();
+      
+      // Após um breve intervalo, reiniciar a gravação se autoRestart estiver ativado
+      if (this.autoRestart && !this.manualStopped) {
+        console.log('Reiniciando gravação após silêncio com intervalo de 500ms');
+        
+        // Aguardar um momento antes de reiniciar gravação
+        setTimeout(() => {
+          // Verificar se não foi encerrado manualmente durante o intervalo
+          if (this.autoRestart && !this.manualStopped) {
+            // Reiniciar gravação automaticamente
+            this.pausedForSilence = false;
+            this.startRecording()
+              .then(result => {
+                if (result) {
+                  console.log('Gravação reiniciada após silêncio');
+                } else {
+                  console.error('Falha ao reiniciar gravação após silêncio');
+                }
+              })
+              .catch(error => {
+                console.error('Erro ao reiniciar gravação após silêncio:', error);
+              });
+          } else {
+            console.log('Gravação permanece interrompida (reinício automático desativado)');
+          }
+        }, 500);
+      } else {
+        console.log('Reinício automático desativado, mantendo gravação pausada');
+      }
+    } catch (error) {
+      console.error('Erro ao lidar com silêncio:', error);
+      // Garantir que chunks são limpos mesmo em caso de erro
+      this._resetRecording();
+    }
   }
 }
 
