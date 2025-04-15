@@ -2630,6 +2630,52 @@ class WhisperTranscriptionService {
       console.error('Whisper: Erro ao buscar transcrições de outros participantes:', error);
     }
   }
+  
+  /**
+   * Salva a transcrição no sessionStorage para recuperação posterior
+   * @param {Object} transcriptionData - Dados da transcrição
+   * @private
+   */
+  _saveTranscriptionToStorage(transcriptionData) {
+    try {
+      if (!transcriptionData || !transcriptionData.sessionId) {
+        console.warn('Dados de transcrição inválidos ou ausentes');
+        return false;
+      }
+      
+      // Criar uma chave única baseada na sessão
+      const storageKey = `whisper_session_${transcriptionData.sessionId}`;
+      
+      // Recuperar dados existentes ou inicializar array vazio
+      let sessionTranscriptions = [];
+      const existingData = sessionStorage.getItem(storageKey);
+      
+      if (existingData) {
+        try {
+          sessionTranscriptions = JSON.parse(existingData);
+          // Garantir que é um array
+          if (!Array.isArray(sessionTranscriptions)) {
+            sessionTranscriptions = [];
+          }
+        } catch (e) {
+          console.warn('Erro ao analisar transcrições existentes:', e);
+          sessionTranscriptions = [];
+        }
+      }
+      
+      // Adicionar nova transcrição
+      sessionTranscriptions.push(transcriptionData);
+      
+      // Salvar de volta no sessionStorage
+      sessionStorage.setItem(storageKey, JSON.stringify(sessionTranscriptions));
+      console.log('Transcrição salva no sessionStorage para recuperação imediata');
+      
+      return true;
+    } catch (error) {
+      console.error('Erro ao salvar transcrição no sessionStorage:', error);
+      return false;
+    }
+  }
 }
 
 // Versão estável restaurada
