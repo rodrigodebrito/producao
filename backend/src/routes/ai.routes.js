@@ -692,7 +692,10 @@ router.post('/transcript', authenticate, async (req, res) => {
  */
 router.post(
   '/emotion/analyze',
-  [authenticate],
+  [authenticate, multer({ 
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 20 * 1024 * 1024 } // 20MB
+  }).single('audio')],
   aiController.analyzeEmotionInAudio
 );
 

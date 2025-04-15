@@ -1502,36 +1502,38 @@ const aiController = {
   analyzeEmotionInAudio: async (req, res) => {
     try {
       // Verificar se foi enviado um arquivo
-      if (!req.files || !req.files.audio) {
+      if (!req.file) {
         return res.status(400).json({
           success: false,
           message: 'Nenhum arquivo de áudio enviado. Use o campo "audio" para enviar o arquivo.'
         });
       }
       
-      // Obter o arquivo de áudio
-      const audioFile = req.files.audio;
+      // Obter o arquivo de áudio (usando multer)
+      const audioBuffer = req.file.buffer;
+      const originalFilename = req.file.originalname;
+      const mimeType = req.file.mimetype;
       
       // Verificar tipo de arquivo
       const validMimeTypes = ['audio/wav', 'audio/mp3', 'audio/mpeg', 'audio/webm', 'audio/mp4', 'audio/ogg'];
       
       // Se o tipo não for reconhecido automaticamente, tentar inferir pela extensão
-      let mimeType = audioFile.mimetype;
-      if (!validMimeTypes.includes(mimeType)) {
-        const extension = audioFile.name.split('.').pop().toLowerCase();
+      let finalMimeType = mimeType;
+      if (!validMimeTypes.includes(finalMimeType)) {
+        const extension = originalFilename.split('.').pop().toLowerCase();
         
-        if (extension === 'wav') mimeType = 'audio/wav';
-        else if (extension === 'mp3') mimeType = 'audio/mpeg';
-        else if (extension === 'webm') mimeType = 'audio/webm';
-        else if (extension === 'ogg') mimeType = 'audio/ogg';
-        else if (extension === 'mp4') mimeType = 'audio/mp4';
+        if (extension === 'wav') finalMimeType = 'audio/wav';
+        else if (extension === 'mp3') finalMimeType = 'audio/mpeg';
+        else if (extension === 'webm') finalMimeType = 'audio/webm';
+        else if (extension === 'ogg') finalMimeType = 'audio/ogg';
+        else if (extension === 'mp4') finalMimeType = 'audio/mp4';
       }
       
       // Validar tipo de arquivo
-      if (!validMimeTypes.includes(mimeType)) {
+      if (!validMimeTypes.includes(finalMimeType)) {
         return res.status(400).json({
           success: false,
-          message: `Tipo de arquivo não suportado: ${mimeType}. Tipos suportados: WAV, MP3, WebM, OGG, MP4.`
+          message: `Tipo de arquivo não suportado: ${finalMimeType}. Tipos suportados: WAV, MP3, WebM, OGG, MP4.`
         });
       }
       
@@ -1545,7 +1547,7 @@ const aiController = {
       
       // Analisar emoções no áudio
       const analysisResult = await emotionAnalysisService.analyzeAudio(
-        audioFile.data,
+        audioBuffer,
         options
       );
       
