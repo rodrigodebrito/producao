@@ -531,7 +531,7 @@ class WhisperTranscriptionService {
       
       // Força inicialização do serviço se ainda não estiver pronto
       if (!this.serviceInitialized) {
-        await this.initialize();
+        await this.initializeService();
       }
       
       // IMPORTANTE: Preparar um estado limpo para esta nova gravação
