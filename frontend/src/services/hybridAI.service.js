@@ -15,6 +15,16 @@ class HybridAIService {
     const isBrowser = typeof window !== 'undefined';
     this.isBrowser = isBrowser;
     
+    // SOLUÇÃO PARA DESATIVAÇÃO: Verificar flags globais imediatamente
+    if (isBrowser && 
+        (window.__HYBRID_AI_DISABLED === true || window.__HYBRID_AI_FORCE_DISABLED === true)) {
+      console.log('⛔ HybridAI: Serviço DESATIVADO por flag global __HYBRID_AI_DISABLED');
+      console.log('⛔ HybridAI: Construtor executando em modo mínimo');
+      this.isDisabled = true;
+      this.isInitialized = false;
+      return; // Parar aqui para evitar qualquer inicialização
+    }
+    
     // Se não estivermos no navegador, retornar sem inicializar
     if (!isBrowser) {
       console.warn('HybridAI: Iniciado fora do navegador, funcionalidade limitada');
@@ -89,6 +99,14 @@ class HybridAIService {
 
   async initService() {
     try {
+      // SOLUÇÃO PARA DESATIVAÇÃO: Verificar flags globais
+      if (typeof window !== 'undefined' && 
+          (window.__HYBRID_AI_DISABLED === true || window.__HYBRID_AI_FORCE_DISABLED === true)) {
+        console.log('⛔ HybridAI: Serviço DESATIVADO por flag global __HYBRID_AI_DISABLED');
+        console.log('⛔ HybridAI: Não será inicializado conforme solicitado');
+        return false;
+      }
+      
       console.log('HybridAI: Inicializando serviço...');
       
       // Verificar ambiente
@@ -144,7 +162,13 @@ class HybridAIService {
   // Iniciar gravação
   startRecording() {
     try {
-    console.log('HybridAI: Tentando iniciar reconhecimento de voz...');
+      // VERIFICAR SE ESTÁ DESATIVADO
+      if (this.isDisabled) {
+        console.log('⛔ HybridAI: Tentativa de iniciar gravação ignorada - serviço está desativado');
+        return false;
+      }
+      
+      console.log('HybridAI: Tentando iniciar reconhecimento de voz...');
     
       // Verificar se o reconhecimento já está ativo
     if (this.isRecording) {
@@ -212,6 +236,12 @@ class HybridAIService {
    */
   setupSpeechRecognition() {
     try {
+      // VERIFICAR SE ESTÁ DESATIVADO
+      if (this.isDisabled) {
+        console.log('⛔ HybridAI: Configuração de reconhecimento ignorada - serviço está desativado');
+        return false;
+      }
+      
       // Verificar disponibilidade da API
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SpeechRecognition) {
@@ -479,7 +509,13 @@ class HybridAIService {
   // Parar gravação
   stopRecording() {
     try {
-      console.log('HybridAI: Tentando parar reconhecimento de voz...');
+      // VERIFICAR SE ESTÁ DESATIVADO
+      if (this.isDisabled) {
+        console.log('⛔ HybridAI: Tentativa de parar gravação ignorada - serviço está desativado');
+        return false;
+      }
+      
+      console.log('HybridAI: Parando reconhecimento de voz...');
       
       // Marcar que a parada foi solicitada para evitar reinício automático
       this.stopRequested = true;
@@ -1713,8 +1749,19 @@ O sistema está aguardando o processamento completo da transcrição pelo servi�
     }
   }
 
-  // Registrar eventos de tecla para controle do usuário
+  /**
+   * Configurar eventos de teclado para controle do reconhecimento
+   * @private
+   */
   handleKeyEvents() {
+    // VERIFICAR SE ESTÁ DESATIVADO
+    if (this.isDisabled) {
+      console.log('⛔ HybridAI: Configuração de eventos de teclado ignorada - serviço está desativado');
+      return false;
+    }
+    
+    if (typeof window === 'undefined') return false;
+    
     try {
       // Configurar eventos de teclado para controlar o reconhecimento
       document.addEventListener('keydown', (event) => {

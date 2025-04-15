@@ -31,7 +31,15 @@ hybridAIService.initService().then(success => {
 // Adicionando flag para informar que o HybridAI está desativado
 window.__HYBRID_AI_ACTIVE = false;
 window.__HYBRID_AI_DISABLED = true;
-console.log('HybridAI: Serviço desativado conforme solicitado');
+window.__HYBRID_AI_FORCE_DISABLED = true; // Flag adicional para garantir total desativação
+console.log('⛔⛔⛔ HybridAI: Serviço TOTALMENTE DESATIVADO conforme solicitado na versão 06bcfc6');
+console.log('⛔⛔⛔ HybridAI: Para ativar novamente, altere as flags no index.js');
+
+// Também desabilitar versão global para impedir qualquer tentativa de inicialização
+if (typeof window !== 'undefined') {
+  window.HybridAIService = null;
+  window.hybridAIService = null;
+}
 
 // Configurar default para toasts
 toast.configure = () => {};

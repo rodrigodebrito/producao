@@ -201,6 +201,14 @@ const FallbackMeeting = ({
   useEffect(() => {
     const startSession = async () => {
       try {
+        // Desativar referência ao HybridAI para versão sem IA (06bcfc6)
+        if (window.__HYBRID_AI_DISABLED) {
+          console.log('⛔ FallbackMeeting: HybridAI desativado nesta versão');
+          // Limpar qualquer referência global para garantir
+          window.hybridAIService = null;
+          window.HybridAIService = null;
+        }
+        
         setIsLoading(true);
         
         // Obter URL da sala diretamente sem verificações
