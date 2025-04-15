@@ -2216,24 +2216,87 @@ class WhisperTranscriptionService {
       
       // CORREÇÃO: Obter ID de sessão válido do DOM ou localStorage
       // Em vez de usar um ID fixo, tente obter o ID correto da sessão atual
-      let sessionId = null;
+      let sessionId = data.sessionId || this.sessionId;
       
-      // 1. Tente obter dos parâmetros da URL primeiro (mais confiável)
-      try {
-        const urlParams = new URLSearchParams(window.location.search);
-        const pathSegments = window.location.pathname.split('/');
-        
-        // Procurar em parâmetros da URL
-        if (urlParams.has('sessionId')) {
-          sessionId = urlParams.get('sessionId');
-        } 
-        // Procurar em segmentos do path (/session/{id})
-        else if (pathSegments.includes('session') && pathSegments.length > pathSegments.indexOf('session') + 1) {
-          sessionId = pathSegments[pathSegments.indexOf('session') + 1];
+      // Se não temos ID de sessão nos dados, tentar extrair da URL
+      if (!sessionId || sessionId === 'unknown') {
+        try {
+          const urlParams = new URLSearchParams(window.location.search);
+          const pathSegments = window.location.pathname.split('/');
+          
+          // Procurar em parâmetros da URL
+          if (urlParams.has('sessionId')) {
+            sessionId = urlParams.get('sessionId');
+          } 
+          // Procurar em segmentos do path (/session/{id})
+          else if (pathSegments.includes('session') && pathSegments.length > pathSegments.indexOf('session') + 1) {
+            sessionId = pathSegments[pathSegments.indexOf('session') + 1];
+          }
+        } catch (error) {
+          console.warn('Erro ao extrair sessionId da URL:', error);
         }
-        
-        // Se não encontrou, procurar ID de formato UUID em qualquer posição do path
-        if (!sessionId) {
+      }
+      
+      // Verificar se temos um ID de sessão válido
+      if (!sessionId || sessionId === 'unknown') {
+        console.warn('ID de sessão não encontrado para envio de transcrição');
+        return { success: false, error: 'ID de sessão não encontrado' };
+      }
+      
+      // Atualizar o objeto data com o sessionId
+      const transcriptionData = { ...data, sessionId };
+      
+      // Enviar para API
+      console.log(`Enviando transcrição para backend: ${this.transcriptEndpoint}`);
+      const response = await fetch(this.transcriptEndpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`
+        },
+        body: JSON.stringify(transcriptionData)
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`Erro ao enviar transcrição: ${response.status} - ${errorText}`);
+        return { 
+          success: false, 
+          error: `Erro ${response.status}: ${errorText}`
+        };
+      }
+      
+      const result = await response.json();
+      console.log('Transcrição enviada com sucesso para o backend:', result);
+      return result;
+    } catch (error) {
+      console.error('Erro ao enviar transcrição para o backend:', error);
+      return { 
+        success: false, 
+        error: error.message || 'Erro desconhecido' 
+      };
+    }
+  }
+
+  /**
+   * NOVO: Analisa emoções em áudio
+   * @param {Blob} audioBlob - Blob de áudio
+   * @param {string} processingId - ID para rastreamento
+   * @returns {Promise<Object>} Resultado da análise
+   * @private
+   */
+  async _analyzeEmotionInAudio(audioBlob, processingId) {
+    try {
+      // Log para debugging
+      console.log(`Iniciando análise de emoção para processamento ${processingId}`);
+      
+      // Verificar token de autenticação
+      const authToken = localStorage.getItem('authToken') || 
+                        sessionStorage.getItem('authToken') || 
+                        localStorage.getItem('token') || 
+                        sessionStorage.getItem('token');
+      
+      if (!authToken) {
         console.warn('Análise de emoção: Token de autenticação não encontrado');
         return null;
       }
@@ -2257,7 +2320,7 @@ class WhisperTranscriptionService {
       // Configurar opções específicas de análise
       if (this.emotionAnalysisEnabled) {
         formData.append('analyzeEmotion', 'true');
-        formData.append('emotionModel', this.emotionAnalysisModel);
+        formData.append('emotionModel', this.emotionAnalysisModel || 'default');
       }
       
       if (this.toneAnalysisEnabled) {
