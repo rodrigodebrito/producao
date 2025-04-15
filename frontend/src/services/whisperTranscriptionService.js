@@ -2314,7 +2314,7 @@ class WhisperTranscriptionService {
         
         const altResponse = await fetch(alternativeUrl, {
           method: 'GET',
-          headers: {
+        headers: {
             'Authorization': `Bearer ${authToken}`,
             'Content-Type': 'application/json'
           }
@@ -2501,7 +2501,7 @@ class WhisperTranscriptionService {
       console.warn('Erro ao exibir transcrição de outro participante:', error);
     }
   }
-  
+
   /**
    * NOVO: Limpa os recursos quando o componente é destruído
    */
@@ -2738,7 +2738,7 @@ class WhisperTranscriptionService {
           }
         };
       }
-      
+
       // Obter token de autenticação
       const authToken = localStorage.getItem('authToken') || 
                        sessionStorage.getItem('authToken') || 
@@ -2776,7 +2776,7 @@ class WhisperTranscriptionService {
           sessionId: sessionId
         }),
       });
-      
+
       if (!response.ok) {
         const errorText = await response.text();
         throw new Error(`Erro na análise de emoções: ${response.status} - ${errorText}`);
