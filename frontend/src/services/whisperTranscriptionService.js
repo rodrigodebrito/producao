@@ -7,10 +7,16 @@ import { WHISPER_URL, API_URL } from '../config';
 
 class WhisperTranscriptionService {
   constructor() {
+    // Flags existentes
     this.mediaRecorder = null;
     this.audioChunks = [];
     this.audioStream = null;
     this.isRecording = false;
+    
+    // NOVA FLAG para controlar processamento de transcrições
+    this.transcriptionProcessingEnabled = true;
+    this.lastTranscriptionTimestamp = 0;
+    this.minTimeBetweenTranscriptions = 10000; // 10 segundos entre transcrições
     
     // Determinar se estamos em produção ou desenvolvimento
     this.isProd = !window.location.hostname.includes('localhost') && !window.location.hostname.includes('127.0.0.1');
@@ -1187,11 +1193,35 @@ class WhisperTranscriptionService {
    */
   async processAudioChunks(audioBlob, fileName) {
     try {
+      // NOVO: Verificar se o processamento está habilitado
+      if (!this.transcriptionProcessingEnabled) {
+        console.log('⛔ ECONOMIA DE CRÉDITOS: Processamento de transcrição desativado temporariamente');
+        return;
+      }
+      
+      // NOVO: Verificar tempo desde a última transcrição para prevenir múltiplos processamentos
+      const now = Date.now();
+      const timeSinceLastTranscription = now - this.lastTranscriptionTimestamp;
+      
+      if (timeSinceLastTranscription < this.minTimeBetweenTranscriptions) {
+        console.log(`⏱️ PREVENÇÃO DE DUPLICAÇÃO: Ignorando processamento, última transcrição foi há ${Math.round(timeSinceLastTranscription/1000)}s (mínimo: ${this.minTimeBetweenTranscriptions/1000}s)`);
+        return;
+      }
+      
+      // NOVO: Verificar flag global de suspensão do Whisper
+      if (window.__WHISPER_SUSPENDED === true) {
+        console.log('🚫 SUSPENSÃO GLOBAL: Whisper está em modo suspenso, transcrição ignorada');
+        return;
+      }
+      
       // 1. Verificar se temos um blob válido
       if (!audioBlob || audioBlob.size === 0) {
         console.error('Blob de áudio inválido ou vazio');
         return;
       }
+      
+      // Atualizar timestamp de última transcrição
+      this.lastTranscriptionTimestamp = now;
       
       // 2. Detectar se é o primeiro áudio ou subsequente
       const isFirstAudio = this.chunkCounter === 0;
@@ -1502,8 +1532,8 @@ class WhisperTranscriptionService {
       // Incrementar o contador de chunks
       this.chunkCounter++;
 
-      // Solução: reiniciar completamente a gravação para o próximo chunk
-      console.log('SOLUÇÃO: Reiniciando gravação para evitar problemas nos áudios subsequentes');
+      // MODIFICADO: Controle mais inteligente do reinício da gravação
+      console.log('ESTRATÉGIA DE ECONOMIA: Avaliando necessidade de reinício da gravação');
       
       // Parar a gravação atual se estiver ativa
       if (this.isRecording || this.mediaRecorder) {
@@ -1513,43 +1543,53 @@ class WhisperTranscriptionService {
       // Liberar completamente todos os recursos
       await this._releaseAllAudioResources();
       
-      // Reiniciar gravação após pequeno intervalo
-      console.log("Aguardando 2 segundos antes de reiniciar gravação...");
+      // Verificar se devemos esperar mais tempo antes de reiniciar (economia de recursos)
+      const waitTime = Math.min(3000 + (this.chunkCounter * 500), 10000); // Tempo crescente até 10s máx
+      
+      console.log(`⏱️ ECONOMIA: Aguardando ${waitTime/1000}s antes de reiniciar gravação...`);
       
       // Usar setTimeout para garantir que haja um atraso antes do reinício
       setTimeout(async () => {
-        // VERIFICAR se foi parado manualmente - NÃO reiniciar se foi
+        // VERIFICAR todas as condições que impedem o reinício
         if (this.manualStopped) {
           console.log("🛑 NÃO reiniciando gravação pois foi parada manualmente pelo usuário");
-          // Emitir um evento adicional para garantir que a UI sincronize
           this._dispatchEvent('manualStopConfirmed', { message: 'Gravação permanece parada conforme solicitado pelo usuário' });
-          return; // Sair do setTimeout sem reiniciar
+          return;
+        }
+        
+        if (window.__WHISPER_SUSPENDED === true) {
+          console.log("🔒 NÃO reiniciando gravação devido à suspensão global do Whisper");
+          return;
+        }
+        
+        if (!this.transcriptionProcessingEnabled) {
+          console.log("🔒 NÃO reiniciando gravação - processamento de transcrição está desativado");
+          return;
+        }
+        
+        if (!this.autoRestart) {
+          console.log("⚙️ NÃO reiniciando gravação - autoRestart está desativado");
+          return;
         }
         
         console.log("Reiniciando gravação automaticamente...");
         try {
-          // Forçar a flag autoRestart para true
-          this.autoRestart = true;
-          
           const result = await this.startRecording();
           console.log(`Resultado do reinício automático: ${result ? 'SUCESSO' : 'FALHA'}`);
           
           if (!result) {
-            console.error("Falha no reinício automático, tentando novamente em 3 segundos");
+            console.error("Falha no reinício automático, tentando novamente em 5 segundos");
             setTimeout(() => {
-              console.log("Tentativa de recuperação após falha no reinício");
-              this.startRecording();
-            }, 3000);
+              if (this.autoRestart && !this.manualStopped && !window.__WHISPER_SUSPENDED) {
+                console.log("Tentativa de recuperação após falha no reinício");
+                this.startRecording();
+              }
+            }, 5000);
           }
         } catch (e) {
           console.error("Erro ao reiniciar gravação automaticamente:", e);
-          // Tentar novamente após um intervalo maior
-          setTimeout(() => {
-            console.log("Tentativa de recuperação após ERRO no reinício");
-            this.startRecording();
-          }, 4000);
         }
-      }, 2000);
+      }, waitTime);
 
       return normalizedData;
     } catch (error) {
@@ -2901,6 +2941,66 @@ class WhisperTranscriptionService {
             result: 'Dados simulados para ' + type
           }
         };
+    }
+  }
+
+  /**
+   * NOVO: Ativa ou desativa o processamento de transcrições
+   * Utilizado para economizar créditos e evitar transcrições desnecessárias
+   * @param {boolean} enabled - Se o processamento está habilitado
+   */
+  setTranscriptionProcessing(enabled) {
+    this.transcriptionProcessingEnabled = enabled;
+    console.log(`🎛️ Processamento de transcrições ${enabled ? 'ATIVADO' : 'DESATIVADO'}`);
+    
+    // Emitir evento para notificar UI sobre a mudança
+    this._dispatchEvent('transcriptionProcessingChanged', {
+      enabled: enabled,
+      message: `Processamento de transcrições ${enabled ? 'ativado' : 'desativado'}`
+    });
+    
+    return enabled;
+  }
+
+  /**
+   * NOVO: Suspende temporariamente todas as operações de transcrição
+   * Útil para pausas ou quando há outros serviços fazendo transcrição
+   */
+  suspend() {
+    // Parar gravação se estiver ativa
+    if (this.isRecording) {
+      this.stopRecording(false);
+    }
+    
+    // Definir flag global
+    window.__WHISPER_SUSPENDED = true;
+    
+    console.log('🚨 WHISPER SUSPENSO: Todas as operações de transcrição interrompidas');
+    
+    // Emitir evento para notificar UI
+    this._dispatchEvent('serviceSuspended', {
+      message: 'Serviço de transcrição suspenso temporariamente'
+    });
+  }
+  
+  /**
+   * NOVO: Retoma as operações após suspensão
+   * @param {boolean} startRecording - Se deve iniciar gravação imediatamente
+   */
+  resume(startRecording = false) {
+    // Remover flag global
+    window.__WHISPER_SUSPENDED = false;
+    
+    console.log('✅ WHISPER RETOMADO: Operações de transcrição podem ser reiniciadas');
+    
+    // Emitir evento para notificar UI
+    this._dispatchEvent('serviceResumed', {
+      message: 'Serviço de transcrição retomado'
+    });
+    
+    // Iniciar gravação se solicitado
+    if (startRecording) {
+      setTimeout(() => this.startRecording(), 1000);
     }
   }
 }
