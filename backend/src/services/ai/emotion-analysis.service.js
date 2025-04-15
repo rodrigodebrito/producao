@@ -7,7 +7,6 @@ const path = require('path');
 const { promisify } = require('util');
 const logger = require('../../utils/logger');
 const openaiService = require('./openai.service');
-const config = require('../../config/config');
 
 // Promisify fs operations
 const writeFileAsync = promisify(fs.writeFile);
