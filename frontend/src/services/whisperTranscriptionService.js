@@ -1515,10 +1515,14 @@ class WhisperTranscriptionService {
           if (response.json) {
             try {
               const errorData = await response.json();
-              errorText = errorData.message || errorData.error || response.statusText;
+              errorText = errorData.message || errorData.error || response.statusText || 'Erro desconhecido';
             } catch (e) {
               // Se não conseguir como JSON, tentar como texto
-              errorText = await response.text();
+              try {
+                errorText = await response.text();
+              } catch (textError) {
+                errorText = `Erro HTTP ${response.status || 'desconhecido'}`;
+              }
             }
           } else if (typeof response.statusText === 'string') {
             errorText = response.statusText;
@@ -1527,9 +1531,14 @@ class WhisperTranscriptionService {
           errorText = `Erro HTTP ${response.status || 'desconhecido'}`;
         }
 
+        // Garantir que temos um texto de erro, mesmo que seja genérico
+        if (!errorText || errorText === 'undefined') {
+          errorText = `Erro ${response.status || 'desconhecido'}`;
+        }
+
         console.error(`Erro na resposta do servidor (${response.status}): ${errorText}`);
         this._dispatchEvent('transcriptionError', { error: errorText });
-        throw new Error(`Erro ${response.status}: ${errorText}`);
+        throw new Error(errorText);
       }
 
       // Processar a resposta JSON
@@ -1554,89 +1563,43 @@ class WhisperTranscriptionService {
       // Verificar formatação da resposta
       const text = data.text || data.transcript || data.content || data.result || (data.data ? data.data.text : null);
       
-      if (!text) {
-        console.error('Resposta sem texto:', data);
-        this._dispatchEvent('transcriptionError', { error: 'Resposta sem texto reconhecível' });
-        throw new Error('Resposta sem texto reconhecível');
+      // Se não encontramos texto na resposta, mas temos algum dado
+      // tentar verificar se o dado em si é uma string (resposta direta)
+      if (!text && (typeof data === 'string')) {
+        data = { text: data };
+      } else if (!text && data.data && typeof data.data === 'string') {
+        data = { text: data.data };
       }
 
-      console.log('Transcrição recebida:', text.substring(0, 100) + (text.length > 100 ? '...' : ''));
-
-      // Normalizar a resposta
-      const normalizedData = {
-        text: text,
-        format: data.format || 'text',
-        duration: data.duration || 0,
-        sessionId: data.sessionId || this.sessionId
-      };
-
-      // Enviar o evento de transcrição
-      this._dispatchEvent('transcription', {
-        text: normalizedData.text,
-        format: normalizedData.format,
-        duration: normalizedData.duration,
-        chunkCounter: this.chunkCounter
-      });
-      
-      // Processar a transcrição no contexto do app
-      this._processTranscription({ data: normalizedData }, null);
-
-      // Incrementar o contador de chunks
-      this.chunkCounter++;
-
-      // Solução: reiniciar completamente a gravação para o próximo chunk
-      console.log('SOLUÇÃO: Reiniciando gravação para evitar problemas nos áudios subsequentes');
-      
-      // Parar a gravação atual se estiver ativa
-      if (this.isRecording || this.mediaRecorder) {
-        await this.stopRecording(false);
-      }
-      
-      // Liberar completamente todos os recursos
-      await this._releaseAllAudioResources();
-      
-      // Reiniciar gravação após pequeno intervalo
-      console.log("Aguardando 2 segundos antes de reiniciar gravação...");
-      
-      // Usar setTimeout para garantir que haja um atraso antes do reinício
-      setTimeout(async () => {
-        // VERIFICAR se foi parado manualmente - NÃO reiniciar se foi
-        if (this.manualStopped) {
-          console.log("🛑 NÃO reiniciando gravação pois foi parada manualmente pelo usuário");
-          // Emitir um evento adicional para garantir que a UI sincronize
-          this._dispatchEvent('manualStopConfirmed', { message: 'Gravação permanece parada conforme solicitado pelo usuário' });
-          return; // Sair do setTimeout sem reiniciar
+      // Verificar novamente se temos texto em algum formato reconhecível
+      if (!text && !data.text) {
+        console.warn('Resposta sem texto identificável:', data);
+        
+        // Fallback: Se encontrarmos qualquer propriedade que seja string, tente usar
+        for (const key in data) {
+          if (typeof data[key] === 'string' && data[key].length > 5) {
+            data.text = data[key];
+            console.log(`Usando propriedade "${key}" como texto da transcrição:`, data.text.substring(0, 50));
+            break;
+          }
         }
         
-        console.log("Reiniciando gravação automaticamente...");
-        try {
-          // Forçar a flag autoRestart para true
-          this.autoRestart = true;
-          
-          const result = await this.startRecording();
-          console.log(`Resultado do reinício automático: ${result ? 'SUCESSO' : 'FALHA'}`);
-          
-          if (!result) {
-            console.error("Falha no reinício automático, tentando novamente em 3 segundos");
-            setTimeout(() => {
-              console.log("Tentativa de recuperação após falha no reinício");
-              this.startRecording();
-            }, 3000);
-          }
-        } catch (e) {
-          console.error("Erro ao reiniciar gravação automaticamente:", e);
-          // Tentar novamente após um intervalo maior
-          setTimeout(() => {
-            console.log("Tentativa de recuperação após ERRO no reinício");
-            this.startRecording();
-          }, 4000);
+        // Se ainda não temos texto, criar um erro mais específico
+        if (!data.text) {
+          throw new Error('Resposta não contém texto transcrito');
         }
-      }, 2000);
+      }
 
-      return normalizedData;
+      // Processar a transcrição
+      return await this._processTranscription(data, null);
     } catch (error) {
       console.error('Erro ao processar resposta:', error);
-      this._dispatchEvent('transcriptionError', { error: error.message });
+      
+      // Disparar evento de erro para notificar outros componentes
+      this._dispatchEvent('transcriptionError', {
+        error: error.message || 'Erro desconhecido'
+      });
+      
       throw error;
     }
   }
@@ -2216,37 +2179,17 @@ class WhisperTranscriptionService {
     try {
       // Obter token de autenticação
       const authToken = localStorage.getItem('authToken') || 
-                        sessionStorage.getItem('authToken') || 
-                        localStorage.getItem('token') || 
-                        sessionStorage.getItem('token');
+                      sessionStorage.getItem('authToken') || 
+                      localStorage.getItem('token') || 
+                      sessionStorage.getItem('token');
       
       if (!authToken) {
-        console.error('Whisper: Token de autenticação não encontrado para envio de transcrição');
+        console.warn('Token de autenticação não encontrado para envio de transcrição');
         return { success: false, error: 'Token de autenticação não encontrado' };
       }
       
-      // CORREÇÃO: Obter ID de sessão válido do DOM ou localStorage
-      // Em vez de usar um ID fixo, tente obter o ID correto da sessão atual
-      let sessionId = data.sessionId || this.sessionId;
-      
-      // Se não temos ID de sessão nos dados, tentar extrair da URL
-      if (!sessionId || sessionId === 'unknown') {
-        try {
-          const urlParams = new URLSearchParams(window.location.search);
-          const pathSegments = window.location.pathname.split('/');
-          
-          // Procurar em parâmetros da URL
-          if (urlParams.has('sessionId')) {
-            sessionId = urlParams.get('sessionId');
-          } 
-          // Procurar em segmentos do path (/session/{id})
-          else if (pathSegments.includes('session') && pathSegments.length > pathSegments.indexOf('session') + 1) {
-            sessionId = pathSegments[pathSegments.indexOf('session') + 1];
-          }
-        } catch (error) {
-          console.warn('Erro ao extrair sessionId da URL:', error);
-        }
-      }
+      // Obter o ID da sessão do objeto data ou da propriedade do serviço
+      const sessionId = data.sessionId || this.sessionId;
       
       // Verificar se temos um ID de sessão válido
       if (!sessionId || sessionId === 'unknown') {
@@ -2256,6 +2199,12 @@ class WhisperTranscriptionService {
       
       // Atualizar o objeto data com o sessionId
       const transcriptionData = { ...data, sessionId };
+      
+      // CORREÇÃO: Adicionar campo 'transcript' para compatibilidade com o backend
+      // O backend espera um campo 'transcript' ou 'content'
+      if (transcriptionData.content && !transcriptionData.transcript) {
+        transcriptionData.transcript = transcriptionData.content;
+      }
       
       // Enviar para API
       console.log(`Enviando transcrição para backend: ${this.transcriptEndpoint}`);
