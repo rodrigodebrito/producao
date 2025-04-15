@@ -342,6 +342,57 @@ const openAIService = {
             throw new Error(`Falha na transcrição de buffer: ${error.message}`);
         }
     },
+
+    /**
+     * Realiza uma chamada para o ChatGPT com mensagens e opções personalizadas
+     * @param {Array<Object>} messages - Array de mensagens no formato [{role: 'system|user|assistant', content: 'string'}]
+     * @param {Object} options - Opções adicionais como model, temperature, etc.
+     * @returns {Promise<Object>} - Objeto com a resposta da API contendo content, role, etc.
+     */
+    async callChatCompletion(messages, options = {}) {
+        try {
+            logger.info('Iniciando chamada de chat completion');
+            
+            if (!messages || !Array.isArray(messages) || messages.length === 0) {
+                throw new Error('Mensagens inválidas ou não fornecidas');
+            }
+            
+            // Configurar opções da chamada
+            const model = options.model || process.env.OPENAI_MODEL || 'gpt-4o-mini';
+            const temperature = options.temperature || 0.7;
+            const max_tokens = options.max_tokens || 1000;
+            
+            logger.info(`Usando modelo: ${model}, temperatura: ${temperature}, max_tokens: ${max_tokens}`);
+            
+            // Realizar a chamada para a API
+            const response = await openai.chat.completions.create({
+                model,
+                messages,
+                temperature,
+                max_tokens,
+                ...options
+            });
+            
+            // Registrar uso de tokens para monitoramento
+            if (response && response.usage) {
+                logger.info(`Tokens utilizados: ${response.usage.total_tokens} (prompt: ${response.usage.prompt_tokens}, completion: ${response.usage.completion_tokens})`);
+                
+                // Registrar no serviço de uso de tokens se disponível
+                if (tokenUsageService && typeof tokenUsageService.logTokenUsage === 'function') {
+                    tokenUsageService.logTokenUsage(model, messages, response.choices[0].message.content);
+                }
+            }
+            
+            logger.info('Chat completion concluído com sucesso');
+            
+            // Retornar a mensagem gerada pelo modelo
+            return response.choices[0].message;
+        } catch (error) {
+            logger.error(`Erro ao realizar chat completion: ${error.message}`);
+            logger.error(`Stack trace: ${error.stack}`);
+            throw new Error(`Falha no chat completion: ${error.message}`);
+        }
+    },
 };
 
 module.exports = openAIService; 
