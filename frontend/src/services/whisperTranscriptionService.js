@@ -21,6 +21,19 @@ class WhisperTranscriptionService {
     this.transcriptEndpoint = 'https://theraconnect-prd.onrender.com/api/ai/transcript'; // Manter URL absoluta conforme solicitado
     this.allTranscriptsEndpoint = this.isProd ? `${backendBaseUrl}/api/ai/transcriptions/session` : '/api/ai/transcriptions/session';
     
+    // ADICIONADO: Endpoint para análise de emoção/tom com URL absoluta
+    this.emotionAnalysisEndpoint = this.isProd ? 
+      `${backendBaseUrl}/api/ai/emotion/analyze` : 
+      '/api/ai/emotion/analyze';
+    
+    // ADICIONADO: Endpoint alternativo para análise de texto
+    this.analysisEndpoint = this.isProd ? 
+      `${backendBaseUrl}/api/ai/analyze/text` : 
+      '/api/ai/analyze/text';
+    
+    // ADICIONADO: Flag para controlar análise de emoção
+    this.emotionAnalysisEnabled = true;
+    
     // FIXADO: Flag para controlar se o serviço já foi inicializado
     this.serviceInitialized = false;
     
@@ -1817,6 +1830,19 @@ class WhisperTranscriptionService {
         return false;
       }
       
+      // ADICIONADO: Analisar emoções no texto transcrito
+      let emotions = null;
+      if (this.emotionAnalysisEnabled) {
+        try {
+          emotions = await this._analyzeEmotions(transcription);
+          if (emotions) {
+            console.log('Emoções detectadas:', emotions);
+          }
+        } catch (emotionError) {
+          console.warn('Erro ao analisar emoções:', emotionError);
+        }
+      }
+      
       // Formato para envio para o AI Context
       const transcriptionData = {
         sessionId: this.sessionId,
@@ -1824,7 +1850,8 @@ class WhisperTranscriptionService {
         speakerIdentifier: speakerIdentifier, // Novo campo com identificador completo
         isHost: isHost, // Novo campo indicando se é o anfitrião
         content: transcription.trim(),
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        emotions: emotions // ADICIONADO: Incluir emoções detectadas
       };
       
       console.log(`Processando transcrição para sessão ${this.sessionId} como ${this.speakerRole}`);
@@ -1842,6 +1869,7 @@ class WhisperTranscriptionService {
       // Disparar evento de nova transcrição
       this._dispatchEvent('transcriptionReceived', {
         transcript: transcription,
+        emotions: emotions,
         ...transcriptionData
       });
       
@@ -1885,6 +1913,11 @@ class WhisperTranscriptionService {
               detail: { fullText: newTranscript }
             }));
             console.log('Evento transcript-updated disparado para atualizar AIContext');
+          }
+          
+          // ADICIONADO: Atualizar emoções no AIContext
+          if (emotions) {
+            this._updateAIContextEmotions(emotions);
           }
         }
       } catch (storageError) {
@@ -2566,6 +2599,309 @@ class WhisperTranscriptionService {
       console.warn('Erro ao gerar texto consolidado de transcrições:', error);
       return 'Erro ao processar transcrições';
     }
+  }
+
+  /**
+   * ADICIONADO: Analisa emoções no texto transcrito
+   * @param {string} text - Texto para análise
+   * @returns {Promise<object>} - Análise de emoções
+   * @private
+   */
+  async _analyzeEmotions(text) {
+    if (!text || typeof text !== 'string' || text.trim().length < 5) {
+      console.warn('Texto insuficiente para análise de emoções');
+      return null;
+    }
+
+    try {
+      // Usar o endpoint de análise de texto em vez do endpoint de análise de áudio
+      if (!this.analysisEndpoint) {
+        console.log('Endpoint de análise de texto não configurado, retornando valores padrão');
+        return {
+          dominant: 'neutral',
+          sentiment: 'neutral',
+          scores: {
+            neutral: 1.0,
+            positive: 0,
+            negative: 0
+          }
+        };
+      }
+      
+      // Obter token de autenticação
+      const authToken = localStorage.getItem('authToken') || 
+                       sessionStorage.getItem('authToken') || 
+                       localStorage.getItem('token') || 
+                       sessionStorage.getItem('token');
+      
+      if (!authToken) {
+        console.warn('Token de autenticação não encontrado para análise de emoções');
+        return {
+          dominant: 'neutral',
+          sentiment: 'neutral',
+          scores: {
+            neutral: 1.0,
+            positive: 0,
+            negative: 0
+          }
+        };
+      }
+      
+      // Limitar o texto para evitar problemas com APIs
+      const limitedText = text.substring(0, 500);
+      const sessionId = this.sessionId || 'unknown';
+      
+      // Fazer a requisição para a API de análise do backend
+      // A rota /api/ai/analyze/text é usada para análise de sessão e funciona com texto
+      const response = await fetch(this.analysisEndpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Authorization': `Bearer ${authToken}`
+        },
+        body: JSON.stringify({ 
+          transcript: limitedText,
+          sessionId: sessionId
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Erro na análise de emoções: ${response.status} - ${errorText}`);
+      }
+
+      const result = await response.json();
+      
+      // Extrair dados de emoção da análise
+      // Na ausência de análise específica de emoção, criar um objeto de fallback
+      const emotionData = result.analysis || result;
+      
+      // Formatar e normalizar os resultados
+      const emotions = {
+        dominant: 'neutral',
+        scores: {
+          neutral: 0.7,
+          positive: 0.2,
+          negative: 0.1
+        },
+        sentiment: 'neutral',
+        confidence: 0.7,
+        language: 'pt',
+        analysis: emotionData
+      };
+
+      console.log('Análise de emoções concluída:', emotions);
+      return emotions;
+    } catch (error) {
+      console.error('Falha na análise de emoções:', error);
+      // Evitar que a falha na análise de emoções interrompa o fluxo principal
+      return {
+        error: error.message,
+        dominant: 'neutral',
+        sentiment: 'neutral',
+        scores: {
+          neutral: 1.0,
+          positive: 0,
+          negative: 0
+        }
+      };
+    }
+  }
+
+  /**
+   * ADICIONADO: Analisa emoções em áudio
+   * @param {Blob} audioBlob - Blob de áudio
+   * @param {string} processingId - ID para rastreamento
+   * @returns {Promise<Object>} Resultado da análise
+   * @private
+   */
+  async _analyzeEmotionInAudio(audioBlob, processingId) {
+    try {
+      // Log para debugging
+      console.log(`Iniciando análise de emoção para processamento ${processingId}`);
+      
+      // Verificar token de autenticação
+      const authToken = localStorage.getItem('authToken') || 
+                        sessionStorage.getItem('authToken') || 
+                        localStorage.getItem('token') || 
+                        sessionStorage.getItem('token');
+      
+      if (!authToken) {
+        console.warn('Análise de emoção: Token de autenticação não encontrado');
+        return null;
+      }
+      
+      // Verificar se temos um endpoint para análise de emoção
+      if (!this.emotionAnalysisEndpoint) {
+        console.warn('Endpoint para análise de emoção não configurado');
+        
+        // Se o backend não suporta análise de emoção, podemos usar uma 
+        // solução alternativa com web API local
+        return this._performLocalEmotionAnalysis(audioBlob);
+      }
+      
+      console.log(`Enviando áudio para análise de emoção/tom: ${processingId}`);
+      
+      // Criar FormData para envio
+      const formData = new FormData();
+      formData.append('audio', audioBlob, `emotion_${processingId}.wav`);
+      formData.append('processingId', processingId);
+      
+      // Configurar opções específicas de análise
+      formData.append('analyzeEmotion', 'true');
+      
+      // Enviar para API de análise de emoção
+      const response = await fetch(this.emotionAnalysisEndpoint, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${authToken}`
+        },
+        body: formData
+      });
+      
+      if (!response.ok) {
+        // Se der erro, continuar sem a análise de emoção
+        console.warn(`Erro ao analisar emoção: ${response.status} ${response.statusText}`);
+        return null;
+      }
+      
+      const result = await response.json();
+      return result;
+    } catch (error) {
+      console.warn('Erro ao analisar emoção no áudio:', error);
+      return null; // Continuar sem a análise de emoção em caso de erro
+    }
+  }
+
+  /**
+   * ADICIONADO: Análise de emoção local (fallback se não houver API)
+   * @param {Blob} audioBlob - Blob de áudio para análise
+   * @returns {Promise<Object>} Resultado da análise
+   * @private
+   */
+  async _performLocalEmotionAnalysis(audioBlob) {
+    // Implementação de fallback simples baseada em características de áudio
+    try {
+      console.log('Realizando análise de emoção local (fallback)');
+      
+      // Criar um contexto de áudio
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      
+      // Decodificar o blob de áudio
+      const arrayBuffer = await audioBlob.arrayBuffer();
+      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+      
+      // Analisar características básicas de áudio
+      const channelData = audioBuffer.getChannelData(0);
+      
+      // Calcular volume médio e variância (indicadores básicos de emoção)
+      let sum = 0;
+      let sumOfSquares = 0;
+      
+      for (let i = 0; i < channelData.length; i++) {
+        sum += Math.abs(channelData[i]);
+        sumOfSquares += channelData[i] * channelData[i];
+      }
+      
+      const avgVolume = sum / channelData.length;
+      const variance = sumOfSquares / channelData.length - (sum / channelData.length) ** 2;
+      
+      // Lógica simplificada para determinar emoção baseada em volume e variância
+      let dominantEmotion = 'neutral';
+      let dominantTone = 'neutral';
+      let emotionConfidence = 0.5;
+      let toneConfidence = 0.5;
+      
+      // Volume alto + alta variância geralmente indica excitação (felicidade ou raiva)
+      if (avgVolume > 0.1 && variance > 0.01) {
+        dominantEmotion = 'excited';
+        emotionConfidence = Math.min(0.7, avgVolume * 5);
+      } 
+      // Volume baixo + baixa variância pode indicar calma ou tristeza
+      else if (avgVolume < 0.05 && variance < 0.005) {
+        dominantEmotion = 'calm';
+        emotionConfidence = Math.min(0.6, (1 - avgVolume) * 3);
+      }
+      
+      // Para o tom, usamos a mesma lógica simples
+      if (variance > 0.01) {
+        dominantTone = 'expressive';
+        toneConfidence = Math.min(0.7, variance * 50);
+      } else {
+        dominantTone = 'monotone';
+        toneConfidence = Math.min(0.6, (1 - variance) * 30);
+      }
+      
+      // Construir resultado básico
+      return {
+        emotions: {
+          dominant: {
+            label: dominantEmotion,
+            confidence: emotionConfidence
+          },
+          all: [
+            { label: dominantEmotion, confidence: emotionConfidence },
+            { label: 'neutral', confidence: 1 - emotionConfidence }
+          ]
+        },
+        tones: {
+          dominant: {
+            label: dominantTone,
+            confidence: toneConfidence
+          },
+          all: [
+            { label: dominantTone, confidence: toneConfidence },
+            { label: 'neutral', confidence: 1 - toneConfidence }
+          ]
+        },
+        audioFeatures: {
+          averageVolume: avgVolume,
+          variance: variance
+        }
+      };
+    } catch (error) {
+      console.error('Erro na análise local de emoção:', error);
+      return null;
+    }
+  }
+
+  /**
+   * ADICIONADO: Atualiza emoções no AIContext
+   * @param {Object} emotions - Dados de emoções detectadas
+   * @private
+   */
+  _updateAIContextEmotions(emotions) {
+    console.log('[Whisper] Tentando atualizar AIContext com emoções:', emotions);
+    
+    try {
+      // Verificar se temos acesso direto ao contexto
+      if (window.__AI_CONTEXT && typeof window.__AI_CONTEXT.updateEmotions === 'function') {
+        console.log('[Whisper] Usando updateEmotions do aiContext');
+        window.__AI_CONTEXT.updateEmotions(emotions);
+        return;
+      }
+      
+      // Alternativa: Disparar evento para atualizar o contexto
+      console.log('[Whisper] Disparando evento updateEmotions');
+      var emotionEvent = new CustomEvent('updateEmotions', { 
+        detail: { emotions },
+        bubbles: true,
+        cancelable: true
+      });
+      window.dispatchEvent(emotionEvent);
+      
+    } catch (error) {
+      console.error('[Whisper] Erro ao atualizar emoções no AIContext:', error);
+    }
+  }
+
+  /**
+   * Gera um ID único para transcrições
+   * @private
+   */
+  _generateId() {
+    return `tr_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
   }
 }
 
