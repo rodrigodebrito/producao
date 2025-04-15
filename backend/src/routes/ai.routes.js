@@ -683,4 +683,17 @@ router.post('/transcript', authenticate, async (req, res) => {
   }
 });
 
+// Adicionar a rota de análise de emoção
+/**
+ * @api {post} /api/ai/emotion/analyze Analisa emoções em áudio
+ * @apiName AnalyzeEmotionInAudio
+ * @apiGroup AI
+ * @apiDescription Analisa um arquivo de áudio para detectar emoções e tom de voz
+ */
+router.post(
+  '/emotion/analyze',
+  [authenticate],
+  aiController.analyzeEmotionInAudio
+);
+
 module.exports = router; 

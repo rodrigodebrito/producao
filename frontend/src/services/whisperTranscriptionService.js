@@ -21,8 +21,14 @@ class WhisperTranscriptionService {
     this.transcriptEndpoint = 'https://theraconnect-prd.onrender.com/api/ai/transcript'; // Manter URL absoluta conforme solicitado
     this.allTranscriptsEndpoint = this.isProd ? `${backendBaseUrl}/api/ai/transcriptions/session` : '/api/ai/transcriptions/session';
     
+    // NOVO: Endpoint para análise de tom/emoção
+    this.emotionAnalysisEndpoint = this.isProd ? `${backendBaseUrl}/api/ai/emotion/analyze` : '/api/ai/emotion/analyze';
+    
     // FIXADO: Flag para controlar se o serviço já foi inicializado
     this.serviceInitialized = false;
+    
+    // NOVO: Flag para controlar se a análise de emoção está habilitada
+    this.emotionAnalysisEnabled = true;
     
     console.log(`Whisper: Serviço criado em ambiente ${this.isProd ? 'de produção' : 'de desenvolvimento'}`);
     console.log(`Whisper: Endpoints configurados, aguardando inicialização manual`);
@@ -42,9 +48,21 @@ class WhisperTranscriptionService {
     // Configurações para detecção de silêncio
     this.silenceDetectionEnabled = true;
     this.silenceThreshold = -45; // dB (mais negativo = mais sensível)
-    this.silenceDuration = 5000; // AJUSTADO: 5 segundos de silêncio para enviar e parar
-    this.maxChunkDuration = 15000; // AJUSTADO: 15 segundos máximos por chunk (mais rápido)
-    this.minChunkDuration = 1500; // AJUSTADO: 1.5 segundos mínimos por chunk
+    this.silenceDuration = 5000;
+    
+    // NOVO: Configurações para análise de emoção
+    this.emotionAnalysisModel = 'default'; // Modelo padrão para análise de emoção
+    this.emotionCategories = [
+      'neutral', 'happy', 'sad', 'angry', 'fearful', 
+      'disgusted', 'surprised', 'calm', 'confused', 'emphatic'
+    ];
+    
+    // NOVO: Configurações para análise de tom de voz
+    this.toneAnalysisEnabled = true;
+    this.toneCategories = [
+      'formal', 'informal', 'friendly', 'serious', 
+      'urgent', 'hesitant', 'confident', 'questioning'
+    ];
     
     // Estado de detecção de silêncio
     this.audioContext = null;
@@ -1183,45 +1201,37 @@ class WhisperTranscriptionService {
    */
   async processAudioChunks(audioBlob, fileName) {
     try {
+      // Gerar um ID único para este processamento
+      const processingId = `proc_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+      
       // 1. Verificar se temos um blob válido
       if (!audioBlob || audioBlob.size === 0) {
-        console.error('Blob de áudio inválido ou vazio');
-        return;
+        throw new Error('Arquivo de áudio vazio ou inválido');
       }
       
-      // 2. Detectar se é o primeiro áudio ou subsequente
+      // NOVO: Se análise de emoção estiver ativada, fazer a análise em paralelo com a transcrição
+      let emotionAnalysisPromise = Promise.resolve(null);
+      if (this.emotionAnalysisEnabled || this.toneAnalysisEnabled) {
+        console.log('Iniciando análise de emoção/tom em paralelo com a transcrição');
+        emotionAnalysisPromise = this._analyzeEmotionInAudio(audioBlob, processingId);
+      }
+      
+      // 2. Adicionar flag para acompanhar se é o primeiro áudio
       const isFirstAudio = this.chunkCounter === 0;
       
-      // 3. ESTRATÉGIA DIFERENCIADA:
-      // - Primeiro áudio: enviar como WAV (funciona consistentemente)
-      // - Áudios subsequentes: enviar como MP3 (mais estável para processamento)
-      const mimeType = 'audio/webm'; // Usar webm que é mais compatível com streaming
-      const extension = '.webm';
+      // 3. Verificar tipo MIME e preparar para upload
+      const mimeType = audioBlob.type || 'audio/wav';
       
-      console.log(`Estratégia: Enviando áudio #${this.chunkCounter} como WEBM (mais compatível)`);
+      // 4. Definir nome do arquivo para upload se não foi fornecido
+      const finalFileName = fileName || `audio_${Date.now()}.wav`;
       
-      // 4. Garantir nome de arquivo único com identificação clara
-      const finalFileName = `audio-${this.chunkCounter}-${Date.now()}-${Math.floor(Math.random() * 10000)}${extension}`;
-      
-      // 5. Limitar o tamanho do blob para prevenir problemas HTTP/2
-      let blobToSend = audioBlob;
-      
-      // Se o blob for maior que 1MB, reduzir a qualidade
-      if (audioBlob.size > 1024 * 1024) {
-        console.log(`Áudio grande detectado (${Math.round(audioBlob.size/1024)}KB), convertendo para qualidade menor`);
-        try {
-          // Usar abordagem com XMLHttpRequest em vez de fetch (mais estável para uploads grandes)
-          return await this._sendAudioWithXHR(blobToSend, finalFileName);
-        } catch (conversionError) {
-          console.warn('Erro ao converter áudio, tentando enviar original:', conversionError);
-          // Continuar com o blob original se a conversão falhar
-        }
-      }
+      // 5. Usar o blob diretamente (já deve estar no formato correto)
+      const blobToSend = audioBlob;
       
       console.log(`Enviando áudio como WEBM: ${finalFileName}, tamanho: ${Math.round(blobToSend.size/1024)}KB`);
       
       // 6. Disparar evento de processamento
-      this._dispatchEvent('processingAudio', {
+      this._dispatchEvent('processingChunk', {
         fileName: finalFileName,
         size: blobToSend.size,
         format: mimeType,
@@ -1244,62 +1254,48 @@ class WhisperTranscriptionService {
         });
       }
       
-      // 8. Enviar para o backend usando XMLHttpRequest em vez de fetch
+      // 8. Marcar como em progresso
+      this.transcriptionInProgress = true;
+      
       try {
-        this.transcriptionInProgress = true;
+        // 9. Enviar para a API Whisper
+        console.log(`Enviando áudio para transcrição via XHR: ${finalFileName}`);
+        const response = await this._sendAudioWithXHR(blobToSend, finalFileName);
         
-        console.log(`Tentando enviar áudio via XHR: ${this.apiEndpoint}, formato: ${mimeType}, arquivo: ${finalFileName}`);
+        // 10. Processar resultado
+        console.log('Processando resposta da API Whisper');
         
-        // Usar XHR pode evitar problemas HTTP/2 em certos navegadores
-        return await this._sendAudioWithXHR(blobToSend, finalFileName);
+        // NOVO: Aguardar resultado da análise de emoção se estiver ativa
+        const emotionAnalysis = await emotionAnalysisPromise;
         
-      } catch (xhrError) {
-        console.error('Erro ao enviar áudio via XHR:', xhrError);
-        
-        // Se o XHR falhar, tentar enviar com Fetch (método alternativo)
-        try {
-          console.log('Tentando método alternativo (fetch) após falha de XHR');
-          
-          // Preparar FormData
-          const formData = new FormData();
-          formData.append('file', blobToSend, finalFileName);
-          formData.append('sessionId', this.sessionId);
-          formData.append('chunkCounter', String(this.chunkCounter));
-          formData.append('clientTimestamp', new Date().toISOString());
-          formData.append('format', 'json');
-          formData.append('language', 'pt');
-          formData.append('speaker', this.speakerRole);
-          
-          // Detectar protocolo da página atual para usar o mesmo protocolo na API
-          const currentProtocol = window.location.protocol;
-          let endpoint = this.apiEndpoint;
-          
-          // Garantir que a API use o mesmo protocolo da página
-          if (currentProtocol === 'https:' && endpoint.startsWith('http://')) {
-            endpoint = endpoint.replace('http://', 'https://');
-          } else if (currentProtocol === 'http:' && endpoint.startsWith('https://')) {
-            endpoint = endpoint.replace('https://', 'http://');
-          }
-          
-          console.log(`Tentando fetch com endpoint: ${endpoint}`);
-          
-          // Enviar com fetch
-          const response = await fetch(endpoint, {
-            method: 'POST',
-            body: formData
-          });
-          
-          return await this._processResponse(response);
-        } catch (fetchError) {
-          console.error('Também falhou com fetch:', fetchError);
-          throw fetchError;
+        // Adicionar informações de emoção à resposta da API antes de processar
+        if (emotionAnalysis && response && response.data) {
+          console.log('Combinando análise de emoção/tom com resultado da transcrição');
+          response.data.emotionAnalysis = emotionAnalysis.emotions || null;
+          response.data.toneAnalysis = emotionAnalysis.tones || null;
         }
+        
+        const result = await this._processResponse(response);
+        
+        // 11. Incrementar contador de chunks
+        this.chunkCounter++;
+        
+        // 12. Retornar o resultado
+        return result;
       } finally {
+        // 13. Liberar flag de progresso
         this.transcriptionInProgress = false;
+        
+        // 14. Disparar evento de conclusão
+        this._dispatchEvent('transcriptionComplete', {
+          success: true,
+          chunkCounter: this.chunkCounter
+        });
       }
     } catch (error) {
       console.error('Erro ao processar chunks de áudio:', error);
-      this._dispatchEvent('transcriptionError', { error: error.message });
+      this._dispatchEvent('processingError', { error: error.message });
+      throw error;
     }
   }
   
@@ -1764,6 +1760,10 @@ class WhisperTranscriptionService {
       
       const transcription = response.data.text || response.data.transcript || response.data;
       
+      // NOVO: Extrair informações de emoção/tom se disponíveis
+      const emotionAnalysis = response.data.emotionAnalysis || null;
+      const toneAnalysis = response.data.toneAnalysis || null;
+      
       // Obter identificador completo do papel (inclui status de host)
       const speakerIdentifier = this._getSpeakerIdentifier();
       const isHost = this._isSessionHost();
@@ -1786,8 +1786,19 @@ class WhisperTranscriptionService {
         speakerLabel = 'CLIENTE';
       }
       
+      // NOVO: Adicionar informação de emoção ao log, se disponível
+      let emotionInfo = '';
+      if (emotionAnalysis && emotionAnalysis.dominant) {
+        emotionInfo = ` [Emoção: ${emotionAnalysis.dominant.label}]`;
+      }
+      
+      let toneInfo = '';
+      if (toneAnalysis && toneAnalysis.dominant) {
+        toneInfo = ` [Tom: ${toneAnalysis.dominant.label}]`;
+      }
+      
       console.log(
-        `\n%c ${speakerLabel} DISSE: %c ${transcription.substring(0, 200)}${transcription.length > 200 ? '...' : ''}\n`, 
+        `\n%c ${speakerLabel} DISSE${emotionInfo}${toneInfo}: %c ${transcription.substring(0, 200)}${transcription.length > 200 ? '...' : ''}\n`, 
         `background: ${bgColor}; 
          color: white; 
          font-weight: bold; 
@@ -1824,7 +1835,10 @@ class WhisperTranscriptionService {
         speakerIdentifier: speakerIdentifier, // Novo campo com identificador completo
         isHost: isHost, // Novo campo indicando se é o anfitrião
         content: transcription.trim(),
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        // NOVO: Adicionar informações de emoção/tom aos dados da transcrição
+        emotionAnalysis: emotionAnalysis,
+        toneAnalysis: toneAnalysis
       };
       
       console.log(`Processando transcrição para sessão ${this.sessionId} como ${this.speakerRole}`);
@@ -2565,6 +2579,178 @@ class WhisperTranscriptionService {
     } catch (error) {
       console.warn('Erro ao gerar texto consolidado de transcrições:', error);
       return 'Erro ao processar transcrições';
+    }
+  }
+
+  // NOVO: Método para habilitar/desabilitar análise de emoção
+  setEmotionAnalysis(enable) {
+    this.emotionAnalysisEnabled = enable;
+    console.log(`Análise de emoção ${enable ? 'ativada' : 'desativada'}`);
+    this._dispatchEvent('statusChange', { 
+      status: 'config', 
+      emotionAnalysis: enable,
+      message: `Análise de emoção ${enable ? 'ativada' : 'desativada'}`
+    });
+  }
+
+  // NOVO: Método para habilitar/desabilitar análise de tom
+  setToneAnalysis(enable) {
+    this.toneAnalysisEnabled = enable;
+    console.log(`Análise de tom ${enable ? 'ativada' : 'desativada'}`);
+    this._dispatchEvent('statusChange', { 
+      status: 'config', 
+      toneAnalysis: enable,
+      message: `Análise de tom ${enable ? 'ativada' : 'desativada'}`
+    });
+  }
+
+  // NOVO: Método para análise de emoção no áudio
+  async _analyzeEmotionInAudio(audioBlob, processingId) {
+    try {
+      // Obter token de autenticação
+      const authToken = localStorage.getItem('authToken') || 
+                       sessionStorage.getItem('authToken') || 
+                       localStorage.getItem('token') || 
+                       sessionStorage.getItem('token');
+      
+      if (!authToken) {
+        console.warn('Análise de emoção: Token de autenticação não encontrado');
+        return null;
+      }
+      
+      // Verificar se temos um endpoint para análise de emoção
+      if (!this.emotionAnalysisEndpoint) {
+        console.warn('Endpoint para análise de emoção não configurado');
+        
+        // Se o backend não suporta análise de emoção, podemos usar uma 
+        // solução alternativa com web API local
+        return this._performLocalEmotionAnalysis(audioBlob);
+      }
+      
+      console.log(`Enviando áudio para análise de emoção/tom: ${processingId}`);
+      
+      // Criar FormData para envio
+      const formData = new FormData();
+      formData.append('audio', audioBlob, `emotion_${processingId}.wav`);
+      formData.append('processingId', processingId);
+      
+      // Configurar opções específicas de análise
+      if (this.emotionAnalysisEnabled) {
+        formData.append('analyzeEmotion', 'true');
+        formData.append('emotionModel', this.emotionAnalysisModel);
+      }
+      
+      if (this.toneAnalysisEnabled) {
+        formData.append('analyzeTone', 'true');
+      }
+      
+      // Enviar para API de análise de emoção
+      const response = await fetch(this.emotionAnalysisEndpoint, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${authToken}`
+        },
+        body: formData
+      });
+      
+      if (!response.ok) {
+        // Se der erro, continuar sem a análise de emoção
+        console.warn(`Erro ao analisar emoção: ${response.status} ${response.statusText}`);
+        return null;
+      }
+      
+      const result = await response.json();
+      return result;
+    } catch (error) {
+      console.warn('Erro ao analisar emoção no áudio:', error);
+      return null; // Continuar sem a análise de emoção em caso de erro
+    }
+  }
+
+  // NOVO: Método para análise de emoção local (fallback se não houver API)
+  async _performLocalEmotionAnalysis(audioBlob) {
+    // Implementação de fallback simples baseada em características de áudio
+    try {
+      console.log('Realizando análise de emoção local (fallback)');
+      
+      // Criar um contexto de áudio
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      
+      // Decodificar o blob de áudio
+      const arrayBuffer = await audioBlob.arrayBuffer();
+      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+      
+      // Analisar características básicas de áudio
+      const channelData = audioBuffer.getChannelData(0);
+      
+      // Calcular volume médio e variância (indicadores básicos de emoção)
+      let sum = 0;
+      let sumOfSquares = 0;
+      
+      for (let i = 0; i < channelData.length; i++) {
+        sum += Math.abs(channelData[i]);
+        sumOfSquares += channelData[i] * channelData[i];
+      }
+      
+      const avgVolume = sum / channelData.length;
+      const variance = sumOfSquares / channelData.length - (sum / channelData.length) ** 2;
+      
+      // Lógica simplificada para determinar emoção baseada em volume e variância
+      let dominantEmotion = 'neutral';
+      let dominantTone = 'neutral';
+      let emotionConfidence = 0.5;
+      let toneConfidence = 0.5;
+      
+      // Volume alto + alta variância geralmente indica excitação (felicidade ou raiva)
+      if (avgVolume > 0.1 && variance > 0.01) {
+        dominantEmotion = 'excited';
+        emotionConfidence = Math.min(0.7, avgVolume * 5);
+      } 
+      // Volume baixo + baixa variância pode indicar calma ou tristeza
+      else if (avgVolume < 0.05 && variance < 0.005) {
+        dominantEmotion = 'calm';
+        emotionConfidence = Math.min(0.6, (1 - avgVolume) * 3);
+      }
+      
+      // Para o tom, usamos a mesma lógica simples
+      if (variance > 0.01) {
+        dominantTone = 'expressive';
+        toneConfidence = Math.min(0.7, variance * 50);
+      } else {
+        dominantTone = 'monotone';
+        toneConfidence = Math.min(0.6, (1 - variance) * 30);
+      }
+      
+      // Construir resultado básico
+      return {
+        emotions: {
+          dominant: {
+            label: dominantEmotion,
+            confidence: emotionConfidence
+          },
+          all: [
+            { label: dominantEmotion, confidence: emotionConfidence },
+            { label: 'neutral', confidence: 1 - emotionConfidence }
+          ]
+        },
+        tones: {
+          dominant: {
+            label: dominantTone,
+            confidence: toneConfidence
+          },
+          all: [
+            { label: dominantTone, confidence: toneConfidence },
+            { label: 'neutral', confidence: 1 - toneConfidence }
+          ]
+        },
+        audioFeatures: {
+          averageVolume: avgVolume,
+          variance: variance
+        }
+      };
+    } catch (error) {
+      console.error('Erro na análise local de emoção:', error);
+      return null;
     }
   }
 }

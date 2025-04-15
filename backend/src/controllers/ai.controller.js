@@ -13,6 +13,7 @@ const ffmpeg = require('fluent-ffmpeg');
 const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
 ffmpeg.setFfmpegPath(ffmpegPath);
 const tokenUsageService = require('../services/ai/token-usage.service');
+const emotionAnalysisService = require('../services/ai/emotion-analysis.service');
 
 // Inicializar o cliente OpenAI para uso interno no controlador
 const openai = new OpenAI({
@@ -1662,6 +1663,95 @@ const aiController = {
       res.status(500).json({
         success: false,
         message: 'Erro ao obter relatório de uso de tokens',
+        error: error.message
+      });
+    }
+  },
+
+  /**
+   * @api {post} /api/ai/emotion/analyze Analisa emoções em áudio
+   * @apiName AnalyzeEmotionInAudio
+   * @apiGroup AI
+   * @apiDescription Analisa um arquivo de áudio para detectar emoções e tom de voz
+   * 
+   * @apiParam {File} audio Arquivo de áudio para análise
+   * @apiParam {Boolean} [analyzeEmotion=true] Se deve analisar emoções
+   * @apiParam {Boolean} [analyzeTone=true] Se deve analisar tom de voz
+   * @apiParam {String} [language=pt] Idioma do áudio
+   * 
+   * @apiSuccess {Object} emotions Informações sobre emoções detectadas
+   * @apiSuccess {Object} emotions.dominant Emoção dominante
+   * @apiSuccess {String} emotions.dominant.label Nome da emoção
+   * @apiSuccess {Number} emotions.dominant.confidence Nível de confiança [0-1]
+   * @apiSuccess {Array} emotions.all Lista de todas as emoções detectadas
+   * @apiSuccess {Object} tones Informações sobre tons de voz detectados
+   * @apiSuccess {Object} tones.dominant Tom dominante
+   * @apiSuccess {String} tones.dominant.label Nome do tom
+   * @apiSuccess {Number} tones.dominant.confidence Nível de confiança [0-1]
+   * @apiSuccess {Array} tones.all Lista de todos os tons detectados
+   */
+  analyzeEmotionInAudio: async (req, res) => {
+    try {
+      // Verificar se foi enviado um arquivo
+      if (!req.files || !req.files.audio) {
+        return res.status(400).json({
+          success: false,
+          message: 'Nenhum arquivo de áudio enviado. Use o campo "audio" para enviar o arquivo.'
+        });
+      }
+      
+      // Obter o arquivo de áudio
+      const audioFile = req.files.audio;
+      
+      // Verificar tipo de arquivo
+      const validMimeTypes = ['audio/wav', 'audio/mp3', 'audio/mpeg', 'audio/webm', 'audio/mp4', 'audio/ogg'];
+      
+      // Se o tipo não for reconhecido automaticamente, tentar inferir pela extensão
+      let mimeType = audioFile.mimetype;
+      if (!validMimeTypes.includes(mimeType)) {
+        const extension = audioFile.name.split('.').pop().toLowerCase();
+        
+        if (extension === 'wav') mimeType = 'audio/wav';
+        else if (extension === 'mp3') mimeType = 'audio/mpeg';
+        else if (extension === 'webm') mimeType = 'audio/webm';
+        else if (extension === 'ogg') mimeType = 'audio/ogg';
+        else if (extension === 'mp4') mimeType = 'audio/mp4';
+      }
+      
+      // Validar tipo de arquivo
+      if (!validMimeTypes.includes(mimeType)) {
+        return res.status(400).json({
+          success: false,
+          message: `Tipo de arquivo não suportado: ${mimeType}. Tipos suportados: WAV, MP3, WebM, OGG, MP4.`
+        });
+      }
+      
+      // Obter opções da requisição
+      const options = {
+        analyzeEmotion: req.body.analyzeEmotion !== 'false',
+        analyzeTone: req.body.analyzeTone !== 'false',
+        language: req.body.language || 'pt',
+        processingId: req.body.processingId || `proc_${Date.now()}`
+      };
+      
+      // Analisar emoções no áudio
+      const analysisResult = await emotionAnalysisService.analyzeAudio(
+        audioFile.data,
+        options
+      );
+      
+      // Retornar resultado
+      return res.status(200).json({
+        success: true,
+        emotions: options.analyzeEmotion ? analysisResult.emotions : undefined,
+        tones: options.analyzeTone ? analysisResult.tones : undefined,
+        processingId: options.processingId
+      });
+    } catch (error) {
+      logger.error(`Erro ao analisar emoções em áudio: ${error.message}`);
+      return res.status(500).json({
+        success: false,
+        message: 'Erro ao processar análise de emoção',
         error: error.message
       });
     }
