@@ -14,6 +14,7 @@ const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
 ffmpeg.setFfmpegPath(ffmpegPath);
 const tokenUsageService = require('../services/ai/token-usage.service');
 const emotionAnalysisService = require('../services/ai/emotion-analysis.service');
+const logger = require('../utils/logger');
 
 // Inicializar o cliente OpenAI para uso interno no controlador
 const openai = new OpenAI({
