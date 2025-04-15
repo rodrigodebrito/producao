@@ -84,8 +84,9 @@ export const MicButton = ({ transcriptionMode = 'auto' }) => {
     
     if (window.whisperService) {
       try {
-        console.log('🛑 Parando serviço Whisper');
-        window.whisperService.stopRecording();
+        console.log('🛑 Parando serviço Whisper com flag de parada manual');
+        // Passar true como segundo parâmetro para indicar parada manual
+        window.whisperService.stopRecording(true, true);
       } catch (e) {
         console.error('❌ Erro ao parar whisperService:', e);
       }

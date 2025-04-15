@@ -85,6 +85,9 @@ class WhisperTranscriptionService {
     // NOVO: Flag para verificar se estamos em pausa por silêncio
     this.pausedForSilence = false;
     
+    // NOVO: Flag para marcar se a parada foi manual (solicitada pelo usuário)
+    this.manualStopped = false;
+    
     // NOVO: Configuração para detecção de voz após pausa
     this.voiceDetectionEnabled = true;
     this.voiceThreshold = -40; // dB (menos sensível que o silêncio)
@@ -921,10 +924,26 @@ class WhisperTranscriptionService {
   /**
    * Para a gravação e processa o áudio capturado
    * @param {boolean} processCurrentChunk - Se deve processar o chunk atual
+   * @param {boolean} manualStop - Se a parada foi solicitada manualmente pelo usuário
    * @returns {Promise<void>}
    */
-  async stopRecording(processCurrentChunk = true) {
+  async stopRecording(processCurrentChunk = true, manualStop = false) {
     console.log('=== PARANDO GRAVAÇÃO WAV ===');
+    
+    // Marcar se a parada foi manual
+    this.manualStopped = manualStop;
+    
+    // Se for parada manual, desativar completamente o detector de voz
+    if (manualStop) {
+      console.log('PARADA MANUAL detectada - desativando detecção de voz e reinício automático');
+      this.pausedForSilence = false; // Não estamos em pausa, estamos completamente parados
+      
+      // Certificar-se de que a detecção de voz seja interrompida
+      if (this.voiceDetectionInterval) {
+        clearInterval(this.voiceDetectionInterval);
+        this.voiceDetectionInterval = null;
+      }
+    }
     
     // Forçar liberação de recursos mesmo que o MediaRecorder não esteja ativo
     const wasRecording = this.isRecording;
@@ -1544,7 +1563,22 @@ class WhisperTranscriptionService {
   // Adicionar configuração para controlar o reinício automático
   setAutoRestart(enable) {
     this.autoRestart = enable;
+    
+    // Se desativar o reinício e estiver em pausa, cancelar detecção de voz
+    if (!enable && this.pausedForSilence) {
+      if (this.voiceDetectionInterval) {
+        clearInterval(this.voiceDetectionInterval);
+        this.voiceDetectionInterval = null;
+      }
+      this.pausedForSilence = false;
+    }
+    
     console.log(`Reinício automático ${enable ? 'ativado' : 'desativado'}`);
+    this._dispatchEvent('statusChange', { 
+      status: 'config', 
+      autoRestart: enable,
+      message: `Reinício automático ${enable ? 'ativado' : 'desativado'}`
+    });
   }
 
   /**
@@ -1598,6 +1632,12 @@ class WhisperTranscriptionService {
   async _pauseRecordingForSilence() {
     console.log('=== PAUSANDO GRAVAÇÃO POR SILÊNCIO ===');
     
+    // Se a parada foi manual, não reiniciar
+    if (this.manualStopped) {
+      console.log('Não iniciando detecção de voz pois gravação foi parada manualmente');
+      return;
+    }
+    
     try {
       // Marcar como pausado por silêncio
       this.pausedForSilence = true;
@@ -1605,10 +1645,13 @@ class WhisperTranscriptionService {
       // Parar a gravação sem processar o áudio (já foi processado)
       await this.stopRecording(false);
       
-      // Iniciar detecção de voz para retomar gravação
-      this._startVoiceDetection();
-      
-      console.log('Gravação pausada por silêncio. Aguardando voz para reiniciar...');
+      // Iniciar detecção de voz para retomar gravação apenas se autoRestart estiver ativo
+      if (this.autoRestart) {
+        this._startVoiceDetection();
+        console.log('Gravação pausada por silêncio. Aguardando voz para reiniciar...');
+      } else {
+        console.log('Gravação pausada por silêncio. Reinício automático desativado.');
+      }
     } catch (error) {
       console.error('Erro ao pausar gravação por silêncio:', error);
     }
@@ -1619,6 +1662,12 @@ class WhisperTranscriptionService {
    * @private
    */
   _startVoiceDetection() {
+    // Se a parada foi manual, não iniciar detecção
+    if (this.manualStopped) {
+      console.log('Não iniciando detecção de voz pois gravação foi parada manualmente');
+      return;
+    }
+    
     // Limpar qualquer intervalo existente
     if (this.voiceDetectionInterval) {
       clearInterval(this.voiceDetectionInterval);
