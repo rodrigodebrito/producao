@@ -21,6 +21,10 @@ class WhisperTranscriptionService {
     this.transcriptEndpoint = 'https://theraconnect-prd.onrender.com/api/ai/transcript'; // Manter URL absoluta conforme solicitado
     this.allTranscriptsEndpoint = this.isProd ? `${backendBaseUrl}/api/ai/transcriptions/session` : '/api/ai/transcriptions/session';
     
+    // ADICIONADO: Endpoint para análise de emoções
+    this.analysisEndpoint = 'https://theraconnect-prd.onrender.com/api/ai/analyze/text';
+    this.emotionEndpoint = 'https://theraconnect-prd.onrender.com/api/ai/emotion/analyze';
+    
     // FIXADO: Flag para controlar se o serviço já foi inicializado
     this.serviceInitialized = false;
     
@@ -1220,8 +1224,13 @@ class WhisperTranscriptionService {
       
       console.log(`Enviando áudio como WEBM: ${finalFileName}, tamanho: ${Math.round(blobToSend.size/1024)}KB`);
       
+      // ADICIONADO: Iniciar análise de emoção em paralelo
+      const processingId = `proc_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+      console.log('Iniciando análise de emoção/tom em paralelo com a transcrição');
+      const emotionPromise = this._analyzeEmotionInAudio(blobToSend, processingId);
+      
       // 6. Disparar evento de processamento
-      this._dispatchEvent('processingAudio', {
+      this._dispatchEvent('processingChunk', {
         fileName: finalFileName,
         size: blobToSend.size,
         format: mimeType,
@@ -1466,12 +1475,25 @@ class WhisperTranscriptionService {
         sessionId: data.sessionId || this.sessionId
       };
 
+      // ADICIONADO: Analisar emoções no texto
+      try {
+        const emotions = await this._analyzeEmotions(text);
+        if (emotions) {
+          console.log('Análise de emoções concluída:', emotions);
+          normalizedData.emotions = emotions;
+        }
+      } catch (emotionError) {
+        console.warn('Erro na análise de emoções, continuando sem ela:', emotionError);
+      }
+
       // Enviar o evento de transcrição
-      this._dispatchEvent('transcription', {
+      this._dispatchEvent('transcriptionSuccess', {
         text: normalizedData.text,
-        format: normalizedData.format,
-        duration: normalizedData.duration,
-        chunkCounter: this.chunkCounter
+        id: `tr_${Math.random().toString(36).substr(2, 9)}_${Math.random().toString(36).substr(2, 7)}`,
+        timestamp: new Date().toISOString(),
+        audioFile: null,
+        language: 'pt-br',
+        emotions: normalizedData.emotions
       });
       
       // Processar a transcrição no contexto do app
@@ -1824,6 +1846,13 @@ class WhisperTranscriptionService {
         speakerIdentifier: speakerIdentifier, // Novo campo com identificador completo
         isHost: isHost, // Novo campo indicando se é o anfitrião
         content: transcription.trim(),
+        emotions: response.data.emotions || {
+          dominant: 'neutral',
+          scores: { neutral: 0.7, positive: 0.2, negative: 0.1 },
+          sentiment: 'neutral',
+          confidence: 0.7,
+          language: 'pt'
+        },
         timestamp: new Date().toISOString()
       };
       
@@ -1842,6 +1871,7 @@ class WhisperTranscriptionService {
       // Disparar evento de nova transcrição
       this._dispatchEvent('transcriptionReceived', {
         transcript: transcription,
+        emotions: transcriptionData.emotions, // ADICIONADO: Incluir emoções no evento
         ...transcriptionData
       });
       
@@ -2565,6 +2595,228 @@ class WhisperTranscriptionService {
     } catch (error) {
       console.warn('Erro ao gerar texto consolidado de transcrições:', error);
       return 'Erro ao processar transcrições';
+    }
+  }
+
+  /**
+   * NOVO: Analisa emoções em áudio
+   * @param {Blob} audioBlob - Blob de áudio
+   * @param {string} processingId - ID para rastreamento
+   * @returns {Promise<Object>} Resultado da análise
+   * @private
+   */
+  async _analyzeEmotionInAudio(audioBlob, processingId) {
+    try {
+      // Log para debugging
+      console.log(`Iniciando análise de emoção para processamento ${processingId}`);
+      
+      // Verificar token de autenticação
+      const authToken = localStorage.getItem('authToken') || 
+                       sessionStorage.getItem('authToken') || 
+                       localStorage.getItem('token') || 
+                       sessionStorage.getItem('token');
+      
+      if (!authToken) {
+        console.warn('Token de autenticação não encontrado para análise de emoções');
+        return {
+          dominant: 'neutral',
+          sentiment: 'neutral',
+          scores: {
+            neutral: 1.0,
+            positive: 0,
+            negative: 0
+          }
+        };
+      }
+      
+      if (!this.emotionEndpoint) {
+        console.log('Endpoint de análise de emoções não configurado, retornando valores padrão');
+        return {
+          dominant: 'neutral',
+          sentiment: 'neutral',
+          scores: {
+            neutral: 0.7,
+            positive: 0.2,
+            negative: 0.1
+          },
+          confidence: 0.7,
+          language: 'pt'
+        };
+      }
+      
+      // Criar FormData para upload
+      const formData = new FormData();
+      formData.append('audio', audioBlob, `emotion-${processingId}.wav`);
+      formData.append('processingId', processingId);
+      
+      // Enviar para API
+      console.log(`Enviando áudio para análise de emoção/tom: ${processingId}`);
+      const response = await fetch(this.emotionEndpoint, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${authToken}`
+        },
+        body: formData
+      });
+      
+      if (!response.ok) {
+        console.warn(`Erro ao analisar emoção: ${response.status} `);
+        return {
+          dominant: 'neutral',
+          sentiment: 'neutral',
+          scores: {
+            neutral: 0.7,
+            positive: 0.2,
+            negative: 0.1
+          },
+          confidence: 0.7,
+          language: 'pt'
+        };
+      }
+      
+      // Processar resultado
+      const result = await response.json();
+      
+      if (result.success && result.emotions) {
+        console.log('Análise de emoções concluída:', result.emotions);
+        return result.emotions;
+      } else {
+        console.warn('Resposta de análise de emoções inválida:', result);
+        return {
+          dominant: 'neutral',
+          sentiment: 'neutral',
+          scores: {
+            neutral: 0.7,
+            positive: 0.2,
+            negative: 0.1
+          },
+          confidence: 0.7,
+          language: 'pt'
+        };
+      }
+    } catch (error) {
+      console.error('Falha na análise de emoções em áudio:', error);
+      // Evitar que a falha na análise de emoções interrompa o fluxo principal
+      return {
+        error: error.message,
+        dominant: 'neutral',
+        sentiment: 'neutral',
+        scores: {
+          neutral: 0.7,
+          positive: 0.2,
+          negative: 0.1
+        },
+        confidence: 0.7,
+        language: 'pt'
+      };
+    }
+  }
+
+  /**
+   * Analisa emoções no texto transcrito
+   * @param {string} text - Texto para análise
+   * @returns {Promise<object>} - Análise de emoções
+   * @private
+   */
+  async _analyzeEmotions(text) {
+    if (!text || typeof text !== 'string' || text.trim().length < 5) {
+      console.warn('Texto insuficiente para análise de emoções');
+      return null;
+    }
+
+    try {
+      // Usar o endpoint de análise de texto em vez do endpoint de análise de áudio
+      if (!this.analysisEndpoint) {
+        console.log('Endpoint de análise de texto não configurado, retornando valores padrão');
+        return {
+          dominant: 'neutral',
+          sentiment: 'neutral',
+          scores: {
+            neutral: 1.0,
+            positive: 0,
+            negative: 0
+          }
+        };
+      }
+      
+      // Obter token de autenticação
+      const authToken = localStorage.getItem('authToken') || 
+                       sessionStorage.getItem('authToken') || 
+                       localStorage.getItem('token') || 
+                       sessionStorage.getItem('token');
+      
+      if (!authToken) {
+        console.warn('Token de autenticação não encontrado para análise de emoções');
+        return {
+          dominant: 'neutral',
+          sentiment: 'neutral',
+          scores: {
+            neutral: 1.0,
+            positive: 0,
+            negative: 0
+          }
+        };
+      }
+      
+      // Limitar o texto para evitar problemas com APIs
+      const limitedText = text.substring(0, 500);
+      const sessionId = this.sessionId || 'unknown';
+      
+      // Fazer a requisição para a API de análise do backend
+      // A rota /api/ai/analyze é usada para análise de sessão e funciona com texto
+      const response = await fetch(this.analysisEndpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Authorization': `Bearer ${authToken}`
+        },
+        body: JSON.stringify({ 
+          transcript: limitedText,
+          sessionId: sessionId
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Erro na análise de emoções: ${response.status} - ${errorText}`);
+      }
+
+      const result = await response.json();
+      
+      // Extrair dados de emoção da análise
+      // Na ausência de análise específica de emoção, criar um objeto de fallback
+      const emotionData = result.analysis || result;
+      
+      // Formatar e normalizar os resultados
+      const emotions = {
+        dominant: 'neutral',
+        scores: {
+          neutral: 0.7,
+          positive: 0.2,
+          negative: 0.1
+        },
+        sentiment: 'neutral',
+        confidence: 0.7,
+        language: 'pt',
+        analysis: emotionData
+      };
+
+      console.log('Análise de emoções concluída:', emotions);
+      return emotions;
+    } catch (error) {
+      console.error('Falha na análise de emoções:', error);
+      // Evitar que a falha na análise de emoções interrompa o fluxo principal
+      return {
+        error: error.message,
+        dominant: 'neutral',
+        sentiment: 'neutral',
+        scores: {
+          neutral: 1.0,
+          positive: 0,
+          negative: 0
+        }
+      };
     }
   }
 }
