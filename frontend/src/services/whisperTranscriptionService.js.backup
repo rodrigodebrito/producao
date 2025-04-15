@@ -5,6 +5,9 @@
  */
 import { WHISPER_URL, API_URL } from '../config';
 
+// Adicionar importação do AIContext para acessar funções
+// import { useAIContext } from "../contexts/AIContext";
+
 class WhisperTranscriptionService {
   constructor() {
     this.mediaRecorder = null;
@@ -21,88 +24,74 @@ class WhisperTranscriptionService {
     this.transcriptEndpoint = 'https://theraconnect-prd.onrender.com/api/ai/transcript'; // Manter URL absoluta conforme solicitado
     this.allTranscriptsEndpoint = this.isProd ? `${backendBaseUrl}/api/ai/transcriptions/session` : '/api/ai/transcriptions/session';
     
+    // CORRIGIDO: Endpoint para análise de tom/emoção com URL absoluta em ambiente de produção
+    this.emotionAnalysisEndpoint = this.isProd ? 
+      `${backendBaseUrl}/api/ai/emotion/analyze` : 
+      '/api/ai/emotion/analyze';
+    
+    // ADICIONADO: Endpoint alternativo para análise de texto
+    this.analysisEndpoint = this.isProd ? 
+      `${backendBaseUrl}/api/ai/analyze/text` : 
+      '/api/ai/analyze/text';
+    
     // FIXADO: Flag para controlar se o serviço já foi inicializado
     this.serviceInitialized = false;
     
+    // NOVO: Flag para controlar se a análise de emoção está habilitada
+    this.emotionAnalysisEnabled = true;
+    
     console.log(`Whisper: Serviço criado em ambiente ${this.isProd ? 'de produção' : 'de desenvolvimento'}`);
-    console.log(`Whisper: Endpoints configurados, aguardando inicialização manual`);
+    console.log(`Whisper: Endpoint de transcrição: ${this.apiEndpoint}`);
+    console.log(`Whisper: Endpoint de análise de emoções: ${this.emotionAnalysisEndpoint}`);
     
+    // Configuração de transcrição em chunks
+    this.chunkCounter = 0;
+    this.transcriptionHistory = [];
+    this.chunkStartTime = 0;
+    this.maxChunkDuration = 8000;   // MODIFICADO: Reduzido para 8 segundos por chunk
+    this.minChunkDuration = 1000;   // MODIFICADO: Reduzido para 1 segundo mínimo
+    this.maxChunkTimer = null;
     this.transcriptionInProgress = false;
-    this.useCredentials = false; // Por padrão, NÃO enviar credenciais para testes
-    this.supportedMimeTypes = [
-      'audio/wav', 
-      'audio/mp3', 
-      'audio/mpeg', 
-      'audio/mp4', 
-      'audio/webm', 
-      'audio/ogg'
-    ];
-    this.currentFileName = null;
     
-    // Configurações para detecção de silêncio
+    // Detecção de silêncio
     this.silenceDetectionEnabled = true;
-    this.silenceThreshold = -45; // dB (mais negativo = mais sensível)
-    this.silenceDuration = 5000; // AJUSTADO: 5 segundos de silêncio para enviar e parar
-    this.maxChunkDuration = 15000; // AJUSTADO: 15 segundos máximos por chunk (mais rápido)
-    this.minChunkDuration = 1500; // AJUSTADO: 1.5 segundos mínimos por chunk
-    
-    // Estado de detecção de silêncio
-    this.audioContext = null;
-    this.audioAnalyser = null;
-    this.silenceDetector = null;
+    this.silenceThreshold = -45;    // em dB
+    this.silenceDuration = 1500;    // MODIFICADO: Reduzido para 1.5 segundos de silêncio para processar
     this.silenceStart = null;
     this.silenceTimer = null;
-    this.chunkStartTime = null;
-    this.maxChunkTimer = null;
+    this.audioContext = null;
+    this.audioAnalyser = null;
     
-    // Estado de transcrição contínua
-    this.transcriptionHistory = [];
+    // Controle de reinício automático
+    this.autoRestart = true;        // MODIFICADO: Habilitado por padrão
+    this.pausedForSilence = false;
+    this.manualStopped = false;
+    this.voiceDetectionInterval = null;
+    this.consecutiveSilenceFrames = 0;
     
-    // NOVO: Armazenamento de transcrições de outros participantes
-    this.otherParticipantsTranscriptions = [];
+    // Configurações específicas para o reconhecimento de sessão
+    this.sessionId = null;
+    this.sessionChangeDetected = false;
+    this.speakerRole = 'unknown'; // therapist, client, etc
+    
+    // Novo: Verificar aiContext mais frequentemente
+    this.aiContext = null;
+    this.aiContextCheckInterval = null;
+    
+    // NOVO: Processamento contínuo durante gravação
+    this.continuousProcessingEnabled = true;   // Habilitado
+    this.continuousProcessingInterval = 4000;  // MODIFICADO: Reduzido para 4 segundos
+    this.continuousProcessingTimer = null;
+    this.lastProcessedTime = 0;                // ADICIONADO: Para controlar quando foi o último processamento
+    this.continuousProcessingStarted = false;  // ADICIONADO: Flag para controlar se o processamento contínuo já começou
+    
+    // ADICIONADO: Propriedades para busca de transcrições de outros participantes
     this.lastFetchTimestamp = null;
     this.transcriptionFetchInterval = null;
+    this.otherParticipantsTranscriptions = [];
     
-    // Extrair sessionId ao inicializar, mas não iniciar processamento automático
-    this.sessionId = this.extractSessionId();
-    this.speakerRole = this._determineSpeakerRole();
-    
-    // NOVO: Determinar status de host e identificador completo
-    this.isHost = this._isSessionHost();
-    this.speakerIdentifier = this._getSpeakerIdentifier();
-    
-    // NOVO: Controle de sessão e transcrições
-    this.sessionStartTime = Date.now();
-    this.lastActivityTime = Date.now();
-    this.sessionLogicalId = `${this.sessionId}_${this.sessionStartTime}`;
-    
-    // Contador de chunks
-    this.chunkCounter = 0;
-
-    // Adicionar configuração para controlar o reinício automático
-    this.autoRestart = true; // AJUSTADO: Sempre reiniciar por padrão
-    
-    // NOVO: Flag para verificar se estamos em pausa por silêncio
-    this.pausedForSilence = false;
-    
-    // NOVO: Flag para marcar se a parada foi manual (solicitada pelo usuário)
-    this.manualStopped = false;
-    
-    // NOVO: Configuração para detecção de voz após pausa
-    this.voiceDetectionEnabled = true;
-    this.voiceThreshold = -40; // dB (menos sensível que o silêncio)
-    this.voiceDetectionInterval = null;
-    
-    // Verificar transcrições antigas e limpar se necessário
-    this._cleanStaleTranscriptions();
-    
-    // Adicionar event listener para limpar dados ao entrar em nova sessão
-    this._setupSessionChangeDetection();
-    
-    // NÃO iniciar busca de transcrições automaticamente
-    // Será iniciado quando o usuário começar a gravação
-    
-    console.log(`WhisperTranscriptionService construído - sessionId: ${this.sessionId}, papel: ${this.speakerIdentifier}, host: ${this.isHost}`);
+    // Tentar inicializar automaticamente na criação
+    this.initializeService();
   }
   
   /**
@@ -121,8 +110,14 @@ class WhisperTranscriptionService {
       this.updateSessionId(latestSessionId);
     }
     
-    // Iniciar busca de transcrições de outros participantes
-    this._startFetchingOtherTranscriptions();
+    // Iniciar detecção de mudança de sessão
+    this._setupSessionChangeDetection();
+    
+    // Determinar o papel do usuário
+    if (!this.speakerRole || this.speakerRole === 'unknown') {
+      this.speakerRole = this._determineSpeakerRole();
+      console.log(`Whisper: Papel do usuário determinado: ${this.speakerRole}`);
+    }
     
     this.serviceInitialized = true;
     console.log(`Whisper: Serviço inicializado completamente - sessionId: ${this.sessionId}`);
@@ -517,6 +512,8 @@ class WhisperTranscriptionService {
       
       // NOVO: Atualizar timestamp de atividade
       this.lastActivityTime = Date.now();
+      this.lastProcessedTime = Date.now();  // ADICIONADO: Inicializar o timestamp de último processamento
+      this.continuousProcessingStarted = false; // ADICIONADO: Resetar flag de processamento contínuo
       
       // Garantir que temos o sessionId mais atualizado
       const latestSessionId = this.extractSessionId();
@@ -602,6 +599,14 @@ class WhisperTranscriptionService {
           const sizeKB = Math.round(event.data.size/1024);
           console.log(`Chunk #${chunkNum} recebido: ${sizeKB}KB, tipo: ${event.data.type}`);
           this.audioChunks.push(event.data);
+          
+          // ADICIONADO: Iniciar o processamento contínuo após acumular alguns dados
+          // Esta é uma melhoria para garantir que o processamento contínuo sempre começa
+          if (!this.continuousProcessingStarted && this.audioChunks.length >= 3) {
+            this.continuousProcessingStarted = true;
+            console.log("Iniciando processamento contínuo após acumular dados iniciais");
+            this._setupContinuousProcessingTimer();
+          }
         }
       };
       
@@ -719,7 +724,7 @@ class WhisperTranscriptionService {
   }
 
   /**
-   * Configurar o timer para chunk máximo
+   * Configurar timer para chunk máximo
    * @private
    */
   _setupMaxChunkTimer() {
@@ -733,6 +738,135 @@ class WhisperTranscriptionService {
       console.log(`Chunk máximo de ${this.maxChunkDuration/1000}s atingido, processando áudio...`);
       this._processCurrentChunk();
     }, this.maxChunkDuration);
+    
+    // ADICIONADO: Configurar timer para processamento contínuo
+    if (this.continuousProcessingEnabled) {
+      if (this.continuousProcessingTimer) {
+        clearTimeout(this.continuousProcessingTimer);
+      }
+      
+      this.continuousProcessingTimer = setTimeout(() => {
+        console.log(`Processamento contínuo ativado após ${this.continuousProcessingInterval/1000}s de gravação`);
+        
+        // Verificar se temos dados suficientes
+        if (this.audioChunks && this.audioChunks.length > 0) {
+          const duration = Date.now() - this.chunkStartTime;
+          if (duration >= this.minChunkDuration) {
+            // Clonar os chunks atuais para não perder dados
+            const chunksToProcess = [...this.audioChunks];
+            
+            // Criar blob desses chunks
+            const audioBlob = new Blob(chunksToProcess, { type: 'audio/wav' });
+            
+            // Processar apenas se o tamanho for suficiente
+            if (audioBlob.size >= 1024) {
+              console.log(`Processamento contínuo: enviando ${Math.round(audioBlob.size/1024)}KB para transcrição...`);
+              
+              // Gerar nome de arquivo único
+              const timestamp = Date.now();
+              const randomId = Math.floor(Math.random() * 10000);
+              const fileName = `continuous-${timestamp}-${randomId}.wav`;
+              
+              // Processar sem interromper a gravação atual
+              this.processAudioChunks(audioBlob, fileName)
+                .then(() => {
+                  console.log('Processamento contínuo concluído, mantendo gravação ativa');
+                  
+                  // Configurar o próximo timer de processamento contínuo
+                  this._setupContinuousProcessingTimer();
+                })
+                .catch(error => {
+                  console.error('Erro no processamento contínuo:', error);
+                  this._setupContinuousProcessingTimer();
+                });
+            } else {
+              console.log('Processamento contínuo: blob muito pequeno, aguardando mais áudio');
+              // Configurar o próximo timer mesmo assim
+              this._setupContinuousProcessingTimer();
+            }
+          } else {
+            console.log(`Processamento contínuo: duração atual (${Math.round(duration/1000)}s) menor que o mínimo, aguardando mais áudio`);
+            // Configurar o próximo timer mesmo assim
+            this._setupContinuousProcessingTimer();
+          }
+        } else {
+          console.log('Processamento contínuo: sem chunks de áudio disponíveis');
+          // Configurar o próximo timer mesmo assim
+          this._setupContinuousProcessingTimer();
+        }
+      }, this.continuousProcessingInterval);
+    }
+  }
+  
+  /**
+   * ADICIONADO: Configura o timer para processamento contínuo
+   * @private
+   */
+  _setupContinuousProcessingTimer() {
+    if (!this.continuousProcessingEnabled || !this.isRecording) return;
+    
+    if (this.continuousProcessingTimer) {
+      clearTimeout(this.continuousProcessingTimer);
+    }
+    
+    const timeSinceLastProcess = Date.now() - this.lastProcessedTime;
+    // Se o último processamento foi recente, aguardar um pouco mais
+    const adjustedInterval = timeSinceLastProcess < 2000 
+      ? this.continuousProcessingInterval + 2000 
+      : this.continuousProcessingInterval;
+    
+    console.log(`Configurando próximo processamento contínuo para daqui a ${adjustedInterval/1000} segundos`);
+    
+    this.continuousProcessingTimer = setTimeout(() => {
+      if (!this.isRecording) return;
+      
+      console.log('Timer de processamento contínuo acionado');
+      this.lastProcessedTime = Date.now(); // ADICIONADO: Atualizar timestamp de último processamento
+      
+      // Verificar se temos dados suficientes
+      if (this.audioChunks && this.audioChunks.length > 0) {
+        const duration = Date.now() - this.chunkStartTime;
+        if (duration >= this.minChunkDuration) {
+          // Clonar os chunks atuais para não perder dados
+          const chunksToProcess = [...this.audioChunks];
+          
+          // Criar blob desses chunks
+          const audioBlob = new Blob(chunksToProcess, { type: 'audio/wav' });
+          
+          // Processar apenas se o tamanho for suficiente
+          if (audioBlob.size >= 1024) {
+            console.log(`Processamento contínuo: enviando ${Math.round(audioBlob.size/1024)}KB para transcrição...`);
+            
+            // Gerar nome de arquivo único
+            const timestamp = Date.now();
+            const randomId = Math.floor(Math.random() * 10000);
+            const fileName = `continuous-${timestamp}-${randomId}.wav`;
+            
+            // Processar sem interromper a gravação atual
+            this.processAudioChunks(audioBlob, fileName)
+              .then(() => {
+                console.log('Processamento contínuo concluído, mantendo gravação ativa');
+                
+                // Configurar o próximo timer de processamento contínuo
+                this._setupContinuousProcessingTimer();
+              })
+              .catch(error => {
+                console.error('Erro no processamento contínuo:', error);
+                this._setupContinuousProcessingTimer();
+              });
+          } else {
+            console.log('Processamento contínuo: blob muito pequeno, aguardando mais áudio');
+            this._setupContinuousProcessingTimer();
+          }
+        } else {
+          console.log(`Processamento contínuo: duração atual (${Math.round(duration/1000)}s) menor que o mínimo, aguardando mais áudio`);
+          this._setupContinuousProcessingTimer();
+        }
+      } else {
+        console.log('Processamento contínuo: sem chunks de áudio disponíveis');
+        this._setupContinuousProcessingTimer();
+      }
+    }, adjustedInterval); // MODIFICADO: Usa o intervalo ajustado
   }
 
   /**
@@ -1183,45 +1317,37 @@ class WhisperTranscriptionService {
    */
   async processAudioChunks(audioBlob, fileName) {
     try {
+      // Gerar um ID único para este processamento
+      const processingId = `proc_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+      
       // 1. Verificar se temos um blob válido
       if (!audioBlob || audioBlob.size === 0) {
-        console.error('Blob de áudio inválido ou vazio');
-        return;
+        throw new Error('Arquivo de áudio vazio ou inválido');
       }
       
-      // 2. Detectar se é o primeiro áudio ou subsequente
+      // NOVO: Se análise de emoção estiver ativada, fazer a análise em paralelo com a transcrição
+      let emotionAnalysisPromise = Promise.resolve(null);
+      if (this.emotionAnalysisEnabled || this.toneAnalysisEnabled) {
+        console.log('Iniciando análise de emoção/tom em paralelo com a transcrição');
+        emotionAnalysisPromise = this._analyzeEmotionInAudio(audioBlob, processingId);
+      }
+      
+      // 2. Adicionar flag para acompanhar se é o primeiro áudio
       const isFirstAudio = this.chunkCounter === 0;
       
-      // 3. ESTRATÉGIA DIFERENCIADA:
-      // - Primeiro áudio: enviar como WAV (funciona consistentemente)
-      // - Áudios subsequentes: enviar como MP3 (mais estável para processamento)
-      const mimeType = 'audio/webm'; // Usar webm que é mais compatível com streaming
-      const extension = '.webm';
+      // 3. Verificar tipo MIME e preparar para upload
+      const mimeType = audioBlob.type || 'audio/wav';
       
-      console.log(`Estratégia: Enviando áudio #${this.chunkCounter} como WEBM (mais compatível)`);
+      // 4. Definir nome do arquivo para upload se não foi fornecido
+      const finalFileName = fileName || `audio_${Date.now()}.wav`;
       
-      // 4. Garantir nome de arquivo único com identificação clara
-      const finalFileName = `audio-${this.chunkCounter}-${Date.now()}-${Math.floor(Math.random() * 10000)}${extension}`;
-      
-      // 5. Limitar o tamanho do blob para prevenir problemas HTTP/2
-      let blobToSend = audioBlob;
-      
-      // Se o blob for maior que 1MB, reduzir a qualidade
-      if (audioBlob.size > 1024 * 1024) {
-        console.log(`Áudio grande detectado (${Math.round(audioBlob.size/1024)}KB), convertendo para qualidade menor`);
-        try {
-          // Usar abordagem com XMLHttpRequest em vez de fetch (mais estável para uploads grandes)
-          return await this._sendAudioWithXHR(blobToSend, finalFileName);
-        } catch (conversionError) {
-          console.warn('Erro ao converter áudio, tentando enviar original:', conversionError);
-          // Continuar com o blob original se a conversão falhar
-        }
-      }
+      // 5. Usar o blob diretamente (já deve estar no formato correto)
+      const blobToSend = audioBlob;
       
       console.log(`Enviando áudio como WEBM: ${finalFileName}, tamanho: ${Math.round(blobToSend.size/1024)}KB`);
       
       // 6. Disparar evento de processamento
-      this._dispatchEvent('processingAudio', {
+      this._dispatchEvent('processingChunk', {
         fileName: finalFileName,
         size: blobToSend.size,
         format: mimeType,
@@ -1244,62 +1370,48 @@ class WhisperTranscriptionService {
         });
       }
       
-      // 8. Enviar para o backend usando XMLHttpRequest em vez de fetch
-      try {
+      // 8. Marcar como em progresso
       this.transcriptionInProgress = true;
       
-        console.log(`Tentando enviar áudio via XHR: ${this.apiEndpoint}, formato: ${mimeType}, arquivo: ${finalFileName}`);
+      try {
+        // 9. Enviar para a API Whisper
+        console.log(`Enviando áudio para transcrição via XHR: ${finalFileName}`);
+        const response = await this._sendAudioWithXHR(blobToSend, finalFileName);
         
-        // Usar XHR pode evitar problemas HTTP/2 em certos navegadores
-        return await this._sendAudioWithXHR(blobToSend, finalFileName);
+        // 10. Processar resultado
+        console.log('Processando resposta da API Whisper');
         
-      } catch (xhrError) {
-        console.error('Erro ao enviar áudio via XHR:', xhrError);
+        // NOVO: Aguardar resultado da análise de emoção se estiver ativa
+        const emotionAnalysis = await emotionAnalysisPromise;
         
-        // Se o XHR falhar, tentar enviar com Fetch (método alternativo)
-        try {
-          console.log('Tentando método alternativo (fetch) após falha de XHR');
-          
-          // Preparar FormData
-          const formData = new FormData();
-          formData.append('file', blobToSend, finalFileName);
-          formData.append('sessionId', this.sessionId);
-          formData.append('chunkCounter', String(this.chunkCounter));
-          formData.append('clientTimestamp', new Date().toISOString());
-          formData.append('format', 'json');
-          formData.append('language', 'pt');
-          formData.append('speaker', this.speakerRole);
-          
-          // Detectar protocolo da página atual para usar o mesmo protocolo na API
-          const currentProtocol = window.location.protocol;
-          let endpoint = this.apiEndpoint;
-          
-          // Garantir que a API use o mesmo protocolo da página
-          if (currentProtocol === 'https:' && endpoint.startsWith('http://')) {
-            endpoint = endpoint.replace('http://', 'https://');
-          } else if (currentProtocol === 'http:' && endpoint.startsWith('https://')) {
-            endpoint = endpoint.replace('https://', 'http://');
-          }
-          
-          console.log(`Tentando fetch com endpoint: ${endpoint}`);
-          
-          // Enviar com fetch
-          const response = await fetch(endpoint, {
-            method: 'POST',
-            body: formData
-          });
-          
-          return await this._processResponse(response);
-        } catch (fetchError) {
-          console.error('Também falhou com fetch:', fetchError);
-          throw fetchError;
+        // Adicionar informações de emoção à resposta da API antes de processar
+        if (emotionAnalysis && response && response.data) {
+          console.log('Combinando análise de emoção/tom com resultado da transcrição');
+          response.data.emotionAnalysis = emotionAnalysis.emotions || null;
+          response.data.toneAnalysis = emotionAnalysis.tones || null;
         }
+        
+        const result = await this._processResponse(response);
+        
+        // 11. Incrementar contador de chunks
+        this.chunkCounter++;
+        
+        // 12. Retornar o resultado
+        return result;
       } finally {
+        // 13. Liberar flag de progresso
         this.transcriptionInProgress = false;
+        
+        // 14. Disparar evento de conclusão
+        this._dispatchEvent('transcriptionComplete', {
+          success: true,
+          chunkCounter: this.chunkCounter
+        });
       }
     } catch (error) {
       console.error('Erro ao processar chunks de áudio:', error);
-      this._dispatchEvent('transcriptionError', { error: error.message });
+      this._dispatchEvent('processingError', { error: error.message });
+      throw error;
     }
   }
   
@@ -1404,17 +1516,37 @@ class WhisperTranscriptionService {
   async _processResponse(response) {
     try {
       // Verificar se a resposta é válida
-      if (!response.ok) {
+      if (!response) {
+        console.error('Resposta nula ou indefinida recebida');
+        const errorMessage = 'Erro: Resposta do servidor vazia ou inválida';
+        this._dispatchEvent('transcriptionError', { error: errorMessage });
+        throw new Error(errorMessage);
+      }
+      
+      // Se response não é HTTP Response (pode ser objeto direto)
+      if (!response.ok && !response.json && typeof response !== 'object') {
+        console.error('Formato de resposta inválido:', response);
+        const errorMessage = 'Erro: Formato de resposta inválido';
+        this._dispatchEvent('transcriptionError', { error: errorMessage });
+        throw new Error(errorMessage);
+      }
+      
+      // Se for uma resposta HTTP com erro
+      if (response.ok === false) {
         let errorText = 'Erro desconhecido';
         try {
           // Tentar obter mensagens de erro detalhadas
           if (response.json) {
             try {
               const errorData = await response.json();
-              errorText = errorData.message || errorData.error || response.statusText;
+              errorText = errorData.message || errorData.error || response.statusText || 'Erro desconhecido';
             } catch (e) {
               // Se não conseguir como JSON, tentar como texto
+              try {
               errorText = await response.text();
+              } catch (textError) {
+                errorText = `Erro HTTP ${response.status || 'desconhecido'}`;
+              }
             }
           } else if (typeof response.statusText === 'string') {
             errorText = response.statusText;
@@ -1423,116 +1555,98 @@ class WhisperTranscriptionService {
           errorText = `Erro HTTP ${response.status || 'desconhecido'}`;
         }
 
+        // Garantir que temos um texto de erro, mesmo que seja genérico
+        if (!errorText || errorText === 'undefined') {
+          errorText = `Erro ${response.status || 'desconhecido'}`;
+        }
+
         console.error(`Erro na resposta do servidor (${response.status}): ${errorText}`);
         this._dispatchEvent('transcriptionError', { error: errorText });
-        throw new Error(`Erro ${response.status}: ${errorText}`);
+        throw new Error(errorText);
       }
 
-      // Processar a resposta JSON
+      // Processar a resposta JSON ou objeto direto
       let data;
       
-      // Verificar se é um mock de resposta XHR
-      if (response.json && typeof response.json === 'function') {
-        data = await response.json();
-      } else if (response.data) {
+      // Verificar se é um mock de resposta XHR ou resposta direta
+      if (response.data) {
         // Se já é um objeto de dados (do XHR)
         data = response.data;
+      } else if (response.json && typeof response.json === 'function') {
+        // Se é uma resposta HTTP com JSON
+        try {
+          data = await response.json();
+        } catch (jsonError) {
+          console.error('Erro ao parsear JSON da resposta:', jsonError);
+          const errorMessage = 'Erro ao processar resposta JSON do servidor';
+          this._dispatchEvent('transcriptionError', { error: errorMessage });
+          throw new Error(errorMessage);
+        }
+      } else if (typeof response === 'object') {
+        // Se já é um objeto direto
+        data = response;
       } else {
-        console.error('Formato de resposta desconhecido:', response);
-        throw new Error('Formato de resposta inválido');
+        // Fallback para qualquer outro formato
+        try {
+          data = JSON.parse(response.toString());
+        } catch (e) {
+          data = { text: response.toString() };
+        }
       }
 
       // Validar os dados
       if (!data) {
-        throw new Error('Resposta vazia do servidor');
+        const errorMessage = 'Resposta vazia do servidor';
+        console.error(errorMessage);
+        this._dispatchEvent('transcriptionError', { error: errorMessage });
+        throw new Error(errorMessage);
       }
 
       // Verificar formatação da resposta
-      const text = data.text || data.transcript || data.content || data.result || (data.data ? data.data.text : null);
+      const text = data.text || data.transcript || data.content || data.result || 
+                  (data.data ? data.data.text || data.data.transcript || data.data.content : null);
       
+      // Se não encontramos texto na resposta, mas temos algum dado
+      // tentar verificar se o dado em si é uma string (resposta direta)
+      let finalData = data;
       if (!text) {
-        console.error('Resposta sem texto:', data);
-        this._dispatchEvent('transcriptionError', { error: 'Resposta sem texto reconhecível' });
-        throw new Error('Resposta sem texto reconhecível');
-      }
-
-      console.log('Transcrição recebida:', text.substring(0, 100) + (text.length > 100 ? '...' : ''));
-
-      // Normalizar a resposta
-      const normalizedData = {
-        text: text,
-        format: data.format || 'text',
-        duration: data.duration || 0,
-        sessionId: data.sessionId || this.sessionId
-      };
-
-      // Enviar o evento de transcrição
-      this._dispatchEvent('transcription', {
-        text: normalizedData.text,
-        format: normalizedData.format,
-        duration: normalizedData.duration,
-        chunkCounter: this.chunkCounter
-      });
-      
-      // Processar a transcrição no contexto do app
-      this._processTranscription({ data: normalizedData }, null);
-
-      // Incrementar o contador de chunks
-      this.chunkCounter++;
-
-      // Solução: reiniciar completamente a gravação para o próximo chunk
-      console.log('SOLUÇÃO: Reiniciando gravação para evitar problemas nos áudios subsequentes');
-      
-      // Parar a gravação atual se estiver ativa
-      if (this.isRecording || this.mediaRecorder) {
-        await this.stopRecording(false);
-      }
-      
-      // Liberar completamente todos os recursos
-      await this._releaseAllAudioResources();
-      
-      // Reiniciar gravação após pequeno intervalo
-      console.log("Aguardando 2 segundos antes de reiniciar gravação...");
-      
-      // Usar setTimeout para garantir que haja um atraso antes do reinício
-      setTimeout(async () => {
-        // VERIFICAR se foi parado manualmente - NÃO reiniciar se foi
-        if (this.manualStopped) {
-          console.log("🛑 NÃO reiniciando gravação pois foi parada manualmente pelo usuário");
-          // Emitir um evento adicional para garantir que a UI sincronize
-          this._dispatchEvent('manualStopConfirmed', { message: 'Gravação permanece parada conforme solicitado pelo usuário' });
-          return; // Sair do setTimeout sem reiniciar
-        }
-        
-        console.log("Reiniciando gravação automaticamente...");
-        try {
-          // Forçar a flag autoRestart para true
-          this.autoRestart = true;
-          
-          const result = await this.startRecording();
-          console.log(`Resultado do reinício automático: ${result ? 'SUCESSO' : 'FALHA'}`);
-          
-          if (!result) {
-            console.error("Falha no reinício automático, tentando novamente em 3 segundos");
-            setTimeout(() => {
-              console.log("Tentativa de recuperação após falha no reinício");
-              this.startRecording();
-            }, 3000);
+        if (typeof data === 'string') {
+          finalData = { text: data };
+        } else if (data.data && typeof data.data === 'string') {
+          finalData = { text: data.data };
+        } else {
+          // Verificar se temos qualquer propriedade que seja string para usar como texto
+          let foundTextProperty = false;
+          for (const key in data) {
+            if (typeof data[key] === 'string' && data[key].length > 5) {
+              finalData = { text: data[key] };
+              console.log(`Usando propriedade "${key}" como texto da transcrição:`, finalData.text.substring(0, 50));
+              foundTextProperty = true;
+              break;
+            }
           }
-        } catch (e) {
-          console.error("Erro ao reiniciar gravação automaticamente:", e);
-          // Tentar novamente após um intervalo maior
-          setTimeout(() => {
-            console.log("Tentativa de recuperação após ERRO no reinício");
-            this.startRecording();
-          }, 4000);
+          
+          // Se não encontramos nenhuma propriedade de texto, lançar erro
+          if (!foundTextProperty) {
+            const errorMessage = 'Resposta não contém texto transcrito';
+            console.warn('Resposta sem texto identificável:', data);
+            this._dispatchEvent('transcriptionError', { error: errorMessage });
+            throw new Error(errorMessage);
+          }
         }
-      }, 2000);
+      }
 
-      return normalizedData;
+      // Processar a transcrição
+      return await this._processTranscription(finalData, null);
     } catch (error) {
       console.error('Erro ao processar resposta:', error);
-      this._dispatchEvent('transcriptionError', { error: error.message });
+      
+      // Garantir que temos uma mensagem de erro não-vazia
+      const errorMessage = error.message || 'Erro desconhecido';
+      
+      // Disparar evento de erro para notificar outros componentes
+      this._dispatchEvent('transcriptionError', { error: errorMessage });
+      
       throw error;
     }
   }
@@ -1750,187 +1864,153 @@ class WhisperTranscriptionService {
   }
 
   /**
-   * MODIFICADO: Processar a transcrição recebida
-   * @param {Object} response - Resposta da API
-   * @param {Blob} audioBlob - Blob de áudio enviado (para debug)
+   * Processa e analisa a transcrição
+   * @param {object} data - Dados da transcrição
+   * @param {File|Blob} audioFile - Arquivo de áudio (opcional)
+   * @returns {Promise<object>} - Dados processados
    * @private
    */
-  async _processTranscription(response, audioBlob) {
+  async _processTranscription(data, audioFile) {
     try {
-      // Validar resposta
-      if (!response || !response.data) {
-        throw new Error('Resposta de transcrição inválida');
-      }
-      
-      const transcription = response.data.text || response.data.transcript || response.data;
-      
-      // Obter identificador completo do papel (inclui status de host)
-      const speakerIdentifier = this._getSpeakerIdentifier();
-      const isHost = this._isSessionHost();
-      
-      // MELHORIA: Adicionar formatação melhorada para visualização no console
-      // Mostrar claramente quem é o falante com distinção entre host e convidado
-      let speakerLabel = this.speakerRole.toUpperCase();
-      let bgColor = this.speakerRole === 'therapist' ? '#4CAF50' : '#2196F3';
-      
-      // Adicionar indicador de host para terapeutas
-      if (this.speakerRole === 'therapist') {
-        if (isHost) {
-          speakerLabel = 'TERAPEUTA (ANFITRIÃO)';
-          bgColor = '#4CAF50'; // Verde para terapeuta anfitrião
-        } else {
-          speakerLabel = 'TERAPEUTA (CONVIDADO)';
-          bgColor = '#009688'; // Verde azulado para terapeuta convidado
-        }
-      } else if (this.speakerRole === 'client') {
-        speakerLabel = 'CLIENTE';
-      }
-      
-      console.log(
-        `\n%c ${speakerLabel} DISSE: %c ${transcription.substring(0, 200)}${transcription.length > 200 ? '...' : ''}\n`, 
-        `background: ${bgColor}; 
-         color: white; 
-         font-weight: bold; 
-         padding: 5px; 
-         border-radius: 3px 0 0 3px;`,
-        `background: #f8f8f8; 
-         color: #333; 
-         padding: 5px; 
-         border-radius: 0 3px 3px 0; 
-         border-left: 5px solid ${bgColor};`
-      );
-      
-      // Log adicional da sessão para rastreamento
-      console.log(
-        `%c SESSÃO: %c ${this.sessionId} %c PAPEL: %c ${speakerIdentifier} %c TIMESTAMP: %c ${new Date().toLocaleTimeString()}`, 
-        'font-weight: bold; color: #9E9E9E;', 
-        'color: #9E9E9E;',
-        'font-weight: bold; color: #9E9E9E;', 
-        'color: #9E9E9E;',
-        'font-weight: bold; color: #9E9E9E;', 
-        'color: #9E9E9E;'
-      );
-      
-      // Validar transcrição
-      if (!transcription || transcription.trim().length === 0) {
-        console.warn('Transcrição vazia recebida, ignorando...');
-        return false;
-      }
-      
-      // Formato para envio para o AI Context
-      const transcriptionData = {
-        sessionId: this.sessionId,
-        speaker: this.speakerRole,
-        speakerIdentifier: speakerIdentifier, // Novo campo com identificador completo
-        isHost: isHost, // Novo campo indicando se é o anfitrião
-        content: transcription.trim(),
-        timestamp: new Date().toISOString()
+      // Extração do texto (compatível com várias estruturas de resposta)
+      const text = data.text || data.transcript || data.content || data.result;
+      if (!text) throw new Error('Formato de transcrição inválido');
+
+      const transcript = {
+        text: text,
+        id: generateId(),
+        timestamp: new Date().toISOString(),
+        audioFile: audioFile,
+        language: data.language || 'pt-br'
       };
-      
-      console.log(`Processando transcrição para sessão ${this.sessionId} como ${this.speakerRole}`);
-      
-      // NOVO: Salvar no sessionStorage imediatamente como backup
-      this._saveTranscriptionToStorage(transcriptionData);
-      
-      // CORREÇÃO: Usar nossa nova função para enviar a transcrição para o backend
-      await this._sendTranscriptionToBackend(transcriptionData);
-      
-      // Adicionar ao estado local, útil para manutenção do histórico
-      // e para casos em que o app não tem conexão com o backend
-      this.transcriptionHistory.push(transcriptionData);
-      
-      // Disparar evento de nova transcrição
-      this._dispatchEvent('transcriptionReceived', {
-        transcript: transcription,
-        ...transcriptionData
-      });
-      
-      // MELHORIA: Armazenar no localStorage para recuperação posterior
+
+      // Analisar sentimentos e emoções no texto
       try {
-        const sessionId = transcriptionData.sessionId;
-        const key = `whisper_transcript_${sessionId}`;
-        
-        // Recuperar transcrições existentes
-        let existingTranscripts = [];
-        const storedData = localStorage.getItem(key);
-        if (storedData) {
-          try {
-            existingTranscripts = JSON.parse(storedData);
-          } catch (e) {
-            console.warn('Erro ao recuperar transcrições armazenadas:', e);
-          }
+        const emotions = await this._analyzeEmotions(text);
+        if (emotions) {
+          transcript.emotions = emotions;
         }
-        
-        // Adicionar nova transcrição
-        existingTranscripts.push(transcriptionData);
-        
-        // Salvar no localStorage
-        localStorage.setItem(key, JSON.stringify(existingTranscripts));
-        console.log('Transcrição salva no localStorage para recuperação futura');
-        
-        // MELHORIA: Atualizar diretamente o estado do transcript no AIContext
-        if (window.__AI_CONTEXT) {
-          const currentTranscript = window.__AI_CONTEXT.transcript || '';
-          const newTranscript = currentTranscript 
-            ? `${currentTranscript}\n${transcriptionData.speaker}: ${transcriptionData.content}`
-            : `${transcriptionData.speaker}: ${transcriptionData.content}`;
-          
-          // Se o AIContext tem uma função para atualizar o transcript, usá-la
-          if (typeof window.__AI_CONTEXT.updateTranscript === 'function') {
-            window.__AI_CONTEXT.updateTranscript(newTranscript);
-            console.log('Transcript atualizado diretamente no AIContext via updateTranscript');
-          } else {
-            // Caso contrário, disparar um evento para o AIContext atualizar o transcript
-            window.dispatchEvent(new CustomEvent('transcript-updated', { 
-              detail: { fullText: newTranscript }
-            }));
-            console.log('Evento transcript-updated disparado para atualizar AIContext');
-          }
-        }
-      } catch (storageError) {
-        console.warn('Erro ao salvar transcrição no localStorage:', storageError);
+      } catch (emotionError) {
+        console.warn('Erro ao analisar emoções:', emotionError);
+        // Não falhar completamente se apenas a análise de emoções falhar
       }
+
+      // Disparar evento de sucesso
+      this._dispatchEvent('transcriptionSuccess', transcript);
       
-      // Tentar encontrar o AI Context e salvar a transcrição
-      try {
-        // Notificar via evento global que capturamos transcrição
-        window.dispatchEvent(new CustomEvent('whisper-transcription', { 
-          detail: transcriptionData
-        }));
-        
-        // Tentar usar o AIContext se disponível
-        if (window.__AI_CONTEXT && window.__AI_CONTEXT.saveTranscript) {
-          console.log('AIContext encontrado, salvando transcrição via contexto...');
-          const result = await window.__AI_CONTEXT.saveTranscript(transcriptionData);
-          
-          // CORREÇÃO: REMOVIDO chamada automática para suggest() para evitar sugestões duplicadas
-          // quando HybridAI e Whisper estão sendo usados simultaneamente
-          
-          // Verificar se existe flag global indicando que o HybridAI está ativo
-          const hybridAIActive = window.__HYBRID_AI_ACTIVE || 
-                                (window.__AI_CONTEXT && window.__AI_CONTEXT.hybridAIActive);
-          
-          if (result && result.success && !hybridAIActive) {
-            // Apenas disparar um evento para notificar que há nova transcrição
-            // sem chamar diretamente o suggest()
-            console.log('Transcrição salva com sucesso, notificando via evento');
-            
-            window.dispatchEvent(new CustomEvent('whisper-transcription-saved', {
-              detail: { 
-                sessionId: transcriptionData.sessionId,
-                length: transcriptionData.content.length
-              }
-            }));
-          }
-        }
-      } catch (aiContextError) {
-        console.error('Erro ao interagir com AIContext:', aiContextError);
-      }
-      
-      return true;
+      return transcript;
     } catch (error) {
       console.error('Erro ao processar transcrição:', error);
-      return false;
+      // Propagar o erro para ser tratado pelo método chamador
+      throw error;
+    }
+  }
+  
+  /**
+   * Analisa emoções no texto transcrito
+   * @param {string} text - Texto para análise
+   * @returns {Promise<object>} - Análise de emoções
+   * @private
+   */
+  async _analyzeEmotions(text) {
+    if (!text || typeof text !== 'string' || text.trim().length < 5) {
+      console.warn('Texto insuficiente para análise de emoções');
+      return null;
+    }
+
+    try {
+      // Usar o endpoint de análise de texto em vez do endpoint de análise de áudio
+      if (!this.analysisEndpoint) {
+        console.log('Endpoint de análise de texto não configurado, retornando valores padrão');
+        return {
+          dominant: 'neutral',
+          sentiment: 'neutral',
+          scores: {
+            neutral: 1.0,
+            positive: 0,
+            negative: 0
+          }
+        };
+      }
+      
+      // Obter token de autenticação
+      const authToken = localStorage.getItem('authToken') || 
+                       sessionStorage.getItem('authToken') || 
+                       localStorage.getItem('token') || 
+                       sessionStorage.getItem('token');
+      
+      if (!authToken) {
+        console.warn('Token de autenticação não encontrado para análise de emoções');
+        return {
+          dominant: 'neutral',
+          sentiment: 'neutral',
+          scores: {
+            neutral: 1.0,
+            positive: 0,
+            negative: 0
+          }
+        };
+      }
+      
+      // Limitar o texto para evitar problemas com APIs
+      const limitedText = text.substring(0, 500);
+      const sessionId = this.sessionId || 'unknown';
+      
+      // Fazer a requisição para a API de análise do backend
+      // A rota /api/ai/analyze é usada para análise de sessão e funciona com texto
+      const response = await fetch(this.analysisEndpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Authorization': `Bearer ${authToken}`
+        },
+        body: JSON.stringify({ 
+          transcript: limitedText,
+          sessionId: sessionId
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Erro na análise de emoções: ${response.status} - ${errorText}`);
+      }
+
+      const result = await response.json();
+      
+      // Extrair dados de emoção da análise
+      // Na ausência de análise específica de emoção, criar um objeto de fallback
+      const emotionData = result.analysis || result;
+      
+      // Formatar e normalizar os resultados
+      const emotions = {
+        dominant: 'neutral',
+        scores: {
+          neutral: 0.7,
+          positive: 0.2,
+          negative: 0.1
+        },
+        sentiment: 'neutral',
+        confidence: 0.7,
+        language: 'pt',
+        analysis: emotionData
+      };
+
+      console.log('Análise de emoções concluída:', emotions);
+      return emotions;
+    } catch (error) {
+      console.error('Falha na análise de emoções:', error);
+      // Evitar que a falha na análise de emoções interrompa o fluxo principal
+      return {
+        error: error.message,
+        dominant: 'neutral',
+        sentiment: 'neutral',
+        scores: {
+          neutral: 1.0,
+          positive: 0,
+          negative: 0
+        }
+      };
     }
   }
 
@@ -1949,622 +2029,487 @@ class WhisperTranscriptionService {
                         sessionStorage.getItem('token');
       
       if (!authToken) {
-        console.error('Whisper: Token de autenticação não encontrado para envio de transcrição');
+        console.warn('Token de autenticação não encontrado para envio de transcrição');
         return { success: false, error: 'Token de autenticação não encontrado' };
       }
       
-      // CORREÇÃO: Obter ID de sessão válido do DOM ou localStorage
-      // Em vez de usar um ID fixo, tente obter o ID correto da sessão atual
-      let sessionId = null;
+      // Obter o ID da sessão do objeto data ou da propriedade do serviço
+      const sessionId = data.sessionId || this.sessionId;
       
-      // 1. Tente obter dos parâmetros da URL primeiro (mais confiável)
-        try {
-          const urlParams = new URLSearchParams(window.location.search);
-          const pathSegments = window.location.pathname.split('/');
-          
-          // Procurar em parâmetros da URL
-          if (urlParams.has('sessionId')) {
-            sessionId = urlParams.get('sessionId');
-          } 
-          // Procurar em segmentos do path (/session/{id})
-          else if (pathSegments.includes('session') && pathSegments.length > pathSegments.indexOf('session') + 1) {
-            sessionId = pathSegments[pathSegments.indexOf('session') + 1];
-          }
-        
-        // Se não encontrou, procurar ID de formato UUID em qualquer posição do path
-        if (!sessionId) {
-          const uuidMatch = window.location.pathname.match(/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/i);
-          if (uuidMatch) {
-            sessionId = uuidMatch[0];
-          }
-        }
-      } catch (urlError) {
-        console.warn('Erro ao extrair sessionId da URL:', urlError);
+      // Verificar se temos um ID de sessão válido
+      if (!sessionId || sessionId === 'unknown') {
+        console.warn('ID de sessão não encontrado para envio de transcrição');
+        return { success: false, error: 'ID de sessão não encontrado' };
       }
       
-      // 2. Se não encontrou na URL, tente obter do localStorage ou sessionStorage
-      if (!sessionId) {
-        sessionId = localStorage.getItem('currentSessionId') || 
-                    sessionStorage.getItem('currentSessionId') ||
-                    localStorage.getItem('sessionId') ||
-                    sessionStorage.getItem('sessionId');
+      // Atualizar o objeto data com o sessionId
+      const transcriptionData = { ...data, sessionId };
+      
+      // CORREÇÃO: Adicionar campo 'transcript' para compatibilidade com o backend
+      // O backend espera um campo 'transcript' ou 'content'
+      if (transcriptionData.content && !transcriptionData.transcript) {
+        transcriptionData.transcript = transcriptionData.content;
       }
       
-      // 3. Se ainda não encontrou, procurar por qualquer elemento na página com data-session-id
-      if (!sessionId) {
-        const sessionElement = document.querySelector('[data-session-id]');
-        if (sessionElement) {
-          sessionId = sessionElement.getAttribute('data-session-id');
-        }
-      }
-      
-      // 4. Se ainda não encontrou, procurar variável global __AI_CONTEXT
-      if (!sessionId && window.__AI_CONTEXT && window.__AI_CONTEXT.sessionId) {
-        sessionId = window.__AI_CONTEXT.sessionId;
-      }
-      
-      // 5. Se ainda não encontrou, tente usar o ID que veio no parâmetro da função
-      if (!sessionId && data.sessionId) {
-        sessionId = data.sessionId;
-      }
-      
-      // 6. Se ainda não tem ID, usar um ID fixo como último recurso
-      if (!sessionId) {
-        // HACK: Usar um ID que possui alta probabilidade de existir
-        // Isso é um fallback para evitar erros 404
-        sessionId = 'temp_session';
-      }
-      
-      console.log(`Whisper: Usando sessionId: ${sessionId}`);
-      
-      // Usar o ID de sessão encontrado
-      data.sessionId = sessionId;
-      
-      // CORREÇÃO: Garantir que temos o speaker (padrão 'user')
-      if (!data.speaker) {
-        data.speaker = 'user';
-      }
-      
-      // CORREÇÃO: Garantir que temos o conteúdo na propriedade correta
-      if (data.transcript && !data.content) {
-        data.content = data.transcript;
-      } else if (!data.content && data.text) {
-        data.content = data.text;
-      }
-      
-      // CORREÇÃO: Garantir que transcript também existe (propriedade exigida pelo endpoint /api/ai/transcript)
-      if (!data.transcript && data.content) {
-        data.transcript = data.content;
-      }
-      
-      // NOVO: Adicionar identificador único para esta transcrição
-      data.id = data.id || `${this.speakerRole}_${Date.now()}`;
-      
-      // NOVO: Adicionar informação sobre speakerIdentifier
-      if (!data.speakerIdentifier) {
-        data.speakerIdentifier = this.speakerIdentifier;
-      }
-      
-      // NOVO: Adicionar informação sobre ser host
-      if (typeof data.isHost !== 'boolean') {
-        data.isHost = this.isHost;
-      }
-      
-      console.log('Whisper: Enviando transcrição para backend:', {
-        sessionId: data.sessionId,
-        speaker: data.speaker,
-        speakerIdentifier: data.speakerIdentifier,
-        contentLength: data.content?.length || 0,
-        endpoint: this.transcriptEndpoint
-      });
-      
-      // CORREÇÃO: Construir payload apropriado para cada endpoint
-      const transcriptionsPayload = {
-        id: data.id,
-        sessionId: sessionId,
-        speaker: data.speaker,
-        speakerIdentifier: data.speakerIdentifier,
-        isHost: data.isHost,
-        content: data.content,
-        timestamp: data.timestamp || new Date().toISOString()
-      };
-      
-      const transcriptPayload = {
-        id: data.id,
-        sessionId: sessionId,
-        transcript: data.content || data.transcript,
-        speaker: data.speaker,
-        speakerIdentifier: data.speakerIdentifier,
-        isHost: data.isHost,
-        timestamp: data.timestamp || new Date().toISOString()
-      };
-      
-      // Tenta o endpoint principal (transcriptions) primeiro
-      try {
+      // Enviar para API
+      console.log(`Enviando transcrição para backend: ${this.transcriptEndpoint}`);
       const response = await fetch(this.transcriptEndpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${authToken}`
         },
-          body: JSON.stringify(transcriptPayload)
-        });
-        
-        if (response.ok) {
-          console.log(`Whisper: Transcrição enviada com sucesso para: ${this.transcriptEndpoint}`);
-          
-          // NOVO: Atualizar transcrições imediatamente
-          this._fetchOtherParticipantsTranscriptions();
-          
-          return { success: true };
-        } else {
-        const errorText = await response.text();
-          console.warn(`Whisper: Erro ao enviar para ${this.transcriptEndpoint} (${response.status}): ${errorText}`);
-          
-          // Se o erro foi 404 (endpoint não existe), tentar com caminho alternativo
-          if (response.status === 404) {
-            // Tentar endpoint alternativo com caminho diferente
-            const alternativeEndpoint = this.transcriptEndpoint.replace('/api/ai/transcript', '/api/transcript');
-            
-            const altResponse = await fetch(alternativeEndpoint, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${authToken}`
-              },
-              body: JSON.stringify(transcriptPayload)
-            });
-            
-            if (altResponse.ok) {
-              console.log(`Whisper: Transcrição enviada com sucesso para endpoint alternativo: ${alternativeEndpoint}`);
-              
-              // NOVO: Atualizar transcrições imediatamente
-              this._fetchOtherParticipantsTranscriptions();
-              
-              return { success: true };
-            }
-          }
-        }
-      } catch (primaryError) {
-        console.warn(`Whisper: Erro ao enviar para endpoint primário:`, primaryError);
-      }
-      
-      // Se falhou com o endpoint principal, salvar localmente
-      // Isso garante que pelo menos temos os dados no cliente
-      this._saveTranscriptionToStorage(transcriptionsPayload);
-      
-      // Continuar operação normal mesmo em caso de falha do backend
-      // Não devemos interromper a experiência do usuário
-      return { 
-        success: false, 
-        error: 'Falha ao enviar transcrição para o backend, mas dados foram salvos localmente'
-      };
-    } catch (error) {
-      console.error('Whisper: Erro ao enviar transcrição:', error);
-      return { success: false, error: error.message };
-    }
-  }
-
-  /**
-   * NOVO: Salvar transcrição no sessionStorage como backup
-   * @param {Object} transcription - A transcrição a ser salva
-   * @private
-   */
-  _saveTranscriptionToStorage(transcription) {
-    try {
-      if (!transcription || !transcription.sessionId || !transcription.content) {
-        return false;
-      }
-      
-      // Usar sessionStorage para maior segurança
-      const key = `whisper_transcriptions_${transcription.sessionId}`;
-      
-      // Obter transcrições existentes
-      let transcriptions = [];
-      const stored = sessionStorage.getItem(key);
-      
-      if (stored) {
-        try {
-          transcriptions = JSON.parse(stored);
-          if (!Array.isArray(transcriptions)) {
-            transcriptions = [];
-          }
-        } catch (e) {
-          console.warn('Erro ao recuperar transcrições armazenadas:', e);
-          transcriptions = [];
-        }
-      }
-      
-      // Adicionar nova transcrição
-      transcriptions.push({
-        ...transcription,
-        clientTimestamp: Date.now()
+        body: JSON.stringify(transcriptionData)
       });
       
-      // Salvar de volta
-      sessionStorage.setItem(key, JSON.stringify(transcriptions));
-      console.log(`Transcrição salva no sessionStorage: ${key}, total: ${transcriptions.length}`);
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`Erro ao enviar transcrição: ${response.status} - ${errorText}`);
+        return { 
+          success: false, 
+          error: `Erro ${response.status}: ${errorText}`
+        };
+      }
       
-      // Também salvar a última transcrição separadamente
-      sessionStorage.setItem(`last_transcript_${transcription.sessionId}`, JSON.stringify(transcription));
-      
-      return true;
-    } catch (e) {
-      console.warn('Erro ao salvar transcrição no sessionStorage:', e);
-      return false;
+      const result = await response.json();
+      console.log('Transcrição enviada com sucesso para o backend:', result);
+      return result;
+    } catch (error) {
+      console.error('Erro ao enviar transcrição para o backend:', error);
+      return { 
+        success: false, 
+        error: error.message || 'Erro desconhecido' 
+      };
     }
   }
 
   /**
-   * NOVO: Inicia o intervalo para buscar transcrições de outros participantes
+   * NOVO: Analisa emoções em áudio
+   * @param {Blob} audioBlob - Blob de áudio
+   * @param {string} processingId - ID para rastreamento
+   * @returns {Promise<Object>} Resultado da análise
    * @private
    */
-  _startFetchingOtherTranscriptions() {
-    // Limpar qualquer intervalo existente
-    if (this.transcriptionFetchInterval) {
-      clearInterval(this.transcriptionFetchInterval);
-    }
-    
-    // Definir intervalo para buscar as transcrições a cada 5 segundos
-    this.transcriptionFetchInterval = setInterval(() => {
-      console.log(`🔄 BUSCA: Tentando buscar transcrições de outros participantes para sessão ${this.sessionId}`);
-      this._fetchOtherParticipantsTranscriptions();
-    }, 5000); // A cada 5 segundos
-    
-    // Buscar imediatamente
-    console.log(`🔄 BUSCA INICIAL: Buscando transcrições de outros participantes para sessão ${this.sessionId}`);
-    this._fetchOtherParticipantsTranscriptions();
-    
-    console.log('✅ SISTEMA DE CONSOLIDAÇÃO: Intervalo iniciado para buscar transcrições de outros participantes');
-  }
-  
-  /**
-   * NOVO: Busca transcrições de outros participantes da mesma sessão
-   * @private
-   */
-  async _fetchOtherParticipantsTranscriptions() {
+  async _analyzeEmotionInAudio(audioBlob, processingId) {
     try {
-      // Verificar se temos um ID de sessão válido
-      if (!this.sessionId || this.sessionId.startsWith('temp_') || this.sessionId.startsWith('error_')) {
-        console.log(`⚠️ BUSCA: SessionId inválido: ${this.sessionId}, cancelando busca`);
-        return;
-      }
+      // Log para debugging
+      console.log(`Iniciando análise de emoção para processamento ${processingId}`);
       
-      // Limpar o histórico de transcrições antigas se exceder um limite
-      if (this.otherParticipantsTranscriptions.length > 100) {
-        console.log(`🧹 LIMPEZA: Histórico de transcrições excedeu 100 itens, mantendo apenas as 50 mais recentes`);
-        this.otherParticipantsTranscriptions = this.otherParticipantsTranscriptions
-          .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
-          .slice(0, 50);
-      }
-      
-      // Obter token de autenticação
+      // Verificar token de autenticação
       const authToken = localStorage.getItem('authToken') || 
                         sessionStorage.getItem('authToken') || 
                         localStorage.getItem('token') || 
                         sessionStorage.getItem('token');
       
       if (!authToken) {
-        console.warn('❌ BUSCA: Token de autenticação não encontrado para buscar transcrições');
-        return;
+        console.warn('Análise de emoção: Token de autenticação não encontrado');
+        return null;
       }
       
-      // CORRIGIDO: Garantir URL absoluta em produção
-      let url = `${this.allTranscriptsEndpoint}/${this.sessionId}`;
-      
-      // Adicionar timestamp para buscar apenas as novas desde a última vez
-      if (this.lastFetchTimestamp) {
-        // Usar ? se for a primeira query param, & se não for
-        url += url.includes('?') ? '&' : '?';
-        url += `since=${encodeURIComponent(this.lastFetchTimestamp)}`;
+      // Verificar se temos um endpoint para análise de emoção
+      if (!this.emotionAnalysisEndpoint) {
+        console.warn('Endpoint para análise de emoção não configurado');
+        
+        // Se o backend não suporta análise de emoção, podemos usar uma 
+        // solução alternativa com web API local
+        return this._performLocalEmotionAnalysis(audioBlob);
       }
       
-      console.log(`🌐 BUSCA: Buscando transcrições no endpoint: ${url}`);
+      console.log(`Enviando áudio para análise de emoção/tom: ${processingId}`);
       
-      // Fazer a requisição para o backend
-      const response = await fetch(url, {
-        method: 'GET',
+      // Criar FormData para envio
+      const formData = new FormData();
+      formData.append('audio', audioBlob, `emotion_${processingId}.wav`);
+      formData.append('processingId', processingId);
+      
+      // Configurar opções específicas de análise
+      if (this.emotionAnalysisEnabled) {
+        formData.append('analyzeEmotion', 'true');
+        formData.append('emotionModel', this.emotionAnalysisModel || 'default');
+      }
+      
+      if (this.toneAnalysisEnabled) {
+        formData.append('analyzeTone', 'true');
+      }
+      
+      // Enviar para API de análise de emoção
+      const response = await fetch(this.emotionAnalysisEndpoint, {
+        method: 'POST',
         headers: {
-          'Authorization': `Bearer ${authToken}`,
-          'Content-Type': 'application/json'
-        }
+          'Authorization': `Bearer ${authToken}`
+        },
+        body: formData
       });
       
-      // Se recebermos texto em vez de JSON, provavelmente é HTML de erro
-      const contentType = response.headers.get("content-type");
-      if (contentType && contentType.includes("text/html")) {
-        console.warn(`⚠️ BUSCA: Resposta recebida como HTML, endpoint incorreto ou erro 404`);
-        
-        // Tentar endpoint alternativo absoluto para maior confiabilidade
-        const alternativeUrl = this.isProd ? 
-          `https://theraconnect-prd.onrender.com/api/transcripts/${this.sessionId}` : 
-          `/api/transcripts/${this.sessionId}`;
-        
-        console.log(`🔄 BUSCA: Tentando endpoint alternativo: ${alternativeUrl}`);
-        
-        const altResponse = await fetch(alternativeUrl, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${authToken}`,
-            'Content-Type': 'application/json'
-          }
-        });
-        
-        if (altResponse.ok) {
-          const altContentType = altResponse.headers.get("content-type");
-          if (altContentType && altContentType.includes("application/json")) {
-            console.log(`✅ BUSCA: Endpoint alternativo funcionou!`);
-            const data = await altResponse.json();
-            console.log(`📋 BUSCA: Dados recebidos do endpoint alternativo:`, data);
-            this._processOtherTranscriptions(data);
-            return;
-          }
-        }
-        
-        // Verificar status 404 (endpoint não existe)
-        if (!response.ok || !altResponse.ok) {
-          console.warn(`❌ BUSCA: Erro nos endpoints: Principal=${response.status}, Alternativo=${altResponse.status}`);
-        }
-        
-        return;
-      }
-      
-      // Se não tiver sucesso e não for HTML, tentar endpoint alternativo
       if (!response.ok) {
-        console.warn(`⚠️ BUSCA: Erro no endpoint principal: ${response.status} ${response.statusText}`);
+        // Se der erro, continuar sem a análise de emoção
+        console.warn(`Erro ao analisar emoção: ${response.status} ${response.statusText}`);
+        return null;
+      }
+      
+      const result = await response.json();
+      return result;
+    } catch (error) {
+      console.warn('Erro ao analisar emoção no áudio:', error);
+      return null; // Continuar sem a análise de emoção em caso de erro
+    }
+  }
+
+  // NOVO: Método para análise de emoção local (fallback se não houver API)
+  async _performLocalEmotionAnalysis(audioBlob) {
+    // Implementação de fallback simples baseada em características de áudio
+    try {
+      console.log('Realizando análise de emoção local (fallback)');
+      
+      // Criar um contexto de áudio
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      
+      // Decodificar o blob de áudio
+      const arrayBuffer = await audioBlob.arrayBuffer();
+      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+      
+      // Analisar características básicas de áudio
+      const channelData = audioBuffer.getChannelData(0);
+      
+      // Calcular volume médio e variância (indicadores básicos de emoção)
+      let sum = 0;
+      let sumOfSquares = 0;
+      
+      for (let i = 0; i < channelData.length; i++) {
+        sum += Math.abs(channelData[i]);
+        sumOfSquares += channelData[i] * channelData[i];
+      }
+      
+      const avgVolume = sum / channelData.length;
+      const variance = sumOfSquares / channelData.length - (sum / channelData.length) ** 2;
+      
+      // Lógica simplificada para determinar emoção baseada em volume e variância
+      let dominantEmotion = 'neutral';
+      let dominantTone = 'neutral';
+      let emotionConfidence = 0.5;
+      let toneConfidence = 0.5;
+      
+      // Volume alto + alta variância geralmente indica excitação (felicidade ou raiva)
+      if (avgVolume > 0.1 && variance > 0.01) {
+        dominantEmotion = 'excited';
+        emotionConfidence = Math.min(0.7, avgVolume * 5);
+      } 
+      // Volume baixo + baixa variância pode indicar calma ou tristeza
+      else if (avgVolume < 0.05 && variance < 0.005) {
+        dominantEmotion = 'calm';
+        emotionConfidence = Math.min(0.6, (1 - avgVolume) * 3);
+      }
+      
+      // Para o tom, usamos a mesma lógica simples
+      if (variance > 0.01) {
+        dominantTone = 'expressive';
+        toneConfidence = Math.min(0.7, variance * 50);
+      } else {
+        dominantTone = 'monotone';
+        toneConfidence = Math.min(0.6, (1 - variance) * 30);
+      }
+      
+      // Construir resultado básico
+      return {
+        emotions: {
+          dominant: {
+            label: dominantEmotion,
+            confidence: emotionConfidence
+          },
+          all: [
+            { label: dominantEmotion, confidence: emotionConfidence },
+            { label: 'neutral', confidence: 1 - emotionConfidence }
+          ]
+        },
+        tones: {
+          dominant: {
+            label: dominantTone,
+            confidence: toneConfidence
+          },
+          all: [
+            { label: dominantTone, confidence: toneConfidence },
+            { label: 'neutral', confidence: 1 - toneConfidence }
+          ]
+        },
+        audioFeatures: {
+          averageVolume: avgVolume,
+          variance: variance
+        }
+      };
+    } catch (error) {
+      console.error('Erro na análise local de emoção:', error);
+      return null;
+    }
+  }
+
+  // Novo método para atualizar emoções no AIContext
+  _updateAIContextEmotions(emotions) {
+    console.log('[Whisper] Tentando atualizar AIContext com emoções:', emotions);
+    
+    try {
+      // Verificar se temos acesso direto ao contexto
+      if (this.aiContext && typeof this.aiContext.updateEmotions === 'function') {
+        console.log('[Whisper] Usando updateEmotions do aiContext');
+        this.aiContext.updateEmotions(emotions);
         return;
       }
       
-      // Processar resposta
-      const data = await response.json();
-      console.log(`📋 BUSCA: Resposta recebida do backend com ${data.data?.length || 0} transcrições`);
-      this._processOtherTranscriptions(data);
+      // Alternativa: Disparar evento para atualizar o contexto
+      console.log('[Whisper] Disparando evento updateEmotions');
+      var emotionEvent = new CustomEvent('updateEmotions', { 
+        detail: { emotions },
+        bubbles: true,
+        cancelable: true
+      });
+      window.dispatchEvent(emotionEvent);
+      
     } catch (error) {
-      // MELHORADO: Tratamento específico para erro de parsing JSON (HTML em vez de JSON)
-      if (error instanceof SyntaxError && error.message.includes('Unexpected token')) {
-        console.warn(`❌ BUSCA: Erro ao analisar resposta do servidor - recebido HTML em vez de JSON`);
-      } else {
-        console.warn(`❌ BUSCA: Erro ao buscar transcrições de outros participantes:`, error);
-      }
+      console.error('[Whisper] Erro ao atualizar emoções no AIContext:', error);
     }
   }
 
   /**
-   * NOVO: Processa as transcrições recebidas de outros participantes
-   * @param {Object} data - Dados recebidos do backend
+   * NOVO: Determina se um texto contém duplicação com transcrições anteriores
+   * @param {string} text - Texto a verificar 
+   * @returns {boolean} - True se o texto contém duplicação significativa
    * @private
    */
-  _processOtherTranscriptions(data) {
-    try {
-      // Verificar se temos dados válidos
-      // CORRIGIDO: Verificar o formato correto retornado pelo backend
-      const transcripts = data.data || data.transcripts || (Array.isArray(data) ? data : null);
+  _hasSignificantDuplication(text) {
+    // Não verificar transcrições muito curtas
+    if (!text || text.length < 10) return false;
+
+    // Se não há histórico para comparar, não há duplicação
+    if (!this.transcriptionHistory || this.transcriptionHistory.length === 0) {
+      return false;
+    }
+
+    // Verificar as 3 últimas transcrições
+    const recentTranscriptions = this.transcriptionHistory
+      .slice(-3)
+      .map(t => t.content || '');
+
+    for (const prevText of recentTranscriptions) {
+      // Ignorar transcrições muito curtas
+      if (prevText.length < 10) continue;
+
+      // Calcular o maior trecho em comum
+      let maxCommonLength = 0;
       
-      if (!transcripts || !Array.isArray(transcripts)) {
-        console.warn(`⚠️ PROCESSAMENTO: Dados inválidos recebidos:`, data);
-        return;
-      }
-      
-      // Criar um conjunto de IDs já processados para verificação rápida
-      const processedIds = new Set(
-        this.otherParticipantsTranscriptions.map(t => t.id || `${t.timestamp}_${t.speaker}_${t.content?.substring(0, 20)}`)
-      );
-      
-      // Filtrar apenas as transcrições de outros participantes (não o usuário atual)
-      // E que ainda não foram processadas (não estão no conjunto de IDs)
-      const newTranscriptions = transcripts.filter(t => {
-        // Verificar se não é do usuário atual
-        const isFromOthers = t.speaker !== this.speakerRole && t.speakerIdentifier !== this.speakerIdentifier;
-        
-        if (!isFromOthers) return false;
-        
-        // Criar um ID único para esta transcrição
-        const transcriptionId = t.id || `${t.timestamp}_${t.speaker}_${t.content?.substring(0, 20)}`;
-        
-        // Verificar se já foi processada
-        const isDuplicate = processedIds.has(transcriptionId);
-        
-        // Se for duplicada, apenas mencionar no log sem poluir com muitas mensagens
-        if (isDuplicate) {
-          // Reduzir logging de duplicados, apenas mencionando o total
-          return false;
+      // Verificar trechos comuns entre as duas strings
+      for (let i = 0; i < prevText.length; i++) {
+        for (let j = 0; j < text.length; j++) {
+          let commonLength = 0;
+          while (
+            i + commonLength < prevText.length && 
+            j + commonLength < text.length && 
+            prevText[i + commonLength] === text[j + commonLength]
+          ) {
+            commonLength++;
+          }
+          maxCommonLength = Math.max(maxCommonLength, commonLength);
         }
-        
-        // Se chegou aqui, é uma nova transcrição válida
+      }
+
+      // Se o texto atual tem mais de 70% em comum com uma transcrição anterior
+      // e o trecho comum é maior que 20 caracteres, consideramos como duplicação
+      const duplicationRatio = maxCommonLength / text.length;
+      if (duplicationRatio > 0.7 && maxCommonLength > 20) {
+        console.log(`Duplicação detectada (${Math.round(duplicationRatio * 100)}%): "${text.substring(0, 30)}..."`);
         return true;
-      });
-      
-      // Log resumido para não poluir o console
-      const duplicatesCount = transcripts.length - newTranscriptions.length;
-      if (duplicatesCount > 0) {
-        console.log(`🔄 PROCESSAMENTO: ${duplicatesCount} transcrições duplicadas ignoradas`);
       }
-      
-      console.log(`✅ PROCESSAMENTO: ${newTranscriptions.length} novas transcrições de outros participantes`);
-      
-      // Se não há novas transcrições, retornar
-      if (newTranscriptions.length === 0) {
-        return;
-      }
-      
-      // Adicionar todas as novas transcrições ao array local
-      for (const transcription of newTranscriptions) {
-        this.otherParticipantsTranscriptions.push(transcription);
-        
-        // Processar e exibir cada transcrição
-        this._displayOtherParticipantTranscription(transcription);
-      }
-      
-      // Atualizar timestamp da última busca
-      this.lastFetchTimestamp = new Date().toISOString();
-    } catch (error) {
-      console.warn(`❌ PROCESSAMENTO: Erro ao processar transcrições de outros participantes:`, error);
     }
+
+    return false;
   }
-  
+
   /**
-   * NOVO: Exibe a transcrição de outro participante no console
-   * @param {Object} transcription - Dados da transcrição
+   * Iniciar busca periódica de transcrições de outros participantes
    * @private
    */
-  _displayOtherParticipantTranscription(transcription) {
+  _startFetchingOtherTranscriptions() {
+    // Verificar se temos sessionId válido
+    if (!this.sessionId || this.sessionId === 'unknown') {
+      console.log('Whisper: Não é possível buscar transcrições sem sessionId válido');
+      return;
+    }
+
+    console.log(`Whisper: Configurando busca de transcrições para a sessão ${this.sessionId}`);
+    
+    // Limpar intervalo anterior se existir
+    if (this.transcriptionFetchInterval) {
+      clearInterval(this.transcriptionFetchInterval);
+    }
+
+    // Busca inicial imediata
+    this._fetchOtherParticipantsTranscriptions();
+    
+    // Configurar busca periódica (a cada 5 segundos)
+    this.transcriptionFetchInterval = setInterval(() => {
+      this._fetchOtherParticipantsTranscriptions();
+    }, 5000);
+    
+    console.log('Whisper: Sistema de busca de transcrições iniciado com sucesso');
+  }
+
+  /**
+   * Busca transcrições de outros participantes da sessão
+   * @private
+   */
+  async _fetchOtherParticipantsTranscriptions() {
     try {
-      // Determinar rótulo e cor do falante
-      let speakerLabel = 'DESCONHECIDO';
-      let bgColor = '#9E9E9E';
+      // Verificar se temos sessionId válido
+      if (!this.sessionId || this.sessionId === 'unknown') {
+        console.log('Whisper: SessionID inválido, cancelando busca de transcrições');
+        return;
+      }
+
+      // Obter token de autenticação
+      const token = localStorage.getItem('token') || 
+                    sessionStorage.getItem('token') || 
+                    localStorage.getItem('authToken') || 
+                    sessionStorage.getItem('authToken');
       
-      // Verificar papel do falante
-      if (transcription.speaker === 'therapist' || transcription.speakerIdentifier?.includes('therapist')) {
-        if (transcription.speakerIdentifier === 'therapist_host') {
-          speakerLabel = 'TERAPEUTA (ANFITRIÃO)';
-          bgColor = '#4CAF50';
-        } else if (transcription.speakerIdentifier === 'therapist_guest') {
-          speakerLabel = 'TERAPEUTA (CONVIDADO)';
-          bgColor = '#009688';
-        } else {
-          speakerLabel = 'TERAPEUTA';
-          bgColor = '#4CAF50';
+      if (!token) {
+        console.log('Whisper: Token de autenticação não encontrado para buscar transcrições');
+        return;
+      }
+
+      // Verificar timestamp da última transcrição vista
+      const lastTimestamp = this.lastFetchTimestamp || '1970-01-01T00:00:00.000Z';
+
+      // Construir URL com query params - usar URL absoluta para maior compatibilidade
+      const baseUrl = this.isProd ? 'https://theraconnect-prd.onrender.com' : '';
+      const url = `${baseUrl}/api/ai/transcriptions/session/${this.sessionId}?since=${encodeURIComponent(lastTimestamp)}`;
+      
+      console.log(`Whisper: Buscando transcrições no endpoint: ${url}`);
+      
+      // Enviar requisição
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
         }
-      } else if (transcription.speaker === 'client' || transcription.speakerIdentifier === 'client') {
-        speakerLabel = 'CLIENTE';
-        bgColor = '#2196F3';
-      }
-      
-      // Obter o conteúdo da transcrição
-      const content = transcription.content || transcription.transcript || transcription.text || '';
-      
-      // Exibir no console com formato adequado
-      console.log(
-        `\n%c ${speakerLabel} DISSE: %c ${content.substring(0, 200)}${content.length > 200 ? '...' : ''}\n`, 
-        `background: ${bgColor}; 
-         color: white; 
-         font-weight: bold; 
-         padding: 5px; 
-         border-radius: 3px 0 0 3px;`,
-        `background: #f8f8f8; 
-         color: #333; 
-         padding: 5px; 
-         border-radius: 0 3px 3px 0; 
-         border-left: 5px solid ${bgColor};`
-      );
-      
-      // Log adicional da sessão para rastreamento
-      console.log(
-        `%c SESSÃO: %c ${this.sessionId} %c PAPEL: %c ${transcription.speakerIdentifier || transcription.speaker} %c TIMESTAMP: %c ${new Date(transcription.timestamp).toLocaleTimeString()}`, 
-        'font-weight: bold; color: #9E9E9E;', 
-        'color: #9E9E9E;',
-        'font-weight: bold; color: #9E9E9E;', 
-        'color: #9E9E9E;',
-        'font-weight: bold; color: #9E9E9E;', 
-        'color: #9E9E9E;'
-      );
-      
-      // Disparar evento para notificar sobre nova transcrição de outro participante
-      this._dispatchEvent('otherParticipantTranscription', {
-        transcript: content,
-        speaker: transcription.speaker,
-        speakerIdentifier: transcription.speakerIdentifier,
-        sessionId: this.sessionId,
-        timestamp: transcription.timestamp
       });
-    } catch (error) {
-      console.warn('Erro ao exibir transcrição de outro participante:', error);
-    }
-  }
-  
-  /**
-   * NOVO: Limpa os recursos quando o componente é destruído
-   */
-  destroy() {
-    try {
-      // Parar a gravação se estiver ativa
-      if (this.isRecording) {
-        this.stopRecording(false);
-      }
-      
-      // Liberar recursos de áudio
-      this._releaseAllAudioResources();
-      
-      // Limpar o intervalo de busca de transcrições
-      if (this.transcriptionFetchInterval) {
-        clearInterval(this.transcriptionFetchInterval);
-        this.transcriptionFetchInterval = null;
-      }
-      
-      // Limpar detector de voz
-      if (this.voiceDetectionInterval) {
-        clearInterval(this.voiceDetectionInterval);
-        this.voiceDetectionInterval = null;
-      }
-      
-      console.log('WhisperTranscriptionService destruído e recursos liberados');
-    } catch (error) {
-      console.error('Erro ao destruir WhisperTranscriptionService:', error);
-    }
-  }
-  
-  /**
-   * NOVO: Retorna todas as transcrições consolidadas (próprias e de outros participantes)
-   * @returns {Array} Array de transcrições ordenadas por timestamp
-   */
-  getAllTranscriptions() {
-    try {
-      // Combinar transcrições próprias e de outros participantes
-      const allTranscriptions = [
-        ...this.transcriptionHistory,
-        ...this.otherParticipantsTranscriptions
-      ];
-      
-      // Ordenar por timestamp
-      return allTranscriptions.sort((a, b) => {
-        const timestampA = new Date(a.timestamp).getTime();
-        const timestampB = new Date(b.timestamp).getTime();
-        return timestampA - timestampB;
-      });
-    } catch (error) {
-      console.warn('Erro ao obter todas as transcrições:', error);
-      return [];
-    }
-  }
-  
-  /**
-   * NOVO: Retorna um texto consolidado com todas as transcrições, formatado como diálogo
-   * @returns {string} Texto formatado com todas as transcrições
-   */
-  getConsolidatedTranscriptionText() {
-    try {
-      const allTranscriptions = this.getAllTranscriptions();
-      
-      if (allTranscriptions.length === 0) {
-        return 'Nenhuma transcrição disponível';
-      }
-      
-      // Construir o texto formatado
-      return allTranscriptions.map(t => {
-        // Determinar o rótulo do falante
-        let speakerLabel = '';
-        
-        if (t.speakerIdentifier === 'therapist_host') {
-          speakerLabel = 'Terapeuta (anfitrião)';
-        } else if (t.speakerIdentifier === 'therapist_guest') {
-          speakerLabel = 'Terapeuta (convidado)';
-        } else if (t.speaker === 'therapist') {
-          speakerLabel = 'Terapeuta';
-        } else if (t.speaker === 'client') {
-          speakerLabel = 'Cliente';
-        } else {
-          speakerLabel = t.speaker || 'Desconhecido';
+
+      if (!response.ok) {
+        // Tentar endpoint alternativo se o primário falhar
+        if (response.status === 404) {
+          console.log('Whisper: Endpoint primário não encontrado, tentando alternativo');
+          
+          const altUrl = `${baseUrl}/api/transcriptions/session/${this.sessionId}?since=${encodeURIComponent(lastTimestamp)}`;
+          const altResponse = await fetch(altUrl, {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            }
+          });
+          
+          if (altResponse.ok) {
+            const altResult = await altResponse.json();
+            this._processTranscriptionsFromOthers(altResult);
+            return;
+          }
         }
         
-        // Formatar hora
-        const time = new Date(t.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        
-        // Retornar linha formatada
-        return `[${time}] ${speakerLabel}: ${t.content || t.transcript}`;
-      }).join('\n');
+        throw new Error(`Erro ao buscar transcrições: ${response.status} ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      this._processTranscriptionsFromOthers(result);
     } catch (error) {
-      console.warn('Erro ao gerar texto consolidado de transcrições:', error);
-      return 'Erro ao processar transcrições';
+      console.error('Whisper: Erro ao buscar transcrições de outros participantes:', error);
+    }
+  }
+  
+  /**
+   * Processa transcrições recebidas de outros participantes
+   * @param {Object} result - Resultado da API com as transcrições
+   * @private
+   */
+  _processTranscriptionsFromOthers(result) {
+      // Verificar se recebemos transcrições
+      if (result && result.data && Array.isArray(result.data) && result.data.length > 0) {
+      console.log(`Whisper: Recebidas ${result.data.length} novas transcrições`);
+        
+        // Filtrar apenas transcrições de outros participantes
+        const otherTranscriptions = result.data.filter(t => 
+          t.speaker !== this.speakerRole || 
+          (t.speakerIdentifier && t.speakerIdentifier !== this._getSpeakerIdentifier())
+        );
+
+        if (otherTranscriptions.length > 0) {
+        console.log(`Whisper: ${otherTranscriptions.length} transcrições de outros participantes`);
+        
+          // Atualizar lista de transcrições de outros participantes
+          this.otherParticipantsTranscriptions = [
+            ...this.otherParticipantsTranscriptions || [],
+            ...otherTranscriptions
+          ];
+
+          // Atualizar timestamp da última busca
+          const timestamps = otherTranscriptions.map(t => new Date(t.timestamp).getTime());
+          const lastTime = Math.max(...timestamps);
+          this.lastFetchTimestamp = new Date(lastTime).toISOString();
+
+          // Disparar evento para notificar novas transcrições
+          this._dispatchEvent('otherTranscriptionsReceived', {
+            transcriptions: otherTranscriptions
+          });
+        
+        console.log('Whisper: Novas transcrições processadas e evento disparado');
+      } else {
+        console.log('Whisper: Nenhuma transcrição de outros participantes entre as recebidas');
+      }
+    } else {
+      console.log('Whisper: Nenhuma nova transcrição disponível');
+    }
+  }
+  
+  /**
+   * Salva a transcrição no sessionStorage para recuperação posterior
+   * @param {Object} transcriptionData - Dados da transcrição
+   * @private
+   */
+  _saveTranscriptionToStorage(transcriptionData) {
+    try {
+      if (!transcriptionData || !transcriptionData.sessionId) {
+        console.warn('Dados de transcrição inválidos ou ausentes');
+        return false;
+      }
+      
+      // Criar uma chave única baseada na sessão
+      const storageKey = `whisper_session_${transcriptionData.sessionId}`;
+      
+      // Recuperar dados existentes ou inicializar array vazio
+      let sessionTranscriptions = [];
+      const existingData = sessionStorage.getItem(storageKey);
+      
+      if (existingData) {
+        try {
+          sessionTranscriptions = JSON.parse(existingData);
+          // Garantir que é um array
+          if (!Array.isArray(sessionTranscriptions)) {
+            sessionTranscriptions = [];
+          }
+        } catch (e) {
+          console.warn('Erro ao analisar transcrições existentes:', e);
+          sessionTranscriptions = [];
+        }
+      }
+      
+      // Adicionar nova transcrição
+      sessionTranscriptions.push(transcriptionData);
+      
+      // Salvar de volta no sessionStorage
+      sessionStorage.setItem(storageKey, JSON.stringify(sessionTranscriptions));
+      console.log('Transcrição salva no sessionStorage para recuperação imediata');
+      
+      return true;
+    } catch (error) {
+      console.error('Erro ao salvar transcrição no sessionStorage:', error);
+      return false;
     }
   }
 }
@@ -2573,3 +2518,11 @@ class WhisperTranscriptionService {
 // Exportar como singleton
 const whisperTranscriptionService = new WhisperTranscriptionService();
 export default whisperTranscriptionService;
+
+/**
+ * Gera um ID único para as transcrições
+ * @returns {string} ID único
+ */
+function generateId() {
+  return 'tr_' + Math.random().toString(36).substring(2, 11) + '_' + Date.now().toString(36);
+}
