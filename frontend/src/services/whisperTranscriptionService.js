@@ -77,6 +77,11 @@ class WhisperTranscriptionService {
     this.lastProcessedTime = 0;                // ADICIONADO: Para controlar quando foi o último processamento
     this.continuousProcessingStarted = false;  // ADICIONADO: Flag para controlar se o processamento contínuo já começou
     
+    // ADICIONADO: Propriedades para busca de transcrições de outros participantes
+    this.lastFetchTimestamp = null;
+    this.transcriptionFetchInterval = null;
+    this.otherParticipantsTranscriptions = [];
+    
     // Tentar inicializar automaticamente na criação
     this.initializeService();
   }
@@ -97,8 +102,14 @@ class WhisperTranscriptionService {
       this.updateSessionId(latestSessionId);
     }
     
-    // Iniciar busca de transcrições de outros participantes
-    this._startFetchingOtherTranscriptions();
+    // Iniciar detecção de mudança de sessão
+    this._setupSessionChangeDetection();
+    
+    // Determinar o papel do usuário
+    if (!this.speakerRole || this.speakerRole === 'unknown') {
+      this.speakerRole = this._determineSpeakerRole();
+      console.log(`Whisper: Papel do usuário determinado: ${this.speakerRole}`);
+    }
     
     this.serviceInitialized = true;
     console.log(`Whisper: Serviço inicializado completamente - sessionId: ${this.sessionId}`);
@@ -2460,6 +2471,163 @@ class WhisperTranscriptionService {
       
     } catch (error) {
       console.error('[Whisper] Erro ao atualizar emoções no AIContext:', error);
+    }
+  }
+
+  /**
+   * NOVO: Determina se um texto contém duplicação com transcrições anteriores
+   * @param {string} text - Texto a verificar 
+   * @returns {boolean} - True se o texto contém duplicação significativa
+   * @private
+   */
+  _hasSignificantDuplication(text) {
+    // Não verificar transcrições muito curtas
+    if (!text || text.length < 10) return false;
+
+    // Se não há histórico para comparar, não há duplicação
+    if (!this.transcriptionHistory || this.transcriptionHistory.length === 0) {
+      return false;
+    }
+
+    // Verificar as 3 últimas transcrições
+    const recentTranscriptions = this.transcriptionHistory
+      .slice(-3)
+      .map(t => t.content || '');
+
+    for (const prevText of recentTranscriptions) {
+      // Ignorar transcrições muito curtas
+      if (prevText.length < 10) continue;
+
+      // Calcular o maior trecho em comum
+      let maxCommonLength = 0;
+      
+      // Verificar trechos comuns entre as duas strings
+      for (let i = 0; i < prevText.length; i++) {
+        for (let j = 0; j < text.length; j++) {
+          let commonLength = 0;
+          while (
+            i + commonLength < prevText.length && 
+            j + commonLength < text.length && 
+            prevText[i + commonLength] === text[j + commonLength]
+          ) {
+            commonLength++;
+          }
+          maxCommonLength = Math.max(maxCommonLength, commonLength);
+        }
+      }
+
+      // Se o texto atual tem mais de 70% em comum com uma transcrição anterior
+      // e o trecho comum é maior que 20 caracteres, consideramos como duplicação
+      const duplicationRatio = maxCommonLength / text.length;
+      if (duplicationRatio > 0.7 && maxCommonLength > 20) {
+        console.log(`Duplicação detectada (${Math.round(duplicationRatio * 100)}%): "${text.substring(0, 30)}..."`);
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Iniciar busca periódica de transcrições de outros participantes
+   * @private
+   */
+  _startFetchingOtherTranscriptions() {
+    // Verificar se temos sessionId válido
+    if (!this.sessionId) {
+      console.log('Whisper: Não é possível buscar transcrições sem sessionId válido');
+      return;
+    }
+
+    console.log(`Whisper: Configurando busca de transcrições para a sessão ${this.sessionId}`);
+    
+    // Limpar intervalo anterior se existir
+    if (this.transcriptionFetchInterval) {
+      clearInterval(this.transcriptionFetchInterval);
+    }
+
+    // Busca inicial imediata
+    this._fetchOtherParticipantsTranscriptions();
+    
+    // Configurar busca periódica (a cada 5 segundos)
+    this.transcriptionFetchInterval = setInterval(() => {
+      this._fetchOtherParticipantsTranscriptions();
+    }, 5000);
+  }
+
+  /**
+   * Busca transcrições de outros participantes da sessão
+   * @private
+   */
+  async _fetchOtherParticipantsTranscriptions() {
+    try {
+      // Verificar se temos sessionId válido
+      if (!this.sessionId || this.sessionId === 'unknown') {
+        return;
+      }
+
+      // Obter token de autenticação
+      const token = localStorage.getItem('token') || 
+                    sessionStorage.getItem('token') || 
+                    localStorage.getItem('authToken') || 
+                    sessionStorage.getItem('authToken');
+      
+      if (!token) {
+        console.log('Whisper: Token de autenticação não encontrado para buscar transcrições');
+        return;
+      }
+
+      // Verificar timestamp da última transcrição vista
+      const lastTimestamp = this.lastFetchTimestamp || '1970-01-01T00:00:00.000Z';
+
+      // Construir URL com query params
+      const url = `${this.allTranscriptsEndpoint}/${this.sessionId}?since=${encodeURIComponent(lastTimestamp)}`;
+      
+      // Enviar requisição
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Erro ao buscar transcrições: ${response.status} ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      
+      // Verificar se recebemos transcrições
+      if (result && result.data && Array.isArray(result.data) && result.data.length > 0) {
+        console.log(`Whisper: Recebidas ${result.data.length} novas transcrições de outros participantes`);
+        
+        // Filtrar apenas transcrições de outros participantes
+        const otherTranscriptions = result.data.filter(t => 
+          t.speaker !== this.speakerRole || 
+          (t.speakerIdentifier && t.speakerIdentifier !== this._getSpeakerIdentifier())
+        );
+
+        if (otherTranscriptions.length > 0) {
+          // Atualizar lista de transcrições de outros participantes
+          this.otherParticipantsTranscriptions = [
+            ...this.otherParticipantsTranscriptions || [],
+            ...otherTranscriptions
+          ];
+
+          // Atualizar timestamp da última busca
+          const timestamps = otherTranscriptions.map(t => new Date(t.timestamp).getTime());
+          const lastTime = Math.max(...timestamps);
+          this.lastFetchTimestamp = new Date(lastTime).toISOString();
+
+          // Disparar evento para notificar novas transcrições
+          this._dispatchEvent('otherTranscriptionsReceived', {
+            transcriptions: otherTranscriptions
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Whisper: Erro ao buscar transcrições de outros participantes:', error);
     }
   }
 }
