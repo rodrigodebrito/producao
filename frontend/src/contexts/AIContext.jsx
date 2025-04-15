@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
 import PropTypes from 'prop-types';
-import hybridAIService from '../services/hybridAI.service';
+// DESATIVADO: Import do hybridAIService removido
+// import hybridAIService from '../services/hybridAI.service';
 import { initializeTensorFlow, isTfInitialized } from '../services/tfHelper';
 
 // Criar o contexto
@@ -16,6 +17,15 @@ export const AIProvider = ({ children }) => {
   const [localProcessing, setLocalProcessing] = useState(true);
   const [anonymization, setAnonymization] = useState(true);
   const [lastResult, setLastResult] = useState(null);
+  
+  // Flag global para indicar que o HybridAI está desativado
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.__HYBRID_AI_ACTIVE = false;
+      window.__HYBRID_AI_DISABLED = true;
+      window.__HYBRID_AI_FORCE_DISABLED = true;
+    }
+  }, []);
   
   // Inicializar o serviço
   useEffect(() => {
@@ -34,6 +44,9 @@ export const AIProvider = ({ children }) => {
         
         setIsInitialized(true);
         console.log('Contexto de IA inicializado com sucesso!');
+        
+        // Informar que HybridAI está desativado
+        console.log('⛔ Componente AI Context: HybridAI está DESATIVADO');
       } catch (error) {
         console.error('Erro ao inicializar contexto de IA:', error);
         toast.error('Erro ao inicializar recursos de IA');
@@ -65,24 +78,18 @@ export const AIProvider = ({ children }) => {
     setEmotions(event.detail.accumulated);
   };
   
-  // Funções para iniciar/parar reconhecimento de voz
+  // Funções para iniciar/parar reconhecimento de voz - DESATIVADAS
   const startListening = () => {
-    if (hybridAIService.startRecording()) {
-      setIsListening(true);
-      toast.info('Reconhecimento de voz iniciado', { autoClose: 2000 });
-      return true;
-    }
-    toast.error('Não foi possível iniciar o reconhecimento de voz');
+    // DESATIVADO: HybridAI não está disponível
+    console.log('⛔ AIContext: Tentativa de iniciar reconhecimento ignorada - HybridAI desativado');
+    toast.warning('Reconhecimento de voz está desativado nesta versão', { autoClose: 3000 });
     return false;
   };
   
   const stopListening = () => {
-    if (hybridAIService.stopRecording()) {
-      setIsListening(false);
-      toast.info('Reconhecimento de voz finalizado', { autoClose: 2000 });
-      return true;
-    }
-    toast.error('Não foi possível finalizar o reconhecimento de voz');
+    // DESATIVADO: HybridAI não está disponível
+    console.log('⛔ AIContext: Tentativa de parar reconhecimento ignorada - HybridAI desativado');
+    setIsListening(false);
     return false;
   };
   

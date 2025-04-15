@@ -1,0 +1,39 @@
+# Desativação Completa do HybridAI
+
+Data: 2024-10-29
+
+## Arquivos modificados
+
+1. **frontend/src/index.js**
+   - Comentado o import do HybridAI Service
+   - Removida a inicialização do serviço
+   - Adicionadas flags globais: __HYBRID_AI_DISABLED, __HYBRID_AI_FORCE_DISABLED, __HYBRID_AI_ACTIVE (false)
+   - Limpeza das referências globais ao HybridAI
+
+2. **frontend/src/contexts/AIContext.jsx**
+   - Comentado o import do HybridAI Service
+   - Desativadas as funções que chamavam o serviço (startListening, stopListening)
+   - Adicionados logs indicando que o serviço está desativado
+   - Adicionadas flags globais no contexto
+
+## Razões para a desativação
+
+- Conflitos na inicialização e funcionamento simultâneo com o Whisper
+- Problemas com reinício automático de gravações
+- Interferência na detecção de pausas manuais
+- Duplicação de transcrições no sistema
+
+## Serviços mantidos
+
+- Todas as funções do Whisper Transcription Service continuam funcionando
+- Análise de emoções via backend
+- Processamento e armazenamento das transcrições
+- Interface de usuário e componentes visuais
+
+## Restauração
+
+Para reativar o HybridAI, será necessário:
+1. Restaurar os imports comentados
+2. Remover as flags de desativação
+3. Restaurar as chamadas de método no AIContext
+4. Reabilitar a inicialização no index.js 

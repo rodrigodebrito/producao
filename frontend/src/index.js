@@ -8,32 +8,30 @@ import App from './App';
 import reportWebVitals from './reportWebVitals';
 import { BrowserRouter } from 'react-router-dom';
 
-// Importar o serviço de IA híbrida
-import hybridAIService from './services/hybridAI.service';
+// DESATIVADO: Import do HybridAI comentado
+// import hybridAIService from './services/hybridAI.service';
 
-// Disponibilizar o serviço globalmente para fácil acesso
-// DESATIVADO: Serviço HybridAI comentado para evitar inicialização
+// Flags globais para desativar completamente o HybridAI
+window.__HYBRID_AI_ACTIVE = false;
+window.__HYBRID_AI_DISABLED = true;
+window.__HYBRID_AI_FORCE_DISABLED = true;
+
+// DESATIVADO: Serviço HybridAI comentado para evitar qualquer tipo de inicialização
 // window.hybridAIService = hybridAIService;
 
-// DESATIVADO: Inicialização do HybridAI comentada conforme solicitado
+// DESATIVADO: Inicialização do HybridAI removida completamente
 /*
-// Inicializar o serviço (assíncrono)
 hybridAIService.initService().then(success => {
   console.log('HybridAI: Serviço inicializado com sucesso =', success);
-  
-  // Desabilitar o reinício automático por padrão para evitar loops de erro
   hybridAIService.toggleAutoRestart(false);
 }).catch(error => {
   console.error('Erro ao inicializar HybridAI:', error);
 });
 */
 
-// Adicionando flag para informar que o HybridAI está desativado
-window.__HYBRID_AI_ACTIVE = false;
-window.__HYBRID_AI_DISABLED = true;
-window.__HYBRID_AI_FORCE_DISABLED = true; // Flag adicional para garantir total desativação
-console.log('⛔⛔⛔ HybridAI: Serviço TOTALMENTE DESATIVADO conforme solicitado na versão 06bcfc6');
-console.log('⛔⛔⛔ HybridAI: Para ativar novamente, altere as flags no index.js');
+// Log para informar que o HybridAI está completamente desativado
+console.log('⛔⛔⛔ HybridAI: Serviço TOTALMENTE DESATIVADO');
+console.log('⛔⛔⛔ HybridAI: Todos os imports e inicializações foram removidos');
 
 // Também desabilitar versão global para impedir qualquer tentativa de inicialização
 if (typeof window !== 'undefined') {
