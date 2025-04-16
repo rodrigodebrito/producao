@@ -161,6 +161,77 @@ async function cleanupTempFiles(originalFilePath, convertedFilePath) {
 }
 
 /**
+ * Função utilitária para buscar transcrições de uma sessão, com fallback para mensagens
+ * @param {string} sessionId - ID da sessão para buscar as transcrições
+ * @returns {Promise<string>} - Texto da transcrição concatenada ou string vazia
+ */
+async function getSessionTranscriptText(sessionId) {
+  let transcript = '';
+  
+  // Buscar transcrições da sessão
+  try {
+    console.log(`AI Controller: Buscando transcrições para sessão ${sessionId}`);
+    const transcripts = await prisma.sessionTranscript.findMany({
+      where: {
+        sessionId: sessionId
+      },
+      orderBy: {
+        timestamp: 'desc'  // Ordenar por data decrescente primeiro
+      }
+    });
+    
+    if (transcripts.length > 0) {
+      console.log(`AI Controller: Encontradas ${transcripts.length} transcrições. Mais recente: ${new Date(transcripts[0].timestamp).toISOString()}`);
+      
+      // Logar as últimas 3 transcrições para debug
+      transcripts.slice(0, 3).forEach((t, i) => {
+        console.log(`AI Controller: Transcrição recente #${i+1}: "${t.content.substring(0, 50)}..." (${new Date(t.timestamp).toISOString()})`);
+      });
+      
+      // Voltar para ordem cronológica para a concatenação
+      const orderedTranscripts = [...transcripts].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+      
+      transcript = orderedTranscripts.map(t => 
+        `${t.speaker}: ${t.content}${t.emotionAnalysis ? ` [Emoção: ${t.emotionAnalysis.dominant?.label || 'não detectada'}]` : ''}`
+      ).join('\n');
+      
+      console.log(`AI Controller: Transcrição construída com ${transcript.length} caracteres.`);
+      return transcript;
+    } else {
+      console.log(`AI Controller: Nenhuma transcrição encontrada para sessão ${sessionId}`);
+    }
+  } catch (err) {
+    console.error('AI Controller: Erro ao buscar transcrições:', err);
+  }
+  
+  // Se não encontrou transcrições, tenta buscar mensagens como fallback
+  if (!transcript) {
+    console.log('AI Controller: Nenhuma transcrição encontrada, buscando mensagens');
+    
+    try {
+      const messages = await prisma.message.findMany({
+        where: {
+          sessionId: sessionId
+        },
+        orderBy: {
+          timestamp: 'asc'
+        }
+      });
+      
+      if (messages.length > 0) {
+        console.log(`AI Controller: Encontradas ${messages.length} mensagens como fallback`);
+        transcript = messages.map(msg => `${msg.sender}: ${msg.content}`).join('\n');
+        return transcript;
+      }
+    } catch (err) {
+      console.error('AI Controller: Erro ao buscar mensagens:', err);
+    }
+  }
+  
+  return transcript;
+}
+
+/**
  * Controlador para operações relacionadas a IA
  */
 const aiController = {
@@ -351,45 +422,150 @@ const aiController = {
   },
 
   /**
-   * Gerar insights para uma sessão usando OpenAI
-   * @param {string} sessionId - ID da sessão
-   * @private
+   * Gera insights para uma sessão específica
+   * @param {string} sessionId - ID da sessão para gerar insights
+   * @returns {Promise<Object>} - Objeto com os insights gerados
    */
   generateInsightsForSession: async (sessionId) => {
+    console.log(`AI Controller: Gerando insights para sessão ${sessionId}`);
+    
     try {
-      // Buscar as últimas 10 transcrições
-      const recentTranscripts = await prisma.sessionTranscript.findMany({
-        where: { sessionId },
-        orderBy: { timestamp: 'desc' },
-        take: 10
-      });
-
-      if (recentTranscripts.length < 3) {
-        // Não gerar insights com poucas transcrições
-        return;
-      }
-
-      // Preparar o texto para análise
-      const transcriptText = recentTranscripts
-        .reverse()
-        .map(t => `${t.speaker}: ${t.content}`)
-        .join('\n');
-
-      // Gerar insights usando OpenAI
-      const analysis = await openaiService.analyzeText(transcriptText);
+      // Buscar o texto da transcrição usando a função utilitária
+      const transcript = await getSessionTranscriptText(sessionId);
       
-      // Criar o insight
-      await prisma.aIInsight.create({
-        data: {
-          sessionId,
-          content: analysis,
-          type: 'ANALYSIS',
-          keywords: 'emoções, padrão, comunicação'
+      if (!transcript) {
+        console.log('AI Controller: Nenhuma transcrição ou mensagem encontrada para gerar insights');
+        return {
+          success: false,
+          message: 'Não há transcrições nesta sessão para gerar insights',
+          insights: []
+        };
+      }
+      
+      // Processar o transcript para enviar para o modelo
+      const processedTranscript = await preprocessLongTranscript(transcript);
+      console.log(`AI Controller: Transcrição processada, ${processedTranscript.length} caracteres`);
+      
+      // Gerar insights usando OpenAI
+      try {
+        const completion = await openai.chat.completions.create({
+          model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+          messages: [
+            {
+              role: "system",
+              content: `Você é um assistente especializado em identificar insights terapêuticos a partir de transcrições de sessões.
+              
+              Analise a seguinte transcrição de uma sessão terapêutica e identifique 3-5 insights importantes.
+              
+              Um insight deve ser uma observação significativa, um padrão, ou um tema que possa ajudar o terapeuta a entender melhor o cliente.
+              
+              Formate cada insight como um item de lista curto e direto ao ponto, mas informativo o suficiente para ser útil.`
+            },
+            {
+              role: "user",
+              content: String(processedTranscript)
+            }
+          ],
+          max_tokens: 800
+        });
+        
+        let insightsText = completion.choices[0].message.content.trim();
+        
+        // Processar o texto para extrair os insights como array
+        let insights = [];
+        
+        // Verificar se o texto contém linhas começando com números ou hífens
+        const lines = insightsText.split('\n');
+        const insightLines = lines.filter(line => {
+          return line.trim().match(/^(\d+\.|-)/) || (line.length > 10 && !line.match(/^[A-Z\s]+:/));
+        });
+        
+        if (insightLines.length > 0) {
+          insights = insightLines.map(line => {
+            // Remover numeração ou hífen do início
+            return line.replace(/^(\d+\.|-\s*)/g, '').trim();
+          });
+        } else {
+          // Fallback: usar o texto completo como um único insight
+          insights = [insightsText];
         }
-      });
+        
+        // Atualizar contador de uso de tokens
+        const inputTokens = estimateTokens(processedTranscript);
+        const outputTokens = estimateTokens(insightsText);
+        tokenUsageService.logTokenUsage('gpt-4o-mini', [
+          { role: "system", content: `Você é um assistente especializado em identificar insights terapêuticos a partir de transcrições de sessões.` },
+          { role: "user", content: String(processedTranscript) }
+        ], insightsText);
+        
+        // Registrar o processamento no banco de dados
+        try {
+          await prisma.sessionProcessingHistory.create({
+            data: {
+              sessionId: sessionId,
+              type: 'INSIGHTS',
+              status: 'COMPLETED',
+              result: JSON.stringify(insights)
+            }
+          });
+          console.log(`AI Controller: Registro de processamento INSIGHTS salvo para sessão ${sessionId}`);
+        } catch (dbError) {
+          console.error('AI Controller: Erro ao salvar registro de processamento:', dbError);
+        }
+        
+        console.log(`AI Controller: Insights gerados com sucesso: ${insights.length} insights`);
+        return {
+          success: true,
+          message: 'Insights gerados com sucesso',
+          insights: insights
+        };
+      } catch (openaiError) {
+        console.error('AI Controller: Erro na chamada da API OpenAI:', openaiError);
+        
+        // Registrar o erro no banco de dados
+        try {
+          await prisma.sessionProcessingHistory.create({
+            data: {
+              sessionId: sessionId,
+              type: 'INSIGHTS',
+              status: 'FAILED',
+              result: JSON.stringify({ error: openaiError.message })
+            }
+          });
+        } catch (dbError) {
+          console.error('AI Controller: Erro ao salvar registro de processamento com erro:', dbError);
+        }
+        
+        return {
+          success: false,
+          message: 'Erro ao processar com a IA',
+          error: openaiError.message,
+          insights: []
+        };
+      }
     } catch (error) {
-      console.error('Erro ao gerar insights:', error);
-      throw error;
+      console.error('AI Controller: Erro ao gerar insights:', error);
+      
+      // Registrar o erro no banco de dados
+      try {
+        await prisma.sessionProcessingHistory.create({
+          data: {
+            sessionId: sessionId,
+            type: 'INSIGHTS',
+            status: 'FAILED',
+            result: JSON.stringify({ error: error.message })
+          }
+        });
+      } catch (dbError) {
+        console.error('AI Controller: Erro ao salvar registro de processamento com erro:', dbError);
+      }
+      
+      return {
+        success: false,
+        message: 'Erro ao processar solicitação',
+        error: error.message,
+        insights: []
+      };
     }
   },
 
@@ -636,47 +812,8 @@ const aiController = {
         });
       }
 
-      // Buscar transcrições da sessão
-      let transcript = '';
-      try {
-        const transcripts = await prisma.sessionTranscript.findMany({
-          where: {
-            sessionId: sessionId
-          },
-          orderBy: {
-            timestamp: 'asc'
-          }
-        });
-        
-        if (transcripts.length > 0) {
-          transcript = transcripts.map(t => 
-            `${t.speaker}: ${t.content}${t.emotionAnalysis ? ` [Emoção: ${t.emotionAnalysis.dominant?.label || 'não detectada'}]` : ''}`
-          ).join('\n');
-        }
-      } catch (err) {
-        console.error('AI Controller: Erro ao buscar transcrições:', err);
-      }
-      
-      if (!transcript) {
-        console.log('AI Controller: Nenhuma transcrição encontrada, buscando mensagens');
-        
-        try {
-          const messages = await prisma.message.findMany({
-            where: {
-              sessionId: sessionId
-            },
-            orderBy: {
-              timestamp: 'asc'
-            }
-          });
-          
-          if (messages.length > 0) {
-            transcript = messages.map(msg => `${msg.sender}: ${msg.content}`).join('\n');
-          }
-        } catch (err) {
-          console.error('AI Controller: Erro ao buscar mensagens:', err);
-        }
-      }
+      // Buscar o texto da transcrição usando a função utilitária
+      const transcript = await getSessionTranscriptText(sessionId);
       
       if (!transcript) {
         console.log('AI Controller: Nenhuma transcrição ou mensagem encontrada');
@@ -829,47 +966,8 @@ const aiController = {
         });
       }
 
-      // Buscar transcrições da sessão
-      let transcript = '';
-      try {
-        const transcripts = await prisma.sessionTranscript.findMany({
-          where: {
-            sessionId: sessionId
-          },
-          orderBy: {
-            timestamp: 'asc'
-          }
-        });
-        
-        if (transcripts.length > 0) {
-          transcript = transcripts.map(t => 
-            `${t.speaker}: ${t.content}${t.emotionAnalysis ? ` [Emoção: ${t.emotionAnalysis.dominant?.label || 'não detectada'}]` : ''}`
-          ).join('\n');
-        }
-      } catch (err) {
-        console.error('AI Controller: Erro ao buscar transcrições:', err);
-      }
-      
-      if (!transcript) {
-        console.log('AI Controller: Nenhuma transcrição encontrada, buscando mensagens');
-        
-        try {
-          const messages = await prisma.message.findMany({
-            where: {
-              sessionId: sessionId
-            },
-            orderBy: {
-              timestamp: 'asc'
-            }
-          });
-          
-          if (messages.length > 0) {
-            transcript = messages.map(msg => `${msg.sender}: ${msg.content}`).join('\n');
-          }
-        } catch (err) {
-          console.error('AI Controller: Erro ao buscar mensagens:', err);
-        }
-      }
+      // Buscar o texto da transcrição usando a função utilitária
+      const transcript = await getSessionTranscriptText(sessionId);
       
       if (!transcript) {
         console.log('AI Controller: Nenhuma transcrição ou mensagem encontrada');
@@ -882,7 +980,7 @@ const aiController = {
       }
       
       // Processar o transcript para enviar para o modelo
-      const processedTranscript = preprocessLongTranscript(transcript);
+      const processedTranscript = await preprocessLongTranscript(transcript);
       console.log(`AI Controller: Transcrição processada, ${processedTranscript.length} caracteres`);
       
       // Preparar instruções para sugestões incluindo dados de emoções se disponíveis
@@ -1035,47 +1133,8 @@ const aiController = {
         });
       }
 
-      // Buscar transcrições da sessão
-      let transcript = '';
-      try {
-        const transcripts = await prisma.sessionTranscript.findMany({
-          where: {
-            sessionId: sessionId
-          },
-          orderBy: {
-            timestamp: 'asc'
-          }
-        });
-        
-        if (transcripts.length > 0) {
-          transcript = transcripts.map(t => 
-            `${t.speaker}: ${t.content}${t.emotionAnalysis ? ` [Emoção: ${t.emotionAnalysis.dominant?.label || 'não detectada'}]` : ''}`
-          ).join('\n');
-        }
-      } catch (err) {
-        console.error('AI Controller: Erro ao buscar transcrições:', err);
-      }
-      
-      if (!transcript) {
-        console.log('AI Controller: Nenhuma transcrição encontrada, buscando mensagens');
-        
-        try {
-          const messages = await prisma.message.findMany({
-            where: {
-              sessionId: sessionId
-            },
-            orderBy: {
-              timestamp: 'asc'
-            }
-          });
-          
-          if (messages.length > 0) {
-            transcript = messages.map(msg => `${msg.sender}: ${msg.content}`).join('\n');
-          }
-        } catch (err) {
-          console.error('AI Controller: Erro ao buscar mensagens:', err);
-        }
-      }
+      // Buscar o texto da transcrição usando a função utilitária
+      const transcript = await getSessionTranscriptText(sessionId);
       
       if (!transcript) {
         console.log('AI Controller: Nenhuma transcrição ou mensagem encontrada');
@@ -1088,7 +1147,7 @@ const aiController = {
       }
 
       // Processar o transcript para enviar para o modelo
-      const processedTranscript = preprocessLongTranscript(transcript);
+      const processedTranscript = await preprocessLongTranscript(transcript);
       console.log(`AI Controller: Transcrição processada, ${processedTranscript.length} caracteres`);
       
       // Recuperar informações do paciente e terapeuta para personalizar o relatório

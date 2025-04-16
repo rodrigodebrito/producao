@@ -1186,6 +1186,78 @@ class WhisperTranscriptionService {
   }
 
   /**
+   * Determina se uma transcrição deve ser pulada/ignorada com base em diversas condições
+   * @param {Blob} audioBlob - O blob de áudio a ser processado (opcional)
+   * @param {string} transcriptionId - ID único da transcrição (opcional) 
+   * @returns {Object} Objeto com a decisão e o motivo
+   */
+  shouldSkipTranscription(audioBlob, transcriptionId = null) {
+    // Verificar processamento global
+    if (!this.transcriptionProcessingEnabled) {
+      return { 
+        skip: true, 
+        reason: 'PROCESSAMENTO_DESATIVADO',
+        message: '⛔ ECONOMIA DE CRÉDITOS: Processamento de transcrição desativado temporariamente'
+      };
+    }
+    
+    // Verificar suspensão temporária
+    if (window.__WHISPER_SUSPENDED === true) {
+      return { 
+        skip: true, 
+        reason: 'SERVIÇO_SUSPENSO',
+        message: '🚫 SUSPENSÃO GLOBAL: Whisper está em modo suspenso, transcrição ignorada'
+      };
+    }
+    
+    // Verificar tempo desde a última transcrição para prevenir duplicação
+    const now = Date.now();
+    const timeSinceLastTranscription = now - this.lastTranscriptionTimestamp;
+    
+    if (timeSinceLastTranscription < this.minTimeBetweenTranscriptions) {
+      return { 
+        skip: true, 
+        reason: 'INTERVALO_MÍNIMO',
+        message: `⏱️ PREVENÇÃO DE DUPLICAÇÃO: Ignorando processamento, última transcrição foi há ${Math.round(timeSinceLastTranscription/1000)}s (mínimo: ${this.minTimeBetweenTranscriptions/1000}s)`
+      };
+    }
+    
+    // Verificar se a transcrição já está em andamento
+    if (this.transcriptionInProgress) {
+      return { 
+        skip: true, 
+        reason: 'TRANSCRIÇÃO_EM_ANDAMENTO',
+        message: '⌛ OCUPADO: Transcrição já em andamento, ignorando nova requisição'
+      };
+    }
+    
+    // Verificar se o blob de áudio é válido (se fornecido)
+    if (audioBlob && (audioBlob.size === 0 || !audioBlob)) {
+      return { 
+        skip: true, 
+        reason: 'AUDIO_INVÁLIDO',
+        message: '❌ ERRO: Blob de áudio inválido ou vazio'
+      };
+    }
+    
+    // Verificar duplicação de ID (se fornecido)
+    if (transcriptionId && this.transcriptionHistory.some(t => t.id === transcriptionId)) {
+      return { 
+        skip: true, 
+        reason: 'ID_DUPLICADO',
+        message: `🔄 DUPLICADO: Transcrição com ID ${transcriptionId} já processada anteriormente`
+      };
+    }
+    
+    // Caso passe por todas as verificações, não deve pular
+    return { 
+      skip: false, 
+      reason: 'PROCESSAMENTO_PERMITIDO',
+      message: '✅ Processamento de transcrição permitido'
+    };
+  }
+
+  /**
    * Processa os chunks de áudio e os envia para o servidor
    * @param {Blob} audioBlob - O blob de áudio a ser processado
    * @param {string} fileName - O nome do arquivo
@@ -1193,40 +1265,21 @@ class WhisperTranscriptionService {
    */
   async processAudioChunks(audioBlob, fileName) {
     try {
-      // NOVO: Verificar se o processamento está habilitado
-      if (!this.transcriptionProcessingEnabled) {
-        console.log('⛔ ECONOMIA DE CRÉDITOS: Processamento de transcrição desativado temporariamente');
-        return;
-      }
+      // ATUALIZADO: Usar método centralizado para verificar condições de processamento
+      const checkResult = this.shouldSkipTranscription(audioBlob);
       
-      // NOVO: Verificar tempo desde a última transcrição para prevenir múltiplos processamentos
-      const now = Date.now();
-      const timeSinceLastTranscription = now - this.lastTranscriptionTimestamp;
-      
-      if (timeSinceLastTranscription < this.minTimeBetweenTranscriptions) {
-        console.log(`⏱️ PREVENÇÃO DE DUPLICAÇÃO: Ignorando processamento, última transcrição foi há ${Math.round(timeSinceLastTranscription/1000)}s (mínimo: ${this.minTimeBetweenTranscriptions/1000}s)`);
-        return;
-      }
-      
-      // NOVO: Verificar flag global de suspensão do Whisper
-      if (window.__WHISPER_SUSPENDED === true) {
-        console.log('🚫 SUSPENSÃO GLOBAL: Whisper está em modo suspenso, transcrição ignorada');
-        return;
-      }
-      
-      // 1. Verificar se temos um blob válido
-      if (!audioBlob || audioBlob.size === 0) {
-        console.error('Blob de áudio inválido ou vazio');
+      if (checkResult.skip) {
+        console.log(checkResult.message);
         return;
       }
       
       // Atualizar timestamp de última transcrição
-      this.lastTranscriptionTimestamp = now;
+      this.lastTranscriptionTimestamp = Date.now();
       
-      // 2. Detectar se é o primeiro áudio ou subsequente
+      // Detectar se é o primeiro áudio ou subsequente
       const isFirstAudio = this.chunkCounter === 0;
       
-      // 3. ESTRATÉGIA DIFERENCIADA:
+      // ESTRATÉGIA DIFERENCIADA:
       // - Primeiro áudio: enviar como WAV (funciona consistentemente)
       // - Áudios subsequentes: enviar como MP3 (mais estável para processamento)
       const mimeType = 'audio/webm'; // Usar webm que é mais compatível com streaming
@@ -1234,10 +1287,10 @@ class WhisperTranscriptionService {
       
       console.log(`Estratégia: Enviando áudio #${this.chunkCounter} como WEBM (mais compatível)`);
       
-      // 4. Garantir nome de arquivo único com identificação clara
+      // Garantir nome de arquivo único com identificação clara
       const finalFileName = `audio-${this.chunkCounter}-${Date.now()}-${Math.floor(Math.random() * 10000)}${extension}`;
       
-      // 5. Limitar o tamanho do blob para prevenir problemas HTTP/2
+      // Limitar o tamanho do blob para prevenir problemas HTTP/2
       let blobToSend = audioBlob;
       
       // Se o blob for maior que 1MB, reduzir a qualidade
@@ -1825,6 +1878,22 @@ class WhisperTranscriptionService {
       }
       
       const transcription = response.data.text || response.data.transcript || response.data;
+      
+      // Validar transcrição
+      if (!transcription || transcription.trim().length === 0) {
+        console.warn('Transcrição vazia recebida, ignorando...');
+        return false;
+      }
+      
+      // Criando um ID único para esta transcrição
+      const transcriptionId = `${this.speakerRole}_${Date.now()}`;
+      
+      // NOVO: Verificar se devemos pular o processamento
+      const checkResult = this.shouldSkipTranscription(null, transcriptionId);
+      if (checkResult.skip && checkResult.reason !== 'TRANSCRIÇÃO_EM_ANDAMENTO') {
+        console.log(checkResult.message);
+        return false;
+      }
       
       // Obter identificador completo do papel (inclui status de host)
       const speakerIdentifier = this._getSpeakerIdentifier();
