@@ -732,7 +732,7 @@ const aiController = {
             },
             {
               role: "user",
-              content: transcript
+              content: String(transcript)
             }
           ],
           max_tokens: 1000
@@ -745,7 +745,7 @@ const aiController = {
         const outputTokens = estimateTokens(analysis);
         tokenUsageService.logTokenUsage('gpt-4o-mini', [
           { role: "system", content: `Você é um assistente especializado em análise terapêutica que ajuda terapeutas a analisar sessões.` },
-          { role: "user", content: transcript }
+          { role: "user", content: String(transcript) }
         ], analysis);
         
         return res.status(200).json({
@@ -928,7 +928,7 @@ const aiController = {
             },
             {
               role: "user",
-              content: processedTranscript
+              content: String(processedTranscript)
             }
           ],
           max_tokens: 1000
@@ -949,7 +949,7 @@ const aiController = {
         const outputTokens = estimateTokens(suggestionsText);
         tokenUsageService.logTokenUsage('gpt-4o-mini', [
           { role: "system", content: `Você é um assistente especializado em terapia que ajuda terapeutas durante sessões.` },
-          { role: "user", content: processedTranscript }
+          { role: "user", content: String(processedTranscript) }
         ], suggestionsText);
         
         return res.status(200).json({
@@ -1199,7 +1199,7 @@ const aiController = {
             },
             {
               role: "user",
-              content: processedTranscript
+              content: String(processedTranscript)
             }
           ],
           max_tokens: 1500,
@@ -1212,7 +1212,7 @@ const aiController = {
         const outputTokens = estimateTokens(report);
         tokenUsageService.logTokenUsage('gpt-4o-mini', [
           { role: "system", content: `Você é um assistente especializado na elaboração de relatórios de sessões de terapia.` },
-          { role: "user", content: processedTranscript }
+          { role: "user", content: String(processedTranscript) }
         ], report);
         
         return res.status(200).json({
