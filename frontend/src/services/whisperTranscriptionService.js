@@ -73,6 +73,10 @@ class WhisperTranscriptionService {
     this.lastFetchTimestamp = null;
     this.transcriptionFetchInterval = null;
     
+    // NOVO: Controle para sessões novas para evitar erros 404 desnecessários
+    this._isNewSession = true; // Assumir que é uma sessão nova inicialmente
+    this._newSessionErrors = 0; // Contador de erros de busca para sessões novas
+    
     // Extrair sessionId ao inicializar, mas não iniciar processamento automático
     this.sessionId = this.extractSessionId();
     this.speakerRole = this._determineSpeakerRole();
@@ -2484,6 +2488,17 @@ class WhisperTranscriptionService {
       // Atualizar timestamp da última tentativa de busca
       this._lastFetchTime = now;
       
+      // NOVO: Verificar se a sessão é nova e ainda não tem transcrições
+      // para evitar requisições desnecessárias ao backend
+      if (this._isNewSession && this._newSessionErrors > 2) {
+        console.log(`⚠️ BUSCA OTIMIZADA: Sessão nova detectada com ${this._newSessionErrors} erros anteriores, reduzindo frequência de busca`);
+        // Se já tivemos pelo menos 3 erros em uma sessão nova, reduzir frequência de busca
+        if (timeSinceLastFetch < 30000) { // menos de 30 segundos
+          console.log(`⏱️ BUSCA OTIMIZADA: Aguardando mais tempo antes de tentar novamente uma sessão nova`);
+          return;
+        }
+      }
+      
       // Limpar o histórico de transcrições antigas se exceder um limite
       if (this.otherParticipantsTranscriptions.length > 100) {
         console.log(`🧹 LIMPEZA: Histórico de transcrições excedeu 100 itens, mantendo apenas as 50 mais recentes`);
@@ -2539,6 +2554,25 @@ class WhisperTranscriptionService {
         }
       });
       
+      // Verificar status 404 (endpoint não existe ou sessão não tem mensagens)
+      if (response.status === 404) {
+        console.log(`ℹ️ BUSCA: Endpoint retornou 404 - sessão nova ou sem transcrições`);
+        
+        // Incrementar contador de erros para sessões novas
+        if (!this._isNewSession) {
+          this._isNewSession = true;
+          this._newSessionErrors = 1;
+        } else {
+          this._newSessionErrors++;
+        }
+        
+        // Atualizar timestamp mesmo em caso de erro para controlar frequência
+        this.lastFetchTimestamp = new Date().toISOString();
+        
+        console.log(`ℹ️ BUSCA: Identificada como sessão nova (${this._newSessionErrors} erros)`);
+        return;
+      }
+      
       // Se recebermos texto em vez de JSON, provavelmente é HTML de erro
       const contentType = response.headers.get("content-type");
       if (contentType && contentType.includes("text/html")) {
@@ -2566,6 +2600,10 @@ class WhisperTranscriptionService {
             const data = await altResponse.json();
             console.log(`📋 BUSCA: Dados recebidos do endpoint alternativo:`, data);
             this._processOtherTranscriptions(data);
+            
+            // Redefinir flag de sessão nova em caso de sucesso
+            this._isNewSession = false;
+            this._newSessionErrors = 0;
             return;
           }
         }
@@ -2573,6 +2611,14 @@ class WhisperTranscriptionService {
         // Verificar status 404 (endpoint não existe)
         if (!response.ok || !altResponse.ok) {
           console.warn(`❌ BUSCA: Erro nos endpoints: Principal=${response.status}, Alternativo=${altResponse.status}`);
+          
+          // Incrementar contador de erros para sessões novas
+          if (!this._isNewSession) {
+            this._isNewSession = true;
+            this._newSessionErrors = 1;
+          } else {
+            this._newSessionErrors++;
+          }
         }
         
         return;
@@ -2581,6 +2627,15 @@ class WhisperTranscriptionService {
       // Se não tiver sucesso e não for HTML, tentar endpoint alternativo
       if (!response.ok) {
         console.warn(`⚠️ BUSCA: Erro no endpoint principal: ${response.status} ${response.statusText}`);
+        
+        // Incrementar contador de erros para sessões novas
+        if (!this._isNewSession) {
+          this._isNewSession = true;
+          this._newSessionErrors = 1;
+        } else {
+          this._newSessionErrors++;
+        }
+        
         return;
       }
       
@@ -2588,12 +2643,24 @@ class WhisperTranscriptionService {
       const data = await response.json();
       console.log(`📋 BUSCA: Resposta recebida do backend com ${data.data?.length || 0} transcrições`);
       this._processOtherTranscriptions(data);
+      
+      // Se chegamos aqui, a sessão tem transcrições e não é nova
+      this._isNewSession = false;
+      this._newSessionErrors = 0;
     } catch (error) {
       // MELHORADO: Tratamento específico para erro de parsing JSON (HTML em vez de JSON)
       if (error instanceof SyntaxError && error.message.includes('Unexpected token')) {
         console.warn(`❌ BUSCA: Erro ao analisar resposta do servidor - recebido HTML em vez de JSON`);
       } else {
         console.warn(`❌ BUSCA: Erro ao buscar transcrições de outros participantes:`, error);
+      }
+      
+      // Incrementar contador de erros para sessões novas
+      if (!this._isNewSession) {
+        this._isNewSession = true;
+        this._newSessionErrors = 1; 
+      } else {
+        this._newSessionErrors++;
       }
     }
   }
@@ -3015,7 +3082,16 @@ class WhisperTranscriptionService {
   async _analyzeEmotions(text) {
     if (!text || typeof text !== 'string' || text.trim().length < 5) {
       console.warn('Texto insuficiente para análise de emoções');
-      return null;
+      return {
+        error: 'Texto insuficiente',
+        dominant: 'neutral',
+        sentiment: 'neutral',
+        scores: {
+          neutral: 1.0,
+          positive: 0,
+          negative: 0
+        }
+      };
     }
 
     try {
@@ -3030,6 +3106,25 @@ class WhisperTranscriptionService {
             positive: 0,
             negative: 0
           }
+        };
+      }
+
+      // Verificar se temos transcrições na sessão atual antes de fazer a requisição
+      // para evitar erros 400 desnecessários
+      const sessionId = this.sessionId || 'unknown';
+      const hasTranscriptions = this._checkIfSessionHasTranscriptions(sessionId);
+      
+      if (!hasTranscriptions) {
+        console.log('Sessão não possui transcrições, retornando valores padrão sem chamar API');
+        return {
+          dominant: 'neutral',
+          sentiment: 'neutral',
+          scores: {
+            neutral: 1.0,
+            positive: 0,
+            negative: 0
+          },
+          note: 'Sessão sem transcrições'
         };
       }
 
@@ -3054,7 +3149,6 @@ class WhisperTranscriptionService {
       
       // Limitar o texto para evitar problemas com APIs
       const limitedText = text.substring(0, 500);
-      const sessionId = this.sessionId || 'unknown';
       
       // Fazer a requisição para a API de análise do backend
       // A rota /api/ai/analyze é usada para análise de sessão e funciona com texto
@@ -3111,6 +3205,57 @@ class WhisperTranscriptionService {
           negative: 0
         }
       };
+    }
+  }
+
+  /**
+   * Verifica se uma sessão possui transcrições armazenadas
+   * @param {string} sessionId - ID da sessão
+   * @returns {boolean} - Verdadeiro se houver transcrições
+   * @private
+   */
+  _checkIfSessionHasTranscriptions(sessionId) {
+    if (!sessionId) return false;
+    
+    try {
+      // Verificar no armazenamento local
+      const storageKey = `whisper_transcript_${sessionId}`;
+      const storedData = localStorage.getItem(storageKey);
+      
+      if (storedData) {
+        const transcripts = JSON.parse(storedData);
+        if (Array.isArray(transcripts) && transcripts.length > 0) {
+          console.log(`Encontradas ${transcripts.length} transcrições no localStorage para sessão ${sessionId}`);
+          return true;
+        }
+      }
+      
+      // Verificar no sessionStorage
+      const sessionKey = `whisper_transcriptions_${sessionId}`;
+      const sessionData = sessionStorage.getItem(sessionKey);
+      
+      if (sessionData) {
+        const transcripts = JSON.parse(sessionData);
+        if (Array.isArray(transcripts) && transcripts.length > 0) {
+          console.log(`Encontradas ${transcripts.length} transcrições no sessionStorage para sessão ${sessionId}`);
+          return true;
+        }
+      }
+      
+      // Verificar na memória
+      if (Array.isArray(this.transcriptionHistory) && this.transcriptionHistory.length > 0) {
+        const sessionTranscripts = this.transcriptionHistory.filter(t => t.sessionId === sessionId);
+        if (sessionTranscripts.length > 0) {
+          console.log(`Encontradas ${sessionTranscripts.length} transcrições na memória para sessão ${sessionId}`);
+          return true;
+        }
+      }
+      
+      console.log(`Nenhuma transcrição encontrada para a sessão ${sessionId}`);
+      return false;
+    } catch (error) {
+      console.error('Erro ao verificar transcrições:', error);
+      return false;
     }
   }
 
