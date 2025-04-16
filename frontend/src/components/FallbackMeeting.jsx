@@ -201,6 +201,9 @@ const FallbackMeeting = ({
   useEffect(() => {
     const startSession = async () => {
       try {
+        // Limpar transcrições antigas ao iniciar uma nova sessão
+        clearPreviousTranscriptions();
+        
         // Desativar referência ao HybridAI para versão sem IA (06bcfc6)
         if (window.__HYBRID_AI_DISABLED) {
           console.log('⛔ FallbackMeeting: HybridAI desativado nesta versão');
@@ -221,7 +224,7 @@ const FallbackMeeting = ({
           userName
         });
         
-          setIsLoading(false);
+        setIsLoading(false);
       } catch (err) {
         console.error('Erro ao inicializar sessão:', err);
         setError('Não foi possível inicializar a sessão de vídeo. Por favor, recarregue a página.');
@@ -231,6 +234,56 @@ const FallbackMeeting = ({
     
     startSession();
   }, [roomName, userName, getRoomUrl]);
+  
+  // Função para limpar transcrições antigas
+  const clearPreviousTranscriptions = useCallback(() => {
+    try {
+      console.log('Limpando transcrições antigas ao iniciar nova sessão');
+      
+      // Limpar via serviço de transcrição se disponível
+      if (window.whisperService && typeof window.whisperService.clearTranscriptions === 'function') {
+        window.whisperService.clearTranscriptions();
+        console.log('Transcrições antigas limpas via WhisperTranscriptionService');
+      } else {
+        // Limpar manualmente via localStorage/sessionStorage
+        
+        // 1. Extrair o sessionId atual da URL
+        const url = window.location.href;
+        const sessionMatch = url.match(/\/session\/([a-zA-Z0-9_-]+)/);
+        const uuidMatch = url.match(/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/i);
+        
+        const currentSessionId = 
+          (sessionMatch && sessionMatch[1]) || 
+          (uuidMatch && uuidMatch[0]) || 
+          localStorage.getItem('currentSessionId') || 
+          sessionStorage.getItem('currentSessionId') ||
+          null;
+        
+        if (currentSessionId) {
+          // 2. Remover dados de transcrição dessa sessão
+          console.log(`Limpando transcrições da sessão ${currentSessionId}`);
+          sessionStorage.removeItem(`whisper_transcriptions_${currentSessionId}`);
+          sessionStorage.removeItem(`last_transcript_${currentSessionId}`);
+          localStorage.removeItem(`whisper_transcript_${currentSessionId}`);
+          
+          // 3. Notificar usuário
+          toast.info('Transcrições anteriores foram limpas para uma nova sessão', {
+            autoClose: 3000
+          });
+        } else {
+          console.log('Não foi possível determinar o ID da sessão para limpar transcrições');
+        }
+      }
+      
+      // 4. Limpar transcrições no AIContext se existir
+      if (window.__AI_CONTEXT && typeof window.__AI_CONTEXT.clearTranscript === 'function') {
+        window.__AI_CONTEXT.clearTranscript();
+        console.log('Transcrições limpas no AIContext');
+      }
+    } catch (error) {
+      console.error('Erro ao limpar transcrições antigas:', error);
+    }
+  }, []);
   
   // Callback quando o iframe é carregado
   const handleIframeLoad = useCallback((iframeElement) => {
