@@ -124,7 +124,7 @@ class AdvancedAnalysisService {
         // Segunda tentativa: busca semântica se não encontrou materiais suficientes
         if (materials.length < 2) {
           try {
-            const embeddingSearchResults = await trainingService.semanticSearch(
+            const embeddingSearchResults = await trainingService.searchSemanticMaterials(
               theme.theme, 
               2
             );

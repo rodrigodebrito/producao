@@ -1,8 +1,9 @@
-const OpenAI = require('openai');
+const { OpenAI } = require('openai');
 require('dotenv').config();
 const fs = require('fs');
 const logger = require('../../utils/logger');
 const tokenUsageService = require('./token-usage.service');
+const trainingService = require('./training.service');
 
 // Configuração do cliente OpenAI
 const openai = new OpenAI({
@@ -119,6 +120,28 @@ const openAIService = {
      */
     async generateSuggestions(context) {
         try {
+            // Enriquecer o contexto com materiais relevantes do trainingService
+            logger.info('OpenAIService: Buscando materiais relevantes para enriquecer as sugestões');
+            let enhancedContext = context;
+            
+            try {
+                // Extrair categorias se existirem no contexto
+                const categories = this._extractCategoriesFromContext(context);
+                
+                // Enriquecer o contexto com materiais de treinamento
+                const enhancedAnalysis = await trainingService.enhanceSessionAnalysis(context, categories);
+                
+                if (enhancedAnalysis) {
+                    logger.info('OpenAIService: Contexto enriquecido com materiais de treinamento para sugestões');
+                    // Adicionar o contexto enriquecido como material suplementar
+                    enhancedContext = `${context}\n\n-- MATERIAL SUPLEMENTAR --\n${enhancedAnalysis}`;
+                }
+            } catch (enrichError) {
+                logger.error('OpenAIService: Erro ao enriquecer contexto para sugestões:', enrichError);
+                // Continue com o contexto original se houver erro
+            }
+
+            // Gerar sugestões com o contexto enriquecido
             const response = await openai.chat.completions.create({
                 model: "gpt-4o-mini",
                 messages: [
@@ -128,7 +151,7 @@ const openAIService = {
                     },
                     {
                         role: "user",
-                        content: context
+                        content: enhancedContext
                     }
                 ],
                 temperature: 0.7,
@@ -137,7 +160,7 @@ const openAIService = {
 
             return response.choices[0].message.content;
         } catch (error) {
-            console.error('Erro ao gerar sugestões com OpenAI:', error);
+            logger.error('Erro ao gerar sugestões com OpenAI:', error);
             throw error;
         }
     },
@@ -149,6 +172,28 @@ const openAIService = {
      */
     async generateReport(sessionContent) {
         try {
+            // Enriquecer o conteúdo da sessão com materiais relevantes do trainingService
+            logger.info('OpenAIService: Buscando materiais relevantes para enriquecer o relatório');
+            let enhancedContent = sessionContent;
+            
+            try {
+                // Extrair categorias se existirem no contexto
+                const categories = this._extractCategoriesFromContext(sessionContent);
+                
+                // Enriquecer o contexto com materiais de treinamento
+                const enhancedAnalysis = await trainingService.enhanceSessionAnalysis(sessionContent, categories);
+                
+                if (enhancedAnalysis) {
+                    logger.info('OpenAIService: Conteúdo enriquecido com materiais de treinamento para relatório');
+                    // Adicionar o contexto enriquecido como material de referência
+                    enhancedContent = `${sessionContent}\n\n-- MATERIAL DE REFERÊNCIA PARA CONSIDERAÇÃO --\n${enhancedAnalysis}`;
+                }
+            } catch (enrichError) {
+                logger.error('OpenAIService: Erro ao enriquecer conteúdo para relatório:', enrichError);
+                // Continue com o conteúdo original se houver erro
+            }
+
+            // Gerar relatório com o conteúdo enriquecido
             const response = await openai.chat.completions.create({
                 model: "gpt-4o-mini",
                 messages: [
@@ -158,7 +203,7 @@ const openAIService = {
                     },
                     {
                         role: "user",
-                        content: sessionContent
+                        content: enhancedContent
                     }
                 ],
                 temperature: 0.7,
@@ -167,7 +212,7 @@ const openAIService = {
 
             return response.choices[0].message.content;
         } catch (error) {
-            console.error('Erro ao gerar relatório com OpenAI:', error);
+            logger.error('Erro ao gerar relatório com OpenAI:', error);
             throw error;
         }
     },
@@ -391,6 +436,33 @@ const openAIService = {
             logger.error(`Erro ao realizar chat completion: ${error.message}`);
             logger.error(`Stack trace: ${error.stack}`);
             throw new Error(`Falha no chat completion: ${error.message}`);
+        }
+    },
+
+    // Adicionar método auxiliar para extrair categorias do contexto
+    _extractCategoriesFromContext(context) {
+        try {
+            // Tentar identificar categorias mencionadas no texto
+            const commonCategories = [
+                'ansiedade', 'depressão', 'trauma', 'relacionamentos', 
+                'família', 'trabalho', 'estresse', 'autoestima', 'luto',
+                'dependência', 'saúde mental', 'terapia', 'desenvolvimento pessoal'
+            ];
+            
+            // Filtrar categorias que aparecem no contexto
+            const detectedCategories = commonCategories.filter(category => 
+                context.toLowerCase().includes(category.toLowerCase())
+            );
+            
+            // Adicionar algumas categorias frequentes se não tiver encontrado nenhuma
+            if (detectedCategories.length === 0) {
+                return ['terapia', 'saúde mental', 'desenvolvimento pessoal'];
+            }
+            
+            return detectedCategories;
+        } catch (error) {
+            logger.warn('Erro ao extrair categorias do contexto:', error);
+            return []; // Retornar array vazio em caso de erro
         }
     },
 };
