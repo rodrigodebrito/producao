@@ -1,0 +1,10 @@
+[33mc7d9ff6[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mtheraconnect-prd[m[33m, [m[1;31morigin/theraconnect-prd[m[33m)[m chore: adiciona arquivo de sincronização para o repositório remoto
+[33me2257b7[m[33m ([m[1;31morigin/versao-estavel-e2257b7[m[33m, [m[1;32mversao-estavel-e2257b7[m[33m, [m[1;32mnova-copia-e2257b7[m[33m)[m Fix: Corrige problema de reinicialização automática da gravação após parada manual
+[33ma1e051a[m Fix: Aprimoramento na funcionalidade de parar gravação de áudio com tratamento robusto de erros
+[33mb6fc425[m Otimizar detecção de duplicação de transcrições e reduzir logs de duplicatas
+[33md391002[m Corrigir inicialização automática da transcrição para iniciar somente quando solicitado pelo usuário
+[33m8932222[m Corrigir URLs dos endpoints para compatibilidade com ambiente de produção
+[33mc9d0c52[m Remover simulação de transcrições falsas e mensagens de exemplo
+[33m5944517[m Atualizar URL do endpoint de transcrição para usar endereço absoluto
+[33m363295f[m Corrigir endpoints para busca de transcrições de outros participantes
+[33m0625e08[m Adicionar logs detalhados para diagnóstico de consolidação de transcrições

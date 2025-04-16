@@ -476,6 +476,7 @@ class WhisperTranscriptionService {
     try {
       // 1. Limpar o histórico na memória
       this.transcriptionHistory = [];
+      this.otherParticipantsTranscriptions = [];
       
       // 2. Remover transcrições antigas dessa sessão do sessionStorage
       if (this.sessionId) {
@@ -503,10 +504,84 @@ class WhisperTranscriptionService {
         }
       }
       
+      // 6. Solicitar limpeza no backend (assíncrono, não aguardar)
+      this._requestTranscriptionsCleanup().then(success => {
+        if (success) {
+          console.log('Whisper: Transcrições também foram limpas no backend');
+        } else {
+          console.warn('Whisper: Não foi possível limpar transcrições no backend');
+        }
+      });
+      
       console.log('Whisper: Limpeza de transcrições antigas concluída');
       return true;
     } catch (e) {
       console.error('Whisper: Erro ao limpar transcrições antigas:', e);
+      return false;
+    }
+  }
+
+  /**
+   * Solicita a limpeza das transcrições anteriores no backend
+   * Chamado quando uma nova sessão é iniciada para evitar misturar transcrições antigas
+   * @returns {Promise<boolean>} Sucesso da operação
+   */
+  async _requestTranscriptionsCleanup() {
+    try {
+      console.log(`Whisper: Solicitando limpeza de transcrições no backend para sessão atual`);
+      
+      // Obter token de autenticação
+      const authToken = localStorage.getItem('authToken') || 
+                        sessionStorage.getItem('authToken') || 
+                        localStorage.getItem('token') || 
+                        sessionStorage.getItem('token');
+      
+      if (!authToken) {
+        console.warn('❌ Limpeza: Token de autenticação não encontrado');
+        return false;
+      }
+      
+      // Verificar sessão atual
+      if (!this.sessionId || this.sessionId.startsWith('temp_')) {
+        console.warn(`❌ Limpeza: ID de sessão inválido: ${this.sessionId}`);
+        return false;
+      }
+      
+      // URL da API para limpeza de transcrições (tentar várias possibilidades)
+      const baseUrl = this.isProd ? 'https://theraconnect-prd.onrender.com' : '';
+      const endpoints = [
+        `${baseUrl}/api/ai/transcriptions/clear/${this.sessionId}`,
+        `${baseUrl}/api/transcripts/clear/${this.sessionId}`
+      ];
+      
+      // Tentar cada endpoint até que um funcione
+      for (const endpoint of endpoints) {
+        try {
+          console.log(`Whisper: Tentando limpar transcrições via ${endpoint}`);
+          
+          const response = await fetch(endpoint, {
+            method: 'DELETE',
+            headers: {
+              'Authorization': `Bearer ${authToken}`,
+              'Content-Type': 'application/json'
+            }
+          });
+          
+          if (response.ok) {
+            console.log(`✅ Limpeza: Transcrições anteriores removidas com sucesso via ${endpoint}`);
+            return true;
+          }
+        } catch (endpointError) {
+          console.warn(`⚠️ Limpeza: Falha no endpoint ${endpoint}:`, endpointError);
+          // Continuar para o próximo endpoint
+        }
+      }
+      
+      // Se chegou aqui, nenhum endpoint funcionou
+      console.warn('❌ Limpeza: Nenhum endpoint de limpeza funcionou');
+      return false;
+    } catch (error) {
+      console.error('❌ Limpeza: Erro ao solicitar limpeza de transcrições:', error);
       return false;
     }
   }
@@ -2382,6 +2457,18 @@ class WhisperTranscriptionService {
         return;
       }
       
+      // NOVO: Verificar se o ID da sessão atual corresponde ao ID da URL
+      // Isso ajuda a evitar carregamento de transcrições antigas se o ID da sessão mudou
+      const currentUrlSessionId = this.extractSessionId();
+      if (currentUrlSessionId && currentUrlSessionId !== this.sessionId) {
+        console.log(`⚠️ BUSCA: SessionId mudou de ${this.sessionId} para ${currentUrlSessionId}, limpando e redefinindo`);
+        // Atualizar o sessionId e limpar transcrições antigas
+        this.updateSessionId(currentUrlSessionId);
+        this._clearPreviousTranscriptions();
+        // Não continuar com esta busca, esperar pelo próximo ciclo com o ID atualizado
+        return;
+      }
+      
       // NOVO: Controle adicional de frequência de busca
       const now = Date.now();
       const lastFetchTime = this._lastFetchTime || 0;
@@ -2518,67 +2605,122 @@ class WhisperTranscriptionService {
    */
   _processOtherTranscriptions(data) {
     try {
-      // Verificar se temos dados válidos
-      // CORRIGIDO: Verificar o formato correto retornado pelo backend
-      const transcripts = data.data || data.transcripts || (Array.isArray(data) ? data : null);
-      
-      if (!transcripts || !Array.isArray(transcripts)) {
-        console.warn(`⚠️ PROCESSAMENTO: Dados inválidos recebidos:`, data);
+      if (!data || !Array.isArray(data) || data.length === 0) {
+        console.log(`Whisper: Nenhuma transcrição de outros participantes recebida`);
         return;
       }
       
-      // Criar um conjunto de IDs já processados para verificação rápida
-      const processedIds = new Set(
-        this.otherParticipantsTranscriptions.map(t => t.id || `${t.timestamp}_${t.speaker}_${t.content?.substring(0, 20)}`)
-      );
+      console.log(`Whisper: Processando ${data.length} transcrições de outros participantes`);
       
-      // Filtrar apenas as transcrições de outros participantes (não o usuário atual)
-      // E que ainda não foram processadas (não estão no conjunto de IDs)
-      const newTranscriptions = transcripts.filter(t => {
-        // Verificar se não é do usuário atual
-        const isFromOthers = t.speaker !== this.speakerRole && t.speakerIdentifier !== this.speakerIdentifier;
-        
-        if (!isFromOthers) return false;
-        
-        // Criar um ID único para esta transcrição
-        const transcriptionId = t.id || `${t.timestamp}_${t.speaker}_${t.content?.substring(0, 20)}`;
-        
-        // Verificar se já foi processada
-        const isDuplicate = processedIds.has(transcriptionId);
-        
-        // Se for duplicada, apenas mencionar no log sem poluir com muitas mensagens
-        if (isDuplicate) {
-          // Reduzir logging de duplicados, apenas mencionando o total
-          return false;
+      // Definir um timestamp atual em milissegundos para validação
+      const nowMs = Date.now();
+      
+      // Criar lista de IDs atual para verificar duplicatas
+      const existingIds = new Set(this.otherParticipantsTranscriptions.map(t => t.id));
+      
+      let processedCount = 0;
+      let errorCount = 0;
+      let futureCount = 0;
+      let duplicateCount = 0;
+      let wrongSessionCount = 0;
+      
+      // Processar cada transcrição
+      for (const transcript of data) {
+        try {
+          // VALIDAR: SessionID corresponde ao atual
+          if (transcript.sessionId !== this.sessionId) {
+            console.log(`⚠️ Transcrição ignorada: SessionId diferente - ${transcript.sessionId} vs. ${this.sessionId}`);
+            wrongSessionCount++;
+            continue;
+          }
+          
+          // VALIDAR: Verificar ID para evitar duplicatas
+          const transcriptId = transcript.id || `${transcript.speaker}_${new Date(transcript.timestamp).getTime()}`;
+          if (existingIds.has(transcriptId)) {
+            duplicateCount++;
+            continue;
+          }
+          
+          // VALIDAR: Verificar se o timestamp faz sentido (não está no futuro nem muito no passado)
+          let transcriptTimestamp;
+          try {
+            transcriptTimestamp = new Date(transcript.timestamp).getTime();
+            if (isNaN(transcriptTimestamp)) {
+              // Se o timestamp é inválido, usar timestamp atual
+              console.log(`⚠️ Timestamp inválido, usando timestamp atual`);
+              transcriptTimestamp = nowMs;
+            }
+          } catch (e) {
+            // Se falhar ao criar a data, usar timestamp atual
+            transcriptTimestamp = nowMs;
+          }
+          
+          const oneHourInFuture = nowMs + (60 * 60 * 1000); // 1 hora no futuro
+          const oneYearInPast = nowMs - (365 * 24 * 60 * 60 * 1000); // 1 ano no passado
+          
+          // Ignorar transcrições com data no futuro (provavelmente incorreta)
+          // Verifica também timestamps como 2025-04-16 que são claramente erros
+          if (transcriptTimestamp > oneHourInFuture || transcript.timestamp?.includes('2025')) {
+            console.log(`⚠️ Transcrição ignorada: Timestamp no futuro - ${transcript.timestamp}`);
+            futureCount++;
+            continue;
+          }
+          
+          // Ignorar transcrições com data muito no passado (provavelmente de outra sessão)
+          if (transcriptTimestamp < oneYearInPast) {
+            console.log(`⚠️ Transcrição ignorada: Timestamp muito antigo - ${transcript.timestamp}`);
+            errorCount++;
+            continue;
+          }
+          
+          // VALIDAR: Verificar se tem conteúdo
+          if (!transcript.content && !transcript.transcript && !transcript.text) {
+            console.log(`⚠️ Transcrição ignorada: Sem conteúdo`);
+            errorCount++;
+            continue;
+          }
+          
+          // Garantir que temos o conteúdo no campo correto
+          const content = transcript.content || transcript.transcript || transcript.text;
+          
+          // Adicionar à lista de transcrições processadas
+          const processedTranscript = {
+            id: transcriptId,
+            content: content,
+            speaker: transcript.speaker || 'UNKNOWN',
+            speakerIdentifier: transcript.speakerIdentifier,
+            sessionId: transcript.sessionId,
+            timestamp: new Date().toISOString(), // Usar timestamp atual para evitar problemas
+            isProcessed: true
+          };
+          
+          // NOVO: Adicionar na lista apenas se não existir
+          if (!this.otherParticipantsTranscriptions.some(t => t.id === processedTranscript.id)) {
+            this.otherParticipantsTranscriptions.push(processedTranscript);
+            // Disparar evento para exibir na UI
+            this._displayOtherParticipantTranscription(processedTranscript);
+            processedCount++;
+          } else {
+            duplicateCount++;
+          }
+        } catch (itemError) {
+          console.error('Erro ao processar transcrição individual:', itemError);
+          errorCount++;
         }
-        
-        // Se chegou aqui, é uma nova transcrição válida
-        return true;
-      });
-      
-      // Log resumido para não poluir o console
-      const duplicatesCount = transcripts.length - newTranscriptions.length;
-      if (duplicatesCount > 0) {
-        console.log(`🔄 PROCESSAMENTO: ${duplicatesCount} transcrições duplicadas ignoradas`);
       }
       
-      console.log(`✅ PROCESSAMENTO: ${newTranscriptions.length} novas transcrições de outros participantes`);
+      console.log(`📊 Resumo do processamento de transcrições: 
+        - Processadas com sucesso: ${processedCount}
+        - Duplicatas ignoradas: ${duplicateCount}
+        - Ignoradas por timestamp futuro: ${futureCount}
+        - SessionId incorreto: ${wrongSessionCount}
+        - Erros: ${errorCount}
+      `);
       
-      // Se não há novas transcrições, retornar
-      if (newTranscriptions.length === 0) {
-        return;
+      // Atualizar timestamp da última busca com sucesso se processamos algo
+      if (processedCount > 0 || duplicateCount > 0) {
+        this.lastFetchTimestamp = new Date().toISOString();
       }
-      
-      // Adicionar todas as novas transcrições ao array local
-      for (const transcription of newTranscriptions) {
-        this.otherParticipantsTranscriptions.push(transcription);
-        
-        // Processar e exibir cada transcrição
-        this._displayOtherParticipantTranscription(transcription);
-      }
-      
-      // Atualizar timestamp da última busca
-      this.lastFetchTimestamp = new Date().toISOString();
     } catch (error) {
       console.warn(`❌ PROCESSAMENTO: Erro ao processar transcrições de outros participantes:`, error);
     }

@@ -1,0 +1,27 @@
+--- frontend/src/services/whisperTranscriptionService.js
++++ frontend/src/services/whisperTranscriptionService.js
+@@ -936,6 +936,10 @@
+     if (manualStop) {
+       console.log('PARADA MANUAL detectada - desativando detecção de voz e reinício automático');
+       this.pausedForSilence = false; // Não estamos em pausa, estamos completamente parados
++     
++      // CORREÇÃO: Desativar autoRestart para evitar reinicialização não desejada após parada manual
++      this.autoRestart = false;
++      console.log('⚠️ AUTO-RESTART DESATIVADO devido a parada manual');
+       
+       // Certificar-se de que a detecção de voz seja interrompida
+       if (this.voiceDetectionInterval) {
+@@ -1110,6 +1114,11 @@
+    */
+   async forceRestartRecording() {
+     console.log('=== FORÇANDO REINÍCIO COMPLETO DA GRAVAÇÃO ===');
++
++    // CORREÇÃO: Verificar se houve parada manual antes de permitir reinício forçado
++    if (this.manualStopped) {
++      console.log('⚠️ Reinício forçado ignorado - gravação foi parada manualmente');
++      return false;
++    }
+     
+     try {
+       // 1. Parar qualquer gravação em andamento
+</rewritten_file> 

@@ -202,7 +202,7 @@ const FallbackMeeting = ({
     const startSession = async () => {
       try {
         // Limpar transcrições antigas ao iniciar uma nova sessão
-        clearPreviousTranscriptions();
+        await clearPreviousTranscriptions();
         
         // Desativar referência ao HybridAI para versão sem IA (06bcfc6)
         if (window.__HYBRID_AI_DISABLED) {
@@ -236,16 +236,49 @@ const FallbackMeeting = ({
   }, [roomName, userName, getRoomUrl]);
   
   // Função para limpar transcrições antigas
-  const clearPreviousTranscriptions = useCallback(() => {
+  const clearPreviousTranscriptions = useCallback(async () => {
     try {
       console.log('Limpando transcrições antigas ao iniciar nova sessão');
       
+      // Esperar inicialização completa antes de limpar (com timeout)
+      const waitForWhisperService = async (timeoutMs = 5000) => {
+        return new Promise((resolve) => {
+          // Se já temos o serviço inicializado, prosseguir imediatamente
+          if (window.whisperService && typeof window.whisperService.clearTranscriptions === 'function') {
+            console.log('WhisperService já está disponível e inicializado');
+            resolve(true);
+            return;
+          }
+          
+          // Definir timeout para não bloquear infinitamente
+          const timeoutId = setTimeout(() => {
+            console.log('Timeout ao aguardar inicialização do WhisperService');
+            resolve(false);
+          }, timeoutMs);
+          
+          // Verificar a cada 300ms
+          const checkInterval = setInterval(() => {
+            if (window.whisperService && typeof window.whisperService.clearTranscriptions === 'function') {
+              clearInterval(checkInterval);
+              clearTimeout(timeoutId);
+              console.log('WhisperService ficou disponível durante a espera');
+              resolve(true);
+            }
+          }, 300);
+        });
+      };
+      
+      // Aguardar inicialização completa do serviço (até 5 segundos)
+      const serviceReady = await waitForWhisperService();
+      
       // Limpar via serviço de transcrição se disponível
-      if (window.whisperService && typeof window.whisperService.clearTranscriptions === 'function') {
+      if (serviceReady) {
+        console.log('Usando clearTranscriptions() do WhisperService');
         window.whisperService.clearTranscriptions();
         console.log('Transcrições antigas limpas via WhisperTranscriptionService');
       } else {
         // Limpar manualmente via localStorage/sessionStorage
+        console.log('WhisperService não disponível, limpando manualmente');
         
         // 1. Extrair o sessionId atual da URL
         const url = window.location.href;
@@ -260,11 +293,36 @@ const FallbackMeeting = ({
           null;
         
         if (currentSessionId) {
-          // 2. Remover dados de transcrição dessa sessão
-          console.log(`Limpando transcrições da sessão ${currentSessionId}`);
+          // 2. Remover dados de transcrição dessa sessão e de TODAS as sessões anteriores
+          console.log(`Limpando transcrições da sessão ${currentSessionId} e outras sessões anteriores`);
+          
+          // Remover dados específicos desta sessão
           sessionStorage.removeItem(`whisper_transcriptions_${currentSessionId}`);
           sessionStorage.removeItem(`last_transcript_${currentSessionId}`);
           localStorage.removeItem(`whisper_transcript_${currentSessionId}`);
+          
+          // Limpar todas as chaves do sessionStorage e localStorage relacionadas a transcrições
+          // para garantir que não haja resíduos de sessões anteriores
+          try {
+            // Limpar do sessionStorage
+            Object.keys(sessionStorage).forEach(key => {
+              if (key.startsWith('whisper_transcriptions_') || 
+                  key.startsWith('last_transcript_')) {
+                console.log(`Removendo chave do sessionStorage: ${key}`);
+                sessionStorage.removeItem(key);
+              }
+            });
+            
+            // Limpar do localStorage
+            Object.keys(localStorage).forEach(key => {
+              if (key.startsWith('whisper_transcript_')) {
+                console.log(`Removendo chave do localStorage: ${key}`);
+                localStorage.removeItem(key);
+              }
+            });
+          } catch (storageError) {
+            console.error('Erro ao limpar chaves de armazenamento:', storageError);
+          }
           
           // 3. Notificar usuário
           toast.info('Transcrições anteriores foram limpas para uma nova sessão', {
