@@ -195,8 +195,8 @@ class WhisperTranscriptionService {
               sessionId: this.sessionId
             });
             
-            // Exibir transcrições recuperadas na interface
-            this._displayRecoveredTranscriptions(sortedTranscripts);
+            // Não exibir transcrições antigas automaticamente
+            // Removido: this._displayRecoveredTranscriptions(sortedTranscripts);
             
             return;
           }
@@ -244,8 +244,8 @@ class WhisperTranscriptionService {
               sessionId: this.sessionId
             });
             
-            // Exibir transcrições recuperadas na interface
-            this._displayRecoveredTranscriptions(validTranscripts);
+            // Não exibir transcrições antigas automaticamente
+            // Removido: this._displayRecoveredTranscriptions(validTranscripts);
             
             return;
           }
@@ -995,56 +995,206 @@ class WhisperTranscriptionService {
    * @private
    */
   _cleanStaleTranscriptions() {
-    console.log('Whisper: Verificando transcrições antigas...');
-    
     try {
-      const now = Date.now();
-      const maxAge = 12 * 60 * 60 * 1000; // 12 horas
-      const keysToCheck = [];
+      console.log('🧹 Iniciando limpeza de transcrições antigas...');
       
-      // Coletar todas as chaves de transcrição no localStorage
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && key.includes('whisper_transcript_')) {
-          keysToCheck.push(key);
-        }
+      // Obter todas as chaves do localStorage
+      const keys = Object.keys(localStorage);
+      
+      // Filtrar apenas chaves relacionadas a transcrições
+      const transcriptionKeys = keys.filter(key => 
+        key.startsWith('whisper_transcript_') || 
+        key.startsWith('whisper_transcriptions_')
+      );
+      
+      console.log(`Encontradas ${transcriptionKeys.length} chaves de transcrição para verificar`);
+      
+      if (transcriptionKeys.length === 0) {
+        return;
       }
       
-      // Verificar cada chave para determinar sua idade
+      // Definir limite de tempo (12 horas = 43.200.000 ms)
+      const timeLimit = 12 * 60 * 60 * 1000;
+      const now = Date.now();
       let removedCount = 0;
       
-      for (const key of keysToCheck) {
+      // Verificar cada chave
+      for (const key of transcriptionKeys) {
         try {
-          const data = JSON.parse(localStorage.getItem(key));
+          const data = localStorage.getItem(key);
           
-          if (Array.isArray(data) && data.length > 0) {
-            const lastItem = data[data.length - 1];
+          if (!data) continue;
+          
+          const transcriptions = JSON.parse(data);
+          
+          // Se não for um array, remover
+          if (!Array.isArray(transcriptions)) {
+            localStorage.removeItem(key);
+            console.log(`Removida chave inválida: ${key}`);
+            removedCount++;
+            continue;
+          }
+          
+          // Se array vazio, remover
+          if (transcriptions.length === 0) {
+            localStorage.removeItem(key);
+            console.log(`Removida chave com array vazio: ${key}`);
+            removedCount++;
+            continue;
+          }
+          
+          // Verificar timestamp mais recente
+          let mostRecentTimestamp = 0;
+          
+          for (const transcript of transcriptions) {
+            if (!transcript || !transcript.timestamp) continue;
             
-            // Verificar se temos um timestamp para determinar a idade
-            if (lastItem && lastItem.timestamp) {
-              const timestamp = new Date(lastItem.timestamp).getTime();
-              const age = now - timestamp;
-              
-              if (age > maxAge) {
-                localStorage.removeItem(key);
-                sessionStorage.removeItem(key);
-                removedCount++;
-                console.log(`Whisper: Removida transcrição antiga (${Math.round(age/3600000)}h): ${key}`);
+            try {
+              const timestampMs = new Date(transcript.timestamp).getTime();
+              if (timestampMs > mostRecentTimestamp) {
+                mostRecentTimestamp = timestampMs;
               }
+            } catch (e) {
+              // Ignorar timestamps inválidos
             }
           }
-        } catch (e) {
-          console.warn(`Whisper: Erro ao verificar idade de ${key}:`, e);
-          // Remover entradas com erro de parsing
-          localStorage.removeItem(key);
-          sessionStorage.removeItem(key);
-          removedCount++;
+          
+          // Se não tiver timestamp válido ou for muito antigo, remover
+          if (mostRecentTimestamp === 0 || (now - mostRecentTimestamp) > timeLimit) {
+            localStorage.removeItem(key);
+            console.log(`Removida transcrição antiga (${new Date(mostRecentTimestamp).toLocaleString()}): ${key}`);
+            removedCount++;
+            
+            // Também remover do sessionStorage se existir
+            const sessionKey = key.replace('whisper_transcript_', 'whisper_transcriptions_');
+            if (sessionStorage.getItem(sessionKey)) {
+              sessionStorage.removeItem(sessionKey);
+              console.log(`Removida transcrição relacionada do sessionStorage: ${sessionKey}`);
+            }
+          }
+        } catch (keyError) {
+          console.warn(`Erro ao processar chave ${key}:`, keyError);
         }
       }
       
-      console.log(`Whisper: Verificação concluída. Removidas ${removedCount} transcrições antigas.`);
-    } catch (e) {
-      console.error('Whisper: Erro ao limpar transcrições antigas:', e);
+      console.log(`🧹 Limpeza concluída: removidas ${removedCount} chaves antigas de ${transcriptionKeys.length} totais`);
+      
+      // Verificar também no sessionStorage
+      this._cleanStaleSessionStorageTranscriptions();
+      
+    } catch (error) {
+      console.error('Erro ao limpar transcrições antigas:', error);
+    }
+  }
+  
+  /**
+   * Limpa transcrições antigas no sessionStorage
+   * @private
+   */
+  _cleanStaleSessionStorageTranscriptions() {
+    try {
+      // Obter todas as chaves do sessionStorage
+      const keys = Object.keys(sessionStorage);
+      
+      // Filtrar apenas chaves relacionadas a transcrições
+      const transcriptionKeys = keys.filter(key => 
+        key.startsWith('whisper_transcriptions_') || 
+        key.startsWith('last_transcript_')
+      );
+      
+      console.log(`Encontradas ${transcriptionKeys.length} chaves de transcrição no sessionStorage para verificar`);
+      
+      if (transcriptionKeys.length === 0) {
+        return;
+      }
+      
+      // Definir limite de tempo (12 horas = 43.200.000 ms)
+      const timeLimit = 12 * 60 * 60 * 1000;
+      const now = Date.now();
+      let removedCount = 0;
+      
+      // Verificar cada chave
+      for (const key of transcriptionKeys) {
+        try {
+          const data = sessionStorage.getItem(key);
+          
+          if (!data) continue;
+          
+          // Verificar se é uma transcrição única ou um array
+          if (key.startsWith('last_transcript_')) {
+            try {
+              const transcript = JSON.parse(data);
+              if (!transcript || !transcript.timestamp) {
+                sessionStorage.removeItem(key);
+                removedCount++;
+                continue;
+              }
+              
+              const timestampMs = new Date(transcript.timestamp).getTime();
+              if ((now - timestampMs) > timeLimit) {
+                sessionStorage.removeItem(key);
+                console.log(`Removida última transcrição antiga: ${key}`);
+                removedCount++;
+              }
+            } catch (e) {
+              sessionStorage.removeItem(key);
+              removedCount++;
+            }
+            continue;
+          }
+          
+          // Para arrays de transcrições
+          try {
+            const transcriptions = JSON.parse(data);
+            
+            // Se não for um array, remover
+            if (!Array.isArray(transcriptions)) {
+              sessionStorage.removeItem(key);
+              removedCount++;
+              continue;
+            }
+            
+            // Se array vazio, remover
+            if (transcriptions.length === 0) {
+              sessionStorage.removeItem(key);
+              removedCount++;
+              continue;
+            }
+            
+            // Verificar timestamp mais recente
+            let mostRecentTimestamp = 0;
+            
+            for (const transcript of transcriptions) {
+              if (!transcript || !transcript.timestamp) continue;
+              
+              try {
+                const timestampMs = new Date(transcript.timestamp).getTime();
+                if (timestampMs > mostRecentTimestamp) {
+                  mostRecentTimestamp = timestampMs;
+                }
+              } catch (e) {
+                // Ignorar timestamps inválidos
+              }
+            }
+            
+            // Se não tiver timestamp válido ou for muito antigo, remover
+            if (mostRecentTimestamp === 0 || (now - mostRecentTimestamp) > timeLimit) {
+              sessionStorage.removeItem(key);
+              console.log(`Removida transcrição antiga do sessionStorage (${new Date(mostRecentTimestamp).toLocaleString()}): ${key}`);
+              removedCount++;
+            }
+          } catch (parseError) {
+            sessionStorage.removeItem(key);
+            removedCount++;
+          }
+        } catch (keyError) {
+          console.warn(`Erro ao processar chave do sessionStorage ${key}:`, keyError);
+        }
+      }
+      
+      console.log(`🧹 Limpeza do sessionStorage concluída: removidas ${removedCount} chaves antigas de ${transcriptionKeys.length} totais`);
+    } catch (error) {
+      console.error('Erro ao limpar transcrições antigas do sessionStorage:', error);
     }
   }
 
