@@ -120,26 +120,138 @@ class WhisperTranscriptionService {
   }
   
   /**
-   * NOVO: Método público para inicializar completamente o serviço
-   * Deve ser chamado quando o usuário entrar na sala
+   * Inicializa o serviço com configurações padrão
+   * Chamado no construtor
    */
   initializeService() {
-    if (this.serviceInitialized) {
-      console.log('Whisper: Serviço já inicializado anteriormente');
-      return;
+    console.log('WhisperTranscriptionService: Inicializando serviço...');
+    
+    // Obter ID da sessão atual da URL
+    this.sessionId = this.extractSessionId();
+    console.log(`WhisperTranscriptionService: SessionId atual: ${this.sessionId}`);
+    
+    // Determinar papel do usuário (terapeuta ou cliente)
+    this.speakerRole = this._determineSpeakerRole();
+    console.log(`WhisperTranscriptionService: Papel do usuário: ${this.speakerRole}`);
+    
+    // Inicializar array de transcrições
+    this.transcriptionHistory = [];
+    
+    // Tentar recuperar transcrições anteriores do armazenamento local
+    this._loadStoredTranscriptions();
+    
+    // Configurar detecção de mudança de sessão
+    this._setupSessionChangeDetection();
+    
+    // Limpar transcrições antigas no storage
+    this._cleanStaleTranscriptions();
+    
+    console.log('WhisperTranscriptionService: Serviço inicializado');
+  }
+  
+  /**
+   * Carrega transcrições armazenadas para a sessão atual
+   * @private
+   */
+  _loadStoredTranscriptions() {
+    try {
+      if (!this.sessionId) return;
+      
+      console.log(`WhisperTranscriptionService: Tentando carregar transcrições armazenadas para sessão ${this.sessionId}`);
+      
+      // Verificar localStorage primeiro
+      const storageKey = `whisper_transcript_${this.sessionId}`;
+      const storedData = localStorage.getItem(storageKey);
+      
+      if (storedData) {
+        try {
+          const transcripts = JSON.parse(storedData);
+          if (Array.isArray(transcripts) && transcripts.length > 0) {
+            console.log(`Encontradas ${transcripts.length} transcrições no localStorage para sessão ${this.sessionId}`);
+            
+            // Filtrar apenas transcrições válidas
+            const validTranscripts = transcripts.filter(t => 
+              t && t.text && t.sessionId === this.sessionId && 
+              t.timestamp && new Date(t.timestamp).getTime() > 0
+            );
+            
+            // Ordenar por timestamp
+            const sortedTranscripts = validTranscripts.sort((a, b) => 
+              new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+            );
+            
+            // Adicionar à memória
+            this.transcriptionHistory = sortedTranscripts;
+            console.log(`Carregadas ${sortedTranscripts.length} transcrições válidas para a sessão ${this.sessionId}`);
+            
+            // Definir última transcrição processada
+            if (sortedTranscripts.length > 0) {
+              this.lastTranscriptionId = sortedTranscripts[sortedTranscripts.length - 1].id;
+            }
+            
+            // Notificar sobre a recuperação
+            this._dispatchEvent('transcriptionsRecovered', {
+              count: sortedTranscripts.length,
+              sessionId: this.sessionId
+            });
+            
+            return;
+          }
+        } catch (e) {
+          console.warn('Erro ao recuperar transcrições do localStorage:', e);
+        }
+      }
+      
+      // Tentar recuperar do sessionStorage se o localStorage falhou
+      const sessionKey = `whisper_transcriptions_${this.sessionId}`;
+      const sessionData = sessionStorage.getItem(sessionKey);
+      
+      if (sessionData) {
+        try {
+          const transcripts = JSON.parse(sessionData);
+          if (Array.isArray(transcripts) && transcripts.length > 0) {
+            console.log(`Encontradas ${transcripts.length} transcrições no sessionStorage para sessão ${this.sessionId}`);
+            
+            // Converter para o formato interno
+            const convertedTranscripts = transcripts.map(t => ({
+              id: t.id || `tr_${Math.random().toString(36).substring(2, 11)}`,
+              sessionId: this.sessionId,
+              text: t.content || t.text || '',
+              timestamp: t.timestamp || new Date().toISOString(),
+              speaker: t.speaker || this.speakerRole || 'unknown'
+            }));
+            
+            // Filtrar apenas transcrições válidas
+            const validTranscripts = convertedTranscripts.filter(t => 
+              t && t.text && t.text.length > 0
+            );
+            
+            // Adicionar à memória
+            this.transcriptionHistory = validTranscripts;
+            console.log(`Carregadas ${validTranscripts.length} transcrições válidas do sessionStorage`);
+            
+            // Definir última transcrição processada
+            if (validTranscripts.length > 0) {
+              this.lastTranscriptionId = validTranscripts[validTranscripts.length - 1].id;
+            }
+            
+            // Notificar sobre a recuperação
+            this._dispatchEvent('transcriptionsRecovered', {
+              count: validTranscripts.length,
+              sessionId: this.sessionId
+            });
+            
+            return;
+          }
+        } catch (e) {
+          console.warn('Erro ao recuperar transcrições do sessionStorage:', e);
+        }
+      }
+      
+      console.log(`Nenhuma transcrição armazenada encontrada para a sessão ${this.sessionId}`);
+    } catch (error) {
+      console.error('Erro ao carregar transcrições armazenadas:', error);
     }
-    
-    // Atualizar sessionId com o valor mais recente
-    const latestSessionId = this.extractSessionId();
-    if (latestSessionId !== this.sessionId) {
-      this.updateSessionId(latestSessionId);
-    }
-    
-    // Iniciar busca de transcrições de outros participantes
-    this._startFetchingOtherTranscriptions();
-    
-    this.serviceInitialized = true;
-    console.log(`Whisper: Serviço inicializado completamente - sessionId: ${this.sessionId}`);
   }
   
   /**
@@ -147,13 +259,187 @@ class WhisperTranscriptionService {
    * Para ser chamado quando o usuário clicar no botão do microfone
    */
   async startRecordingSession() {
-    // Inicializar o serviço se ainda não foi feito
-    if (!this.serviceInitialized) {
-      this.initializeService();
+    try {
+      console.log('Iniciando nova sessão de gravação...');
+      
+      // Verificar e atualizar o ID da sessão
+      const sessionId = this.extractSessionId();
+      if (sessionId !== this.sessionId) {
+        this.updateSessionId(sessionId);
+      }
+      
+      // Limpar transcrições anteriores
+      this._clearPreviousTranscriptions();
+      
+      // Inicializar transcrições da sessão atual
+      await this.initializeSessionTranscriptions(sessionId);
+      
+      // Iniciar gravação
+      const success = await this.startRecording();
+      
+      console.log(`Sessão de gravação iniciada: ${success ? 'SUCESSO' : 'FALHA'}`);
+      return success;
+    } catch (error) {
+      console.error('Erro ao iniciar sessão de gravação:', error);
+      return false;
     }
-    
-    // Iniciar gravação
-    return await this.startRecording();
+  }
+  
+  /**
+   * Inicializa as transcrições para uma sessão específica
+   * Útil para carregar transcrições existentes quando o usuário entra em uma sessão
+   * @param {string} sessionId - ID da sessão para inicializar
+   */
+  async initializeSessionTranscriptions(sessionId) {
+    try {
+      if (!sessionId) {
+        console.warn('SessionId inválido para inicialização de transcrições');
+        return false;
+      }
+      
+      console.log(`Iniciando carregamento de transcrições para sessão ${sessionId}`);
+      
+      // Atualizar o ID da sessão
+      this.updateSessionId(sessionId);
+      
+      // Primeiro tentar carregar do armazenamento local
+      this._loadStoredTranscriptions();
+      
+      // Em seguida, buscar do backend para garantir que temos todas as transcrições
+      return await this._fetchAndInitializeTranscriptions(sessionId);
+    } catch (error) {
+      console.error('Erro ao inicializar transcrições para sessão:', error);
+      return false;
+    }
+  }
+  
+  /**
+   * Busca todas as transcrições da sessão do backend e inicializa o histórico
+   * @param {string} sessionId - ID da sessão
+   * @returns {Promise<boolean>} Sucesso da operação
+   * @private
+   */
+  async _fetchAndInitializeTranscriptions(sessionId) {
+    try {
+      // Obter token de autenticação
+      const authToken = localStorage.getItem('authToken') || 
+                        sessionStorage.getItem('authToken') || 
+                        localStorage.getItem('token') || 
+                        sessionStorage.getItem('token');
+      
+      if (!authToken) {
+        console.warn('❌ Token de autenticação não encontrado para buscar transcrições');
+        return false;
+      }
+      
+      // URL para buscar todas as transcrições da sessão
+      const isProd = window.location.hostname !== 'localhost';
+      const baseUrl = isProd ? 'https://theraconnect-prd.onrender.com' : '';
+      const url = `${baseUrl}/api/ai/transcriptions/session/${sessionId}?limit=100`;
+      
+      console.log(`🔄 Buscando todas as transcrições da sessão ${sessionId} do backend...`);
+      
+      // Fazer a requisição para o backend
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      // Se não encontrou a sessão ou não tem transcrições
+      if (response.status === 404) {
+        console.log(`Sessão ${sessionId} não tem transcrições no backend`);
+        return false;
+      }
+      
+      // Se ocorreu outro erro
+      if (!response.ok) {
+        console.warn(`Erro ao buscar transcrições: ${response.status} ${response.statusText}`);
+        return false;
+      }
+      
+      // Processar resposta
+      const data = await response.json();
+      console.log(`📋 Recebidas ${data.data?.length || 0} transcrições do backend`);
+      
+      if (!data.data || !Array.isArray(data.data) || data.data.length === 0) {
+        console.log('Nenhuma transcrição encontrada no backend');
+        return false;
+      }
+      
+      // Converter para o formato interno
+      const transcriptions = data.data.map(t => ({
+        id: t.id || `tr_${Math.random().toString(36).substring(2, 11)}`,
+        sessionId: this.sessionId,
+        text: t.content || t.text || '',
+        timestamp: t.timestamp || new Date().toISOString(),
+        speaker: t.speaker || 'unknown'
+      }));
+      
+      // Filtrar apenas transcrições válidas
+      const validTranscriptions = transcriptions.filter(t => 
+        t && t.text && t.text.length > 0
+      );
+      
+      // Ordenar por timestamp
+      const sortedTranscriptions = validTranscriptions.sort((a, b) => 
+        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+      );
+      
+      // Se já tivermos transcrições na memória, combinar (evitar duplicatas)
+      if (this.transcriptionHistory && this.transcriptionHistory.length > 0) {
+        console.log(`Combinando ${sortedTranscriptions.length} transcrições do backend com ${this.transcriptionHistory.length} da memória`);
+        
+        // Criar um Map para verificar duplicatas por ID
+        const existingIds = new Map();
+        this.transcriptionHistory.forEach(t => existingIds.set(t.id, true));
+        
+        // Adicionar apenas transcrições que não existem na memória
+        for (const transcript of sortedTranscriptions) {
+          if (!existingIds.has(transcript.id)) {
+            this.transcriptionHistory.push(transcript);
+          }
+        }
+        
+        // Reordenar todas as transcrições por timestamp
+        this.transcriptionHistory.sort((a, b) => 
+          new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+        );
+        
+        console.log(`Total de ${this.transcriptionHistory.length} transcrições após combinação`);
+      } else {
+        // Se não temos transcrições na memória, usar as do backend
+        this.transcriptionHistory = sortedTranscriptions;
+        console.log(`Inicializado histórico com ${sortedTranscriptions.length} transcrições do backend`);
+      }
+      
+      // Atualizar último ID processado
+      if (this.transcriptionHistory.length > 0) {
+        this.lastTranscriptionId = this.transcriptionHistory[this.transcriptionHistory.length - 1].id;
+      }
+      
+      // Salvar no localStorage para recuperação futura
+      try {
+        const storageKey = `whisper_transcript_${sessionId}`;
+        localStorage.setItem(storageKey, JSON.stringify(this.transcriptionHistory));
+        console.log(`Transcrições salvas no localStorage para sessão ${sessionId}`);
+      } catch (e) {
+        console.warn('Erro ao salvar transcrições no localStorage:', e);
+      }
+      
+      // Notificar sobre a inicialização
+      this._dispatchEvent('transcriptionsInitialized', {
+        count: this.transcriptionHistory.length,
+        sessionId: sessionId
+      });
+      
+      return true;
+    } catch (error) {
+      console.error('Erro ao buscar e inicializar transcrições do backend:', error);
+      return false;
+    }
   }
   
   /**
@@ -205,60 +491,46 @@ class WhisperTranscriptionService {
   }
   
   /**
-   * NOVO: Limpa transcrições antigas no storage
+   * Limpa transcrições antigas
+   * @returns {boolean} Se a limpeza foi realizada com sucesso
    * @private
    */
-  _cleanStaleTranscriptions() {
-    console.log('Whisper: Verificando transcrições antigas...');
-    
+  _clearPreviousTranscriptions() {
     try {
-      const now = Date.now();
-      const maxAge = 12 * 60 * 60 * 1000; // 12 horas
-      const keysToCheck = [];
+      // 1. Limpar arrays e objetos em memória
+      this.transcriptions = [];
+      this.fullTranscription = '';
+      this.lastTranscriptionId = null;
+      this.lastProcessedChunkId = null;
       
-      // Coletar todas as chaves de transcrição no localStorage
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && key.includes('whisper_transcript_')) {
-          keysToCheck.push(key);
-        }
+      // 2. Limpar cache de fala
+      if (this.speechCache) {
+        this.speechCache = {};
       }
       
-      // Verificar cada chave para determinar sua idade
-      let removedCount = 0;
-      
-      for (const key of keysToCheck) {
-        try {
-          const data = JSON.parse(localStorage.getItem(key));
-          
-          if (Array.isArray(data) && data.length > 0) {
-            const lastItem = data[data.length - 1];
-            
-            // Verificar se temos um timestamp para determinar a idade
-            if (lastItem && lastItem.timestamp) {
-              const timestamp = new Date(lastItem.timestamp).getTime();
-              const age = now - timestamp;
-              
-              if (age > maxAge) {
-                localStorage.removeItem(key);
-                sessionStorage.removeItem(key);
-                removedCount++;
-                console.log(`Whisper: Removida transcrição antiga (${Math.round(age/3600000)}h): ${key}`);
-              }
-            }
-          }
-        } catch (e) {
-          console.warn(`Whisper: Erro ao verificar idade de ${key}:`, e);
-          // Remover entradas com erro de parsing
-          localStorage.removeItem(key);
-          sessionStorage.removeItem(key);
-          removedCount++;
-        }
+      // 3. Tentar limpar no backend
+      if (this.serverUrl && this.sessionId) {
+        console.log(`Whisper: Solicitando limpeza de transcrições no servidor para a sessão ${this.sessionId}`);
+        
+        // Enviar solicitação para API de exclusão
+        fetch(`${this.serverUrl}/transcriptions/clear/${this.sessionId}`, {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            sessionId: this.sessionId
+          })
+        }).catch(err => {
+          console.warn('Whisper: Não foi possível limpar transcrições no backend');
+        });
       }
       
-      console.log(`Whisper: Verificação concluída. Removidas ${removedCount} transcrições antigas.`);
+      console.log('Whisper: Limpeza de transcrições antigas concluída');
+      return true;
     } catch (e) {
       console.error('Whisper: Erro ao limpar transcrições antigas:', e);
+      return false;
     }
   }
 
@@ -404,25 +676,58 @@ class WhisperTranscriptionService {
       // 1. Verificar padrão /session/{id} (padrão principal)
       const sessionMatch = url.match(/\/session\/([a-zA-Z0-9_-]+)/);
       if (sessionMatch && sessionMatch[1]) {
-        console.log('Whisper: SessionId extraído da URL (padrão /session/):', sessionMatch[1]);
-        return sessionMatch[1];
+        // Verificar se o ID é válido (não é um placeholder ou valor inválido)
+        if (!sessionMatch[1].includes('undefined') && 
+            !sessionMatch[1].includes('null') && 
+            sessionMatch[1].length > 5) {
+          console.log('Whisper: SessionId extraído da URL (padrão /session/):', sessionMatch[1]);
+          
+          // Armazenar este ID como o mais recente no storage
+          try {
+            localStorage.setItem('lastExtractedSessionId', sessionMatch[1]);
+            sessionStorage.setItem('lastExtractedSessionId', sessionMatch[1]);
+          } catch (e) {
+            console.warn('Erro ao salvar sessionId extraído no storage:', e);
+          }
+          
+          return sessionMatch[1];
+        } else {
+          console.warn(`Whisper: ID extraído "${sessionMatch[1]}" parece ser inválido, tentando outras opções`);
+        }
       }
       
       // 2. Verificar padrão de UUID/GUID na URL
       const uuidMatch = url.match(/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/i);
       if (uuidMatch && uuidMatch[0]) {
         console.log('Whisper: SessionId extraído da URL (formato UUID):', uuidMatch[0]);
+        
+        // Armazenar este ID como o mais recente no storage
+        try {
+          localStorage.setItem('lastExtractedSessionId', uuidMatch[0]);
+          sessionStorage.setItem('lastExtractedSessionId', uuidMatch[0]);
+        } catch (e) {
+          console.warn('Erro ao salvar sessionId extraído no storage:', e);
+        }
+        
         return uuidMatch[0];
       }
       
-      // 3. Obter do localStorage ou sessionStorage
+      // 3. Obter ID mais recente extraído
+      const lastExtractedId = sessionStorage.getItem('lastExtractedSessionId') || 
+                              localStorage.getItem('lastExtractedSessionId');
+      if (lastExtractedId && lastExtractedId.length > 10) {
+        console.log('Whisper: Usando sessão extraída anteriormente:', lastExtractedId);
+        return lastExtractedId;
+      }
+      
+      // 4. Obter do localStorage ou sessionStorage (configurado manualmente)
       const savedSessionId = localStorage.getItem('currentSessionId') || sessionStorage.getItem('currentSessionId');
       if (savedSessionId) {
         console.log('Whisper: SessionId obtido do storage:', savedSessionId);
         return savedSessionId;
       }
       
-      // 4. Gerar ID temporário com mais informação
+      // 5. Gerar ID temporário com mais informação
       const tempId = `temp_${Date.now()}`;
       console.log('Whisper: Usando ID temporário:', tempId);
       return tempId;
@@ -441,7 +746,16 @@ class WhisperTranscriptionService {
     
     // Se o ID está mudando, limpar as transcrições antigas
     if (this.sessionId && this.sessionId !== newSessionId) {
+      console.log(`Whisper: Mudança de sessão detectada de ${this.sessionId} para ${newSessionId}, limpando dados anteriores`);
       this._clearPreviousTranscriptions();
+      
+      // Resetar estado de sessão nova
+      this._isNewSession = true;
+      this._newSessionErrors = 0;
+      
+      // Limpar transcrições no armazenamento
+      this._clearTranscriptionsFromStorage(this.sessionId);
+      this._clearTranscriptionsFromStorage(newSessionId);
     }
     
     console.log(`Whisper: Atualizando sessionId de "${this.sessionId}" para "${newSessionId}"`);
@@ -462,66 +776,96 @@ class WhisperTranscriptionService {
   }
   
   /**
-   * NOVO: Método público para limpar manualmente as transcrições
-   * Pode ser chamado pelo código cliente quando necessário
+   * Remove transcrições associadas a um ID de sessão específico do armazenamento local
+   * @param {string} sessionId - ID da sessão para remover as transcrições
+   * @private
    */
-  clearTranscriptions() {
-    console.log('Whisper: Limpeza manual de transcrições solicitada');
-    return this._clearPreviousTranscriptions();
+  _clearTranscriptionsFromStorage(sessionId) {
+    if (!sessionId) return;
+    
+    try {
+      console.log(`Whisper: Removendo transcrições da sessão ${sessionId} do armazenamento local`);
+      
+      // Nome da chave para transcrições desta sessão
+      const transcriptionKey = `whisper_transcript_${sessionId}`;
+      
+      // Remover do localStorage e sessionStorage
+      localStorage.removeItem(transcriptionKey);
+      sessionStorage.removeItem(transcriptionKey);
+      
+      // Remover também outras chaves relacionadas à sessão, se existirem
+      const relatedKeys = [
+        `whisper_last_chunk_${sessionId}`,
+        `whisper_state_${sessionId}`,
+        `whisper_stats_${sessionId}`
+      ];
+      
+      for (const key of relatedKeys) {
+        localStorage.removeItem(key);
+        sessionStorage.removeItem(key);
+      }
+      
+      console.log(`Whisper: Transcrições da sessão ${sessionId} removidas com sucesso`);
+    } catch (e) {
+      console.error(`Whisper: Erro ao remover transcrições da sessão ${sessionId}:`, e);
+    }
   }
 
   /**
-   * Limpa transcrições antigas quando uma nova sessão é iniciada
+   * NOVO: Limpa transcrições antigas no storage
    * @private
    */
-  _clearPreviousTranscriptions() {
-    console.log('Whisper: Limpando transcrições de sessões anteriores');
+  _cleanStaleTranscriptions() {
+    console.log('Whisper: Verificando transcrições antigas...');
     
     try {
-      // 1. Limpar o histórico na memória
-      this.transcriptionHistory = [];
-      this.otherParticipantsTranscriptions = [];
+      const now = Date.now();
+      const maxAge = 12 * 60 * 60 * 1000; // 12 horas
+      const keysToCheck = [];
       
-      // 2. Remover transcrições antigas dessa sessão do sessionStorage
-      if (this.sessionId) {
-        sessionStorage.removeItem(`whisper_transcriptions_${this.sessionId}`);
-        sessionStorage.removeItem(`last_transcript_${this.sessionId}`);
-        console.log(`Whisper: Removido dados da sessão anterior ${this.sessionId} do sessionStorage`);
-      }
-      
-      // 3. Remover transcrições antigas dessa sessão do localStorage
-      if (this.sessionId) {
-        localStorage.removeItem(`whisper_transcript_${this.sessionId}`);
-        console.log(`Whisper: Removido dados da sessão anterior ${this.sessionId} do localStorage`);
-      }
-      
-      // 4. Notificar sobre a limpeza via evento
-      this._dispatchEvent('transcriptionsCleared', {
-        oldSessionId: this.sessionId
-      });
-      
-      // 5. Se tiver AIContext, limpar o transcript
-      if (window.__AI_CONTEXT) {
-        if (typeof window.__AI_CONTEXT.updateTranscript === 'function') {
-          window.__AI_CONTEXT.updateTranscript('');
-          console.log('Whisper: Transcript limpo no AIContext');
+      // Coletar todas as chaves de transcrição no localStorage
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.includes('whisper_transcript_')) {
+          keysToCheck.push(key);
         }
       }
       
-      // 6. Solicitar limpeza no backend (assíncrono, não aguardar)
-      this._requestTranscriptionsCleanup().then(success => {
-        if (success) {
-          console.log('Whisper: Transcrições também foram limpas no backend');
-        } else {
-          console.warn('Whisper: Não foi possível limpar transcrições no backend');
-        }
-      });
+      // Verificar cada chave para determinar sua idade
+      let removedCount = 0;
       
-      console.log('Whisper: Limpeza de transcrições antigas concluída');
-      return true;
+      for (const key of keysToCheck) {
+        try {
+          const data = JSON.parse(localStorage.getItem(key));
+          
+          if (Array.isArray(data) && data.length > 0) {
+            const lastItem = data[data.length - 1];
+            
+            // Verificar se temos um timestamp para determinar a idade
+            if (lastItem && lastItem.timestamp) {
+              const timestamp = new Date(lastItem.timestamp).getTime();
+              const age = now - timestamp;
+              
+              if (age > maxAge) {
+                localStorage.removeItem(key);
+                sessionStorage.removeItem(key);
+                removedCount++;
+                console.log(`Whisper: Removida transcrição antiga (${Math.round(age/3600000)}h): ${key}`);
+              }
+            }
+          }
+        } catch (e) {
+          console.warn(`Whisper: Erro ao verificar idade de ${key}:`, e);
+          // Remover entradas com erro de parsing
+          localStorage.removeItem(key);
+          sessionStorage.removeItem(key);
+          removedCount++;
+        }
+      }
+      
+      console.log(`Whisper: Verificação concluída. Removidas ${removedCount} transcrições antigas.`);
     } catch (e) {
       console.error('Whisper: Erro ao limpar transcrições antigas:', e);
-      return false;
     }
   }
 
@@ -1230,7 +1574,7 @@ class WhisperTranscriptionService {
       }
     }
     
-    // 4. Limpar todos os temporizadores possíveis
+    // 4. Limpar todos os temporizadores
     if (this.maxChunkTimer) {
       clearTimeout(this.maxChunkTimer);
       this.maxChunkTimer = null;
@@ -1954,211 +2298,155 @@ class WhisperTranscriptionService {
   }
 
   /**
-   * MODIFICADO: Processar a transcrição recebida
-   * @param {Object} response - Resposta da API
-   * @param {Blob} audioBlob - Blob de áudio enviado (para debug)
+   * Processa uma transcrição recebida do serviço de transcrição
+   * @param {Object} response - Resposta do serviço de transcrição
+   * @param {Blob} audioBlob - Blob de áudio original (opcional)
    * @private
    */
   async _processTranscription(response, audioBlob) {
     try {
-      // Validar resposta
+      console.log(`Processando transcrição para sessão ${this.sessionId}`);
+      
       if (!response || !response.data) {
-        throw new Error('Resposta de transcrição inválida');
+        console.error('Resposta de transcrição vazia ou inválida');
+        return;
       }
       
-      const transcription = response.data.text || response.data.transcript || response.data;
+      // Extrair texto da resposta
+      const originalText = response.data.text || '';
       
-      // Validar transcrição
-      if (!transcription || transcription.trim().length === 0) {
-        console.warn('Transcrição vazia recebida, ignorando...');
-        return false;
-      }
+      // Limpar texto usando método específico para remover legendas falsas
+      const cleanedText = this._cleanTranscriptionText(originalText);
       
-      // Criando um ID único para esta transcrição
-      const transcriptionId = `${this.speakerRole}_${Date.now()}`;
-      
-      // NOVO: Verificar se devemos pular o processamento
-      const checkResult = this.shouldSkipTranscription(null, transcriptionId);
-      if (checkResult.skip && checkResult.reason !== 'TRANSCRIÇÃO_EM_ANDAMENTO') {
-        console.log(checkResult.message);
-        return false;
-      }
-      
-      // Obter identificador completo do papel (inclui status de host)
-      const speakerIdentifier = this._getSpeakerIdentifier();
-      const isHost = this._isSessionHost();
-      
-      // MELHORIA: Adicionar formatação melhorada para visualização no console
-      // Mostrar claramente quem é o falante com distinção entre host e convidado
-      let speakerLabel = this.speakerRole.toUpperCase();
-      let bgColor = this.speakerRole === 'therapist' ? '#4CAF50' : '#2196F3';
-      
-      // Adicionar indicador de host para terapeutas
-      if (this.speakerRole === 'therapist') {
-        if (isHost) {
-          speakerLabel = 'TERAPEUTA (ANFITRIÃO)';
-          bgColor = '#4CAF50'; // Verde para terapeuta anfitrião
-        } else {
-          speakerLabel = 'TERAPEUTA (CONVIDADO)';
-          bgColor = '#009688'; // Verde azulado para terapeuta convidado
+      // Verificar se o texto após limpeza ficou muito curto
+      if (cleanedText.length < 5 && originalText.length > 0) {
+        console.warn(`Texto após limpeza ficou muito curto (${cleanedText.length} caracteres), provavelmente era apenas legendas falsas.`);
+        
+        // Logar para debug
+        if (originalText.includes('Amara') || originalText.includes('legenda')) {
+          console.log(`Detectado texto de legendas: "${originalText}"`);
+          
+          // Não salvar legendas falsas no histórico
+          return;
         }
-      } else if (this.speakerRole === 'client') {
-        speakerLabel = 'CLIENTE';
       }
       
-      console.log(
-        `\n%c ${speakerLabel} DISSE: %c ${transcription.substring(0, 200)}${transcription.length > 200 ? '...' : ''}\n`, 
-        `background: ${bgColor}; 
-         color: white; 
-         font-weight: bold; 
-         padding: 5px; 
-         border-radius: 3px 0 0 3px;`,
-        `background: #f8f8f8; 
-         color: #333; 
-         padding: 5px; 
-         border-radius: 0 3px 3px 0; 
-         border-left: 5px solid ${bgColor};`
-      );
-      
-      // Log adicional da sessão para rastreamento
-      console.log(
-        `%c SESSÃO: %c ${this.sessionId} %c PAPEL: %c ${speakerIdentifier} %c TIMESTAMP: %c ${new Date().toLocaleTimeString()}`, 
-        'font-weight: bold; color: #9E9E9E;', 
-        'color: #9E9E9E;',
-        'font-weight: bold; color: #9E9E9E;', 
-        'color: #9E9E9E;',
-        'font-weight: bold; color: #9E9E9E;', 
-        'color: #9E9E9E;'
-      );
-      
-      // Validar transcrição
-      if (!transcription || transcription.trim().length === 0) {
-        console.warn('Transcrição vazia recebida, ignorando...');
-        return false;
+      // Apenas processar se tiver texto
+      if (!cleanedText || cleanedText.length === 0) {
+        console.warn('Texto de transcrição vazio após limpeza, ignorando...');
+        return;
       }
       
-      // Formato para envio para o AI Context
-      const transcriptionData = {
+      // Verificar o histórico para evitar duplicação
+      if (this.transcriptionHistory && this.transcriptionHistory.length > 0) {
+        const lastTranscription = this.transcriptionHistory[this.transcriptionHistory.length - 1];
+        
+        if (lastTranscription && lastTranscription.text === cleanedText) {
+          console.log('Transcrição idêntica à anterior, ignorando para evitar duplicação');
+          return;
+        }
+        
+        // Também verificar por duplicação parcial (texto contido em outro)
+        if (lastTranscription && 
+            (lastTranscription.text.includes(cleanedText) || 
+             cleanedText.includes(lastTranscription.text))) {
+          console.log('Transcrição é subconjunto ou superconjunto da anterior, verificando se deve substituir');
+          
+          // Se a nova transcrição for mais longa, substituir a anterior
+          if (cleanedText.length > lastTranscription.text.length) {
+            console.log('Nova transcrição é mais completa, substituindo a anterior');
+            this.transcriptionHistory.pop(); // Remover a anterior
+          } else {
+            console.log('Nova transcrição é menos completa, mantendo a anterior');
+            return;
+          }
+        }
+      }
+      
+      // Criar objeto de transcrição
+      const transcription = {
+        id: `tr_${Math.random().toString(36).substring(2, 11)}_${Math.random().toString(36).substring(2, 9)}`,
         sessionId: this.sessionId,
-        speaker: this.speakerRole,
-        speakerIdentifier: speakerIdentifier, // Novo campo com identificador completo
-        isHost: isHost, // Novo campo indicando se é o anfitrião
-        content: transcription.trim(),
-        emotions: response.data.emotions || {
-          dominant: 'neutral',
-          scores: { neutral: 0.7, positive: 0.2, negative: 0.1 },
-          sentiment: 'neutral',
-          confidence: 0.7,
-          language: 'pt'
-        },
-        timestamp: new Date().toISOString()
+        text: cleanedText,
+        timestamp: new Date().toISOString(),
+        speaker: this.speakerRole || 'unknown',
+        audioFile: audioBlob ? URL.createObjectURL(audioBlob) : null
       };
       
-      console.log(`Processando transcrição para sessão ${this.sessionId} como ${this.speakerRole}`);
+      // Adicionar ao histórico
+      if (!this.transcriptionHistory) {
+        this.transcriptionHistory = [];
+      }
       
-      // NOVO: Salvar no sessionStorage imediatamente como backup
-      this._saveTranscriptionToStorage(transcriptionData);
+      this.transcriptionHistory.push(transcription);
+      console.log(`Transcrição adicionada ao histórico (total: ${this.transcriptionHistory.length}): ${cleanedText.substring(0, 50)}${cleanedText.length > 50 ? '...' : ''}`);
       
-      // CORREÇÃO: Usar nossa nova função para enviar a transcrição para o backend
-      await this._sendTranscriptionToBackend(transcriptionData);
+      // Atualizar último ID de transcrição processada
+      this.lastTranscriptionId = transcription.id;
       
-      // Adicionar ao estado local, útil para manutenção do histórico
-      // e para casos em que o app não tem conexão com o backend
-      this.transcriptionHistory.push(transcriptionData);
-      
-      // Disparar evento de nova transcrição
-      this._dispatchEvent('transcriptionReceived', {
-        transcript: transcription,
-        emotions: transcriptionData.emotions, // ADICIONADO: Incluir emoções no evento
-        ...transcriptionData
-      });
-      
-      // MELHORIA: Armazenar no localStorage para recuperação posterior
+      // Salvar no localStorage para recuperação posterior
       try {
-        const sessionId = transcriptionData.sessionId;
-        const key = `whisper_transcript_${sessionId}`;
+        // Nome da chave para esta sessão
+        const storageKey = `whisper_transcript_${this.sessionId}`;
         
-        // Recuperar transcrições existentes
-        let existingTranscripts = [];
-        const storedData = localStorage.getItem(key);
-        if (storedData) {
-          try {
-            existingTranscripts = JSON.parse(storedData);
-          } catch (e) {
-            console.warn('Erro ao recuperar transcrições armazenadas:', e);
+        // Obter dados existentes ou criar um novo array
+        let existingData;
+        try {
+          const storedData = localStorage.getItem(storageKey);
+          existingData = storedData ? JSON.parse(storedData) : [];
+          
+          if (!Array.isArray(existingData)) {
+            existingData = [];
           }
+        } catch (e) {
+          console.warn('Erro ao recuperar dados de transcrição do localStorage, criando novo array:', e);
+          existingData = [];
         }
         
         // Adicionar nova transcrição
-        existingTranscripts.push(transcriptionData);
+        existingData.push({
+          ...transcription,
+          audioFile: null // Não salvar audioFile no localStorage
+        });
         
-        // Salvar no localStorage
-        localStorage.setItem(key, JSON.stringify(existingTranscripts));
-        console.log('Transcrição salva no localStorage para recuperação futura');
-        
-        // MELHORIA: Atualizar diretamente o estado do transcript no AIContext
-        if (window.__AI_CONTEXT) {
-          const currentTranscript = window.__AI_CONTEXT.transcript || '';
-          const newTranscript = currentTranscript 
-            ? `${currentTranscript}\n${transcriptionData.speaker}: ${transcriptionData.content}`
-            : `${transcriptionData.speaker}: ${transcriptionData.content}`;
-          
-          // Se o AIContext tem uma função para atualizar o transcript, usá-la
-          if (typeof window.__AI_CONTEXT.updateTranscript === 'function') {
-            window.__AI_CONTEXT.updateTranscript(newTranscript);
-            console.log('Transcript atualizado diretamente no AIContext via updateTranscript');
-          } else {
-            // Caso contrário, disparar um evento para o AIContext atualizar o transcript
-            window.dispatchEvent(new CustomEvent('transcript-updated', { 
-              detail: { fullText: newTranscript }
-            }));
-            console.log('Evento transcript-updated disparado para atualizar AIContext');
-          }
+        // Limitar tamanho para não sobrecarregar localStorage
+        while (existingData.length > 50) {
+          existingData.shift();
         }
+        
+        // Salvar de volta no localStorage
+        localStorage.setItem(storageKey, JSON.stringify(existingData));
+        
+        console.log(`Transcrição salva no localStorage (${storageKey}), total: ${existingData.length}`);
       } catch (storageError) {
         console.warn('Erro ao salvar transcrição no localStorage:', storageError);
       }
       
-      // Tentar encontrar o AI Context e salvar a transcrição
-      try {
-        // Notificar via evento global que capturamos transcrição
-        window.dispatchEvent(new CustomEvent('whisper-transcription', { 
-          detail: transcriptionData
-        }));
-        
-        // Tentar usar o AIContext se disponível
-        if (window.__AI_CONTEXT && window.__AI_CONTEXT.saveTranscript) {
-          console.log('AIContext encontrado, salvando transcrição via contexto...');
-          const result = await window.__AI_CONTEXT.saveTranscript(transcriptionData);
-          
-          // CORREÇÃO: REMOVIDO chamada automática para suggest() para evitar sugestões duplicadas
-          // quando HybridAI e Whisper estão sendo usados simultaneamente
-          
-          // Verificar se existe flag global indicando que o HybridAI está ativo
-          const hybridAIActive = window.__HYBRID_AI_ACTIVE || 
-                                (window.__AI_CONTEXT && window.__AI_CONTEXT.hybridAIActive);
-          
-          if (result && result.success && !hybridAIActive) {
-            // Apenas disparar um evento para notificar que há nova transcrição
-            // sem chamar diretamente o suggest()
-            console.log('Transcrição salva com sucesso, notificando via evento');
-            
-            window.dispatchEvent(new CustomEvent('whisper-transcription-saved', {
-              detail: { 
-                sessionId: transcriptionData.sessionId,
-                length: transcriptionData.content.length
-              }
-            }));
-          }
-        }
-      } catch (aiContextError) {
-        console.error('Erro ao interagir com AIContext:', aiContextError);
+      // Enviar para backend se houver sessionId válido
+      if (this.sessionId && !this.sessionId.startsWith('temp_')) {
+        this._sendTranscriptionToBackend({
+          sessionId: this.sessionId,
+          content: cleanedText,
+          speaker: this.speakerRole || 'unknown',
+          timestamp: new Date().toISOString()
+        }).catch(error => {
+          console.error('Erro ao enviar transcrição para o backend:', error);
+        });
       }
       
-      return true;
+      // Se temos AIContext, atualizar o transcript
+      if (window.__AI_CONTEXT && typeof window.__AI_CONTEXT.updateTranscript === 'function') {
+        // Usar o histórico completo
+        const fullText = this.getFullTranscription();
+        window.__AI_CONTEXT.updateTranscript(fullText);
+      }
+      
+      // Disparar evento de nova transcrição
+      document.dispatchEvent(new CustomEvent('whisper:new-transcription', { 
+        detail: transcription 
+      }));
     } catch (error) {
       console.error('Erro ao processar transcrição:', error);
-      return false;
     }
   }
 
@@ -3425,6 +3713,22 @@ class WhisperTranscriptionService {
     // Registrar o tamanho original para debug
     const originalLength = text.length;
     
+    // Verificação rápida para textos comuns de legendas falsas
+    const commonFakeCaptions = [
+      'legendas pela comunidade amara.org',
+      'legendas pela comunidade',
+      'legendas geradas automaticamente',
+      'subtitles by the amara.org community',
+      'amara.org'
+    ];
+    
+    // Se o texto original for exatamente igual a uma das legendas falsas comuns, retornar vazio
+    const lowerText = text.toLowerCase().trim();
+    if (commonFakeCaptions.some(caption => lowerText === caption)) {
+      console.log(`Texto detectado como legenda falsa conhecida: "${text}"`);
+      return "";
+    }
+    
     // Lista de padrões para remover
     const patterns = [
       /legendas pela comunidade amara\.org/gi,
@@ -3435,7 +3739,11 @@ class WhisperTranscriptionService {
       /\s+legendas$|\s+subtitles$/gi,
       /tamara\.org/gi,
       /www\.[\w\-\.]+\.(?:com|org|net)/gi,
-      /https?:\/\/[\w\-\.]+\.(?:com|org|net)[\w\-\.\/?=&%]*/gi
+      /https?:\/\/[\w\-\.]+\.(?:com|org|net)[\w\-\.\/?=&%]*/gi,
+      /desative todas as extensões/gi,
+      /tradução automática/gi,
+      /gerado automaticamente/gi,
+      /legendas geradas/gi
     ];
     
     // Aplicar cada padrão para limpeza
@@ -3446,6 +3754,21 @@ class WhisperTranscriptionService {
     
     // Remover múltiplos espaços e fazer trim
     cleanedText = cleanedText.replace(/\s{2,}/g, ' ').trim();
+    
+    // Verificação adicional - se o texto limpo ficou muito curto (menos de 3 palavras)
+    // e o texto original não era curto, então provavelmente era só legenda
+    if (cleanedText.split(/\s+/).length < 3 && originalLength > 15) {
+      console.log(`Texto provavelmente é apenas legenda, ficou muito curto após limpeza: "${cleanedText}"`);
+      return "";
+    }
+    
+    // Se o texto original tinha "Amara" ou "legenda" e o texto limpo ficou
+    // com menos de 50% do tamanho original, considerar como texto inválido
+    if ((text.toLowerCase().includes('amara') || text.toLowerCase().includes('legenda')) && 
+        cleanedText.length < originalLength * 0.5) {
+      console.log(`Texto com referências a legendas perdeu mais de 50% do conteúdo na limpeza`);
+      return "";
+    }
     
     // Se a limpeza removeu conteúdo significativo, log para debug
     const newLength = cleanedText.length;
