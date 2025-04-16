@@ -6,6 +6,7 @@ import ActiveTools from './ActiveTools';
 import AIAssistant from '../../components/AIAssistant';
 import SessionTranscript from '../../components/SessionTranscript';
 import SessionReport from '../../components/SessionReport';
+import CostTracker from '../../components/CostTracker';
 import { SessionProvider } from '../../contexts/SessionContext';
 import { AIProvider } from '../../contexts/AIContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -113,6 +114,9 @@ const SessionRoom = () => {
             open={showReport}
             onClose={() => setShowReport(false)}
           />
+          
+          {/* Rastreador de custos */}
+          <CostTracker />
         </div>
       </AIProvider>
     </SessionProvider>

@@ -4,6 +4,7 @@
  * Com detecção automática de silêncio e envio de chunks
  */
 import { WHISPER_URL, API_URL } from '../config';
+import costTracker from './costTrackingService';
 
 class WhisperTranscriptionService {
   constructor() {
@@ -2956,6 +2957,24 @@ class WhisperTranscriptionService {
           // NOVO: Atualizar transcrições imediatamente
           this._fetchOtherParticipantsTranscriptions();
           
+          // Após uma transcrição bem-sucedida, estimar tokens
+          // Isso deve ser colocado após a verificação da resposta do backend
+          if (response.ok) {
+            // Estimar tokens do texto da transcrição para rastreamento
+            const transcriptionText = data.content || data.transcript || '';
+            if (transcriptionText.length > 0) {
+              // Estimar apenas para análise se não for muito pequeno
+              if (transcriptionText.length > 50) {
+                // Assumir que o backend usa IA para analisar o texto
+                costTracker.trackGPTUsage(
+                  transcriptionText, 
+                  Math.ceil(transcriptionText.length * 0.5), // Estimativa aproximada de tokens de saída
+                  'analysis'
+                );
+              }
+            }
+          }
+          
           return { success: true };
         } else {
         const errorText = await response.text();
@@ -4308,6 +4327,77 @@ class WhisperTranscriptionService {
     }
     
     return cleanedText;
+  }
+
+  /**
+   * Gera um relatório da sessão
+   */
+  async generateSessionReport() {
+    try {
+      // ... existing code ...
+      
+      // Rastrear uso de GPT para relatório - adicionar ao método existente
+      const sessionContent = this.transcriptionHistory
+        .map(t => `${t.speaker}: ${t.text || t.content}`)
+        .join('\n');
+        
+      // Rastrear geração de relatório
+      costTracker.trackGPTUsage(
+        sessionContent,
+        Math.ceil(sessionContent.length * 0.8), // Estimativa de tokens de saída
+        'report'
+      );
+      
+      // ... continue with the existing method ...
+    } catch (error) {
+      console.error('Erro ao gerar relatório:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Processar o audio e enviar para a API
+   * @param {Array} audioChunks - Chunks de áudio para processar
+   * @returns {Promise<Object>} - Resultado da transcrição
+   */
+  async processAudio(audioChunks) {
+    if (!audioChunks || audioChunks.length === 0) {
+      console.error('Nenhum chunk de áudio para processar');
+      return { success: false, text: '' };
+    }
+
+    try {
+      console.log(`Processando ${audioChunks.length} chunks de áudio`);
+      
+      // Criar um blob a partir dos chunks
+      const blob = new Blob(audioChunks, { type: 'audio/wav' });
+      console.log(`Tamanho do blob: ${blob.size} bytes`);
+      
+      if (blob.size <= 0) {
+        console.warn('Blob de áudio vazio, ignorando');
+        return { success: false, text: '' };
+      }
+
+      // Estimar duração do áudio em minutos (aproximação baseada no tamanho médio)
+      // WAV mono 16-bit a 16kHz: ~1.92MB por minuto (32000 bytes por segundo)
+      const estimatedMinutes = blob.size / (32000 * 60);
+      
+      // Rastrear uso do Whisper
+      costTracker.trackWhisperUsage(estimatedMinutes);
+      
+      console.log(`Áudio processado: duração estimada de ${estimatedMinutes.toFixed(2)} minutos`);
+
+      // Criar um formulário para enviar o arquivo
+      const formData = new FormData();
+      formData.append('file', blob, 'audio.wav');
+      formData.append('model', 'whisper-1');
+      formData.append('language', 'pt');
+      
+      // Rest of the existing method...
+    } catch (error) {
+      console.error('Erro ao processar áudio:', error);
+      return { success: false, text: '', error: error.message };
+    }
   }
 }
 
