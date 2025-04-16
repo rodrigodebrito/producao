@@ -3,7 +3,8 @@ import { toast } from 'react-toastify';
 import { useAI } from '../contexts/AIContext';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faMicrophone, faMicrophoneSlash } from '@fortawesome/free-solid-svg-icons';
-import hybridAIService from '../services/hybridAI.service';
+// DESATIVADO: Import do HybridAI removido
+// import hybridAIService from '../services/hybridAI.service';
 import WhisperTranscriptionService from '../services/whisperTranscriptionService';
 import AIResultsPanel from './AIResultsPanel';
 import './AITools.css';
@@ -73,14 +74,15 @@ export const MicButton = ({ transcriptionMode = 'auto' }) => {
   const stopAllRecordings = useCallback(() => {
     console.log('🛑 Parando todos os serviços de gravação');
     
-    if (window.hybridAIService) {
-      try {
-        console.log('🛑 Parando serviço Web Speech API');
-        window.hybridAIService.stopRecording();
-      } catch (e) {
-        console.error('❌ Erro ao parar hybridAIService:', e);
-      }
-    }
+    // DESATIVADO: Referências ao HybridAI removidas
+    // if (window.hybridAIService) {
+    //   try {
+    //     console.log('🛑 Parando serviço Web Speech API');
+    //     window.hybridAIService.stopRecording();
+    //   } catch (e) {
+    //     console.error('❌ Erro ao parar hybridAIService:', e);
+    //   }
+    // }
     
     if (window.whisperService) {
       try {
@@ -110,59 +112,22 @@ export const MicButton = ({ transcriptionMode = 'auto' }) => {
       clearTimeout(reconnectTimerRef.current);
     }
     
-    if (effectiveMode === 'whisper') {
-      if (window.whisperService) {
-        console.log('▶️ Iniciando APENAS o serviço Whisper');
-        console.log('⚠️ Serviço Web Speech será ignorado neste modo');
-        window.whisperService.startRecording();
-        setIsRecording(true);
-        toast.info('Reconhecimento Whisper iniciado');
-        return true;
-      } else {
-        console.error('❌ Serviço Whisper não disponível');
-        toast.error('Serviço Whisper não disponível');
-        return false;
-      }
-    } 
-    else if (effectiveMode === 'webspeech') {
-      if (window.hybridAIService) {
-        console.log('▶️ Iniciando APENAS o serviço Web Speech API');
-        console.log('⚠️ Serviço Whisper será ignorado neste modo');
-        window.hybridAIService.startRecording();
-        setIsRecording(true);
-        toast.info('Reconhecimento Web Speech iniciado');
-        return true;
-      } else {
-        console.error('❌ Serviço Web Speech não disponível');
-        toast.error('Serviço Web Speech não disponível');
-        return false;
-      }
-    } 
-    else { // auto mode
-      console.log('▶️ Modo AUTO: Iniciando ambos os serviços de transcrição');
-      let started = false;
-      
-      if (window.whisperService) {
-        console.log('▶️ Iniciando serviço Whisper (parte do modo Auto)');
-        window.whisperService.startRecording();
-        started = true;
-      }
-      
-      if (window.hybridAIService) {
-        console.log('▶️ Iniciando serviço Web Speech (parte do modo Auto)');
-        window.hybridAIService.startRecording();
-        started = true;
-      }
-      
-      if (started) {
-        setIsRecording(true);
-        toast.info('Reconhecimento híbrido iniciado');
-        return true;
-      } else {
-        toast.error('Nenhum serviço de reconhecimento disponível');
-        return false;
-      }
+    // FORÇAR modo whisper, independentemente da seleção
+    console.log('⚠️ FORÇANDO modo Whisper devido à desativação do HybridAI');
+    
+    if (window.whisperService) {
+      console.log('▶️ Iniciando APENAS o serviço Whisper');
+      window.whisperService.startRecording();
+      setIsRecording(true);
+      toast.info('Reconhecimento Whisper iniciado');
+      return true;
+    } else {
+      console.error('❌ Serviço Whisper não disponível');
+      toast.error('Serviço Whisper não disponível');
+      return false;
     }
+    
+    // DESATIVADO: Código para webspeech e modo auto removido
   }, []);
   
   // Função para reiniciar gravação
@@ -226,11 +191,14 @@ export const MicButton = ({ transcriptionMode = 'auto' }) => {
   
   // Inicializar os serviços de transcrição
   useEffect(() => {
-    // Verificar se os serviços já foram inicializados globalmente
-    if (!window.hybridAIService) {
-      console.log('🔧 Inicializando serviço Web Speech API');
-      window.hybridAIService = hybridAIService;
-    }
+    // DESATIVADO: Inicialização do HybridAI removida
+    // if (!window.hybridAIService) {
+    //   console.log('🔧 Inicializando serviço Web Speech API');
+    //   window.hybridAIService = hybridAIService;
+    // }
+    
+    // Definir variável global para evitar inicialização acidental
+    window.hybridAIService = null;
     
     if (!window.whisperService) {
       console.log('🔧 Inicializando serviço Whisper');

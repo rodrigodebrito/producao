@@ -78,19 +78,47 @@ export const AIProvider = ({ children }) => {
     setEmotions(event.detail.accumulated);
   };
   
-  // Funções para iniciar/parar reconhecimento de voz - DESATIVADAS
+  // Iniciar gravação
   const startListening = () => {
-    // DESATIVADO: HybridAI não está disponível
-    console.log('⛔ AIContext: Tentativa de iniciar reconhecimento ignorada - HybridAI desativado');
-    toast.warning('Reconhecimento de voz está desativado nesta versão', { autoClose: 3000 });
-    return false;
+    // DESATIVADO: Comportamento alterado para usar apenas whisperService
+    console.log('AVISO: Função startListening chamada - HybridAI está desativado');
+    
+    // Verificar se o whisperService está disponível
+    if (window.whisperService && typeof window.whisperService.startRecording === 'function') {
+      try {
+        window.whisperService.startRecording();
+        setIsListening(true);
+        return true;
+      } catch (error) {
+        console.error('Erro ao iniciar gravação com whisperService:', error);
+        return false;
+      }
+    } else {
+      console.warn('Serviço de gravação (whisperService) não disponível');
+      return false;
+    }
   };
   
+  // Parar gravação
   const stopListening = () => {
-    // DESATIVADO: HybridAI não está disponível
-    console.log('⛔ AIContext: Tentativa de parar reconhecimento ignorada - HybridAI desativado');
-    setIsListening(false);
-    return false;
+    // DESATIVADO: Comportamento alterado para usar apenas whisperService
+    console.log('AVISO: Função stopListening chamada - HybridAI está desativado');
+    
+    // Verificar se o whisperService está disponível
+    if (window.whisperService && typeof window.whisperService.stopRecording === 'function') {
+      try {
+        // Passar true como segundo parâmetro para indicar parada manual
+        window.whisperService.stopRecording(true, true);
+        setIsListening(false);
+        return true;
+      } catch (error) {
+        console.error('Erro ao parar gravação com whisperService:', error);
+        return false;
+      }
+    } else {
+      console.warn('Serviço de gravação (whisperService) não disponível');
+      return false;
+    }
   };
   
   // Nova função auxiliar para atualizar diretamente o transcript
@@ -916,21 +944,25 @@ export const AIProvider = ({ children }) => {
   // Funções para configuração
   const toggleLocalProcessing = () => {
     const newValue = !localProcessing;
-    hybridAIService.setLocalProcessing(newValue);
+    // DESATIVADO: Chamada ao hybridAIService removida
+    // hybridAIService.setLocalProcessing(newValue);
     setLocalProcessing(newValue);
     toast.info(`Processamento local ${newValue ? 'ativado' : 'desativado'}`, { autoClose: 2000 });
   };
   
   const toggleAnonymization = () => {
     const newValue = !anonymization;
-    hybridAIService.setAnonymization(newValue);
+    // DESATIVADO: Chamada ao hybridAIService removida
+    // hybridAIService.setAnonymization(newValue);
     setAnonymization(newValue);
     toast.info(`Anonimização ${newValue ? 'ativada' : 'desativada'}`, { autoClose: 2000 });
   };
   
   // Verificar compatibilidade
   const isCompatible = () => {
-    return hybridAIService.isSpeechRecognitionSupported();
+    // DESATIVADO: Retornar valor fixo em vez de chamar hybridAIService
+    // return hybridAIService.isSpeechRecognitionSupported();
+    return false; // Retornando false para indicar que este recurso está desabilitado
   };
   
   // Limpar transcrição
