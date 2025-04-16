@@ -195,6 +195,9 @@ class WhisperTranscriptionService {
               sessionId: this.sessionId
             });
             
+            // Exibir transcrições recuperadas na interface
+            this._displayRecoveredTranscriptions(sortedTranscripts);
+            
             return;
           }
         } catch (e) {
@@ -241,6 +244,9 @@ class WhisperTranscriptionService {
               sessionId: this.sessionId
             });
             
+            // Exibir transcrições recuperadas na interface
+            this._displayRecoveredTranscriptions(validTranscripts);
+            
             return;
           }
         } catch (e) {
@@ -251,6 +257,179 @@ class WhisperTranscriptionService {
       console.log(`Nenhuma transcrição armazenada encontrada para a sessão ${this.sessionId}`);
     } catch (error) {
       console.error('Erro ao carregar transcrições armazenadas:', error);
+    }
+  }
+  
+  /**
+   * Exibe transcrições recuperadas na interface
+   * @param {Array} transcriptions - Lista de transcrições para exibir
+   * @private
+   */
+  _displayRecoveredTranscriptions(transcriptions) {
+    try {
+      if (!transcriptions || !Array.isArray(transcriptions) || transcriptions.length === 0) {
+        console.log('Nenhuma transcrição recuperada para exibir');
+        return;
+      }
+      
+      console.log(`Exibindo ${transcriptions.length} transcrições recuperadas na interface`);
+      
+      // Ordenar por timestamp para exibir na ordem correta
+      const sortedTranscriptions = [...transcriptions].sort((a, b) => 
+        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+      );
+      
+      // Limite para não sobrecarregar a interface (exibir as últimas 10)
+      const recentTranscriptions = sortedTranscriptions.length > 10 
+        ? sortedTranscriptions.slice(-10) 
+        : sortedTranscriptions;
+      
+      // Criar um elemento container para as transcrições recuperadas (se não existir)
+      let container = document.getElementById('whisper-recovered-transcriptions');
+      
+      if (!container) {
+        container = document.createElement('div');
+        container.id = 'whisper-recovered-transcriptions';
+        container.style.cssText = `
+          position: fixed;
+          top: 100px;
+          right: 20px;
+          max-width: 350px;
+          max-height: 60vh;
+          overflow-y: auto;
+          background: rgba(255, 255, 255, 0.97);
+          border-radius: 10px;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+          padding: 15px;
+          z-index: 9999;
+          font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+          font-size: 14px;
+          transition: all 0.3s ease;
+        `;
+        
+        // Adicionar título
+        const title = document.createElement('h3');
+        title.textContent = 'Transcrições Anteriores';
+        title.style.cssText = `
+          margin: 0 0 10px 0;
+          padding-bottom: 8px;
+          border-bottom: 1px solid #eee;
+          color: #333;
+          font-size: 16px;
+        `;
+        container.appendChild(title);
+        
+        // Botão para fechar
+        const closeButton = document.createElement('button');
+        closeButton.textContent = '×';
+        closeButton.style.cssText = `
+          position: absolute;
+          top: 10px;
+          right: 10px;
+          background: none;
+          border: none;
+          font-size: 20px;
+          cursor: pointer;
+          color: #999;
+        `;
+        closeButton.onclick = () => {
+          container.style.opacity = '0';
+          setTimeout(() => container.remove(), 300);
+        };
+        container.appendChild(closeButton);
+        
+        // Lista de transcrições
+        const list = document.createElement('div');
+        list.className = 'whisper-transcriptions-list';
+        container.appendChild(list);
+        
+        document.body.appendChild(container);
+      }
+      
+      // Obter a lista dentro do container
+      const list = container.querySelector('.whisper-transcriptions-list');
+      if (!list) return;
+      
+      // Limpar a lista
+      list.innerHTML = '';
+      
+      // Adicionar cada transcrição à lista
+      recentTranscriptions.forEach(transcript => {
+        // Determinar o papel do falante para cor e rótulo
+        let speakerLabel = 'Desconhecido';
+        let bgColor = '#9E9E9E';
+        let textColor = 'white';
+        
+        if (transcript.speaker === 'therapist' || (transcript.speakerIdentifier || '').includes('therapist')) {
+          speakerLabel = 'Terapeuta';
+          bgColor = '#4CAF50';
+        } else if (transcript.speaker === 'client' || transcript.speakerIdentifier === 'client') {
+          speakerLabel = 'Cliente';
+          bgColor = '#2196F3';
+        }
+        
+        // Formatar hora
+        const time = new Date(transcript.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        
+        // Criar elemento de transcrição
+        const transcriptElement = document.createElement('div');
+        transcriptElement.className = 'transcript-item';
+        transcriptElement.style.cssText = `
+          margin-bottom: 12px;
+          padding: 10px;
+          border-radius: 8px;
+          background-color: ${bgColor}15;
+          border-left: 4px solid ${bgColor};
+          position: relative;
+        `;
+        
+        // Conteúdo da transcrição
+        const contentElement = document.createElement('div');
+        contentElement.className = 'transcript-content';
+        contentElement.textContent = transcript.text || transcript.content || '';
+        contentElement.style.cssText = `
+          color: #333;
+          margin-top: 4px;
+          line-height: 1.4;
+        `;
+        
+        // Cabeçalho com informação do falante e hora
+        const headerElement = document.createElement('div');
+        headerElement.className = 'transcript-header';
+        headerElement.style.cssText = `
+          display: flex;
+          justify-content: space-between;
+          font-size: 12px;
+          color: ${bgColor};
+          font-weight: bold;
+          margin-bottom: 4px;
+        `;
+        
+        const speakerElement = document.createElement('span');
+        speakerElement.textContent = speakerLabel;
+        headerElement.appendChild(speakerElement);
+        
+        const timeElement = document.createElement('span');
+        timeElement.textContent = time;
+        timeElement.style.color = '#777';
+        headerElement.appendChild(timeElement);
+        
+        // Montar elementos
+        transcriptElement.appendChild(headerElement);
+        transcriptElement.appendChild(contentElement);
+        
+        // Adicionar à lista
+        list.appendChild(transcriptElement);
+      });
+      
+      // Esconder a janela após 20 segundos
+      setTimeout(() => {
+        container.style.opacity = '0';
+        setTimeout(() => container.remove(), 300);
+      }, 20000);
+      
+    } catch (error) {
+      console.error('Erro ao exibir transcrições recuperadas:', error);
     }
   }
   
@@ -2370,6 +2549,7 @@ class WhisperTranscriptionService {
         text: cleanedText,
         timestamp: new Date().toISOString(),
         speaker: this.speakerRole || 'unknown',
+        speakerIdentifier: this._getSpeakerIdentifier(),
         audioFile: audioBlob ? URL.createObjectURL(audioBlob) : null
       };
       
@@ -2440,6 +2620,20 @@ class WhisperTranscriptionService {
         const fullText = this.getFullTranscription();
         window.__AI_CONTEXT.updateTranscript(fullText);
       }
+      
+      // Exibir a transcrição na interface
+      let speakerLabel = 'EU';
+      let bgColor = '#FF5722';
+      
+      if (this.speakerRole === 'therapist') {
+        speakerLabel = 'TERAPEUTA (EU)';
+        bgColor = '#4CAF50';
+      } else if (this.speakerRole === 'client') {
+        speakerLabel = 'CLIENTE (EU)';
+        bgColor = '#2196F3';
+      }
+      
+      this._displayTranscriptionInUI(transcription, speakerLabel, bgColor);
       
       // Disparar evento de nova transcrição
       document.dispatchEvent(new CustomEvent('whisper:new-transcription', { 
@@ -3092,7 +3286,7 @@ class WhisperTranscriptionService {
   }
   
   /**
-   * NOVO: Exibe a transcrição de outro participante no console
+   * NOVO: Exibe a transcrição de outro participante na interface
    * @param {Object} transcription - Dados da transcrição
    * @private
    */
@@ -3148,6 +3342,9 @@ class WhisperTranscriptionService {
         'color: #9E9E9E;'
       );
       
+      // NOVO: Exibir a transcrição na interface
+      this._displayTranscriptionInUI(transcription, speakerLabel, bgColor);
+      
       // Disparar evento para notificar sobre nova transcrição de outro participante
       this._dispatchEvent('otherParticipantTranscription', {
         transcript: content,
@@ -3158,6 +3355,188 @@ class WhisperTranscriptionService {
       });
     } catch (error) {
       console.warn('Erro ao exibir transcrição de outro participante:', error);
+    }
+  }
+  
+  /**
+   * Exibe uma transcrição individual na interface
+   * @param {Object} transcription - A transcrição a ser exibida
+   * @param {string} speakerLabel - Rótulo do falante
+   * @param {string} bgColor - Cor de fundo
+   * @private
+   */
+  _displayTranscriptionInUI(transcription, speakerLabel, bgColor) {
+    try {
+      // Garantir que exista conteúdo para exibir
+      const content = transcription.content || transcription.transcript || transcription.text || '';
+      if (!content || content.trim().length === 0) return;
+      
+      // Criar o container para transcrições ao vivo (se não existir)
+      let container = document.getElementById('whisper-live-transcriptions');
+      
+      if (!container) {
+        container = document.createElement('div');
+        container.id = 'whisper-live-transcriptions';
+        container.style.cssText = `
+          position: fixed;
+          bottom: 80px;
+          right: 20px;
+          max-width: 350px;
+          max-height: 40vh;
+          overflow-y: auto;
+          background: rgba(255, 255, 255, 0.97);
+          border-radius: 10px;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+          padding: 15px;
+          z-index: 9998;
+          font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+          font-size: 14px;
+          transition: all 0.3s ease;
+        `;
+        
+        // Adicionar título
+        const title = document.createElement('h3');
+        title.textContent = 'Transcrições em Tempo Real';
+        title.style.cssText = `
+          margin: 0 0 10px 0;
+          padding-bottom: 8px;
+          border-bottom: 1px solid #eee;
+          color: #333;
+          font-size: 16px;
+        `;
+        container.appendChild(title);
+        
+        // Botão para fechar
+        const closeButton = document.createElement('button');
+        closeButton.textContent = '×';
+        closeButton.style.cssText = `
+          position: absolute;
+          top: 10px;
+          right: 10px;
+          background: none;
+          border: none;
+          font-size: 20px;
+          cursor: pointer;
+          color: #999;
+        `;
+        closeButton.onclick = () => {
+          container.style.opacity = '0';
+          setTimeout(() => container.remove(), 300);
+        };
+        container.appendChild(closeButton);
+        
+        // Lista de transcrições
+        const list = document.createElement('div');
+        list.className = 'whisper-live-list';
+        container.appendChild(list);
+        
+        document.body.appendChild(container);
+      }
+      
+      // Obter a lista dentro do container
+      const list = container.querySelector('.whisper-live-list');
+      if (!list) return;
+      
+      // Limitar o número de transcrições visíveis
+      const maxVisibleTranscriptions = 10;
+      const existingTranscriptions = list.querySelectorAll('.transcript-item');
+      if (existingTranscriptions.length >= maxVisibleTranscriptions) {
+        // Remover a primeira (mais antiga) se exceder o limite
+        list.removeChild(existingTranscriptions[0]);
+      }
+      
+      // Formatar hora
+      const time = new Date(transcription.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      
+      // Criar elemento de transcrição
+      const transcriptElement = document.createElement('div');
+      transcriptElement.className = 'transcript-item';
+      transcriptElement.setAttribute('data-id', transcription.id || '');
+      transcriptElement.style.cssText = `
+        margin-bottom: 12px;
+        padding: 10px;
+        border-radius: 8px;
+        background-color: ${bgColor}15;
+        border-left: 4px solid ${bgColor};
+        position: relative;
+        opacity: 0;
+        transform: translateY(10px);
+        transition: opacity 0.3s ease, transform 0.3s ease;
+      `;
+      
+      // Conteúdo da transcrição
+      const contentElement = document.createElement('div');
+      contentElement.className = 'transcript-content';
+      contentElement.textContent = content;
+      contentElement.style.cssText = `
+        color: #333;
+        margin-top: 4px;
+        line-height: 1.4;
+      `;
+      
+      // Cabeçalho com informação do falante e hora
+      const headerElement = document.createElement('div');
+      headerElement.className = 'transcript-header';
+      headerElement.style.cssText = `
+        display: flex;
+        justify-content: space-between;
+        font-size: 12px;
+        color: ${bgColor};
+        font-weight: bold;
+        margin-bottom: 4px;
+      `;
+      
+      const speakerElement = document.createElement('span');
+      speakerElement.textContent = speakerLabel;
+      headerElement.appendChild(speakerElement);
+      
+      const timeElement = document.createElement('span');
+      timeElement.textContent = time;
+      timeElement.style.color = '#777';
+      headerElement.appendChild(timeElement);
+      
+      // Montar elementos
+      transcriptElement.appendChild(headerElement);
+      transcriptElement.appendChild(contentElement);
+      
+      // Adicionar à lista
+      list.appendChild(transcriptElement);
+      
+      // Animar entrada
+      setTimeout(() => {
+        transcriptElement.style.opacity = '1';
+        transcriptElement.style.transform = 'translateY(0)';
+      }, 10);
+      
+      // Rolar para o final
+      list.scrollTop = list.scrollHeight;
+      
+      // Auto-remover transcrições após 60 segundos
+      setTimeout(() => {
+        if (transcriptElement.parentNode) {
+          transcriptElement.style.opacity = '0';
+          transcriptElement.style.transform = 'translateY(-10px)';
+          setTimeout(() => {
+            if (transcriptElement.parentNode) {
+              transcriptElement.parentNode.removeChild(transcriptElement);
+            }
+          }, 300);
+        }
+      }, 60000);
+      
+      // Auto-remover container se estiver vazio após 70 segundos
+      setTimeout(() => {
+        if (container && list.children.length === 0) {
+          container.style.opacity = '0';
+          setTimeout(() => {
+            if (container.parentNode) {
+              container.parentNode.removeChild(container);
+            }
+          }, 300);
+        }
+      }, 70000);
+    } catch (error) {
+      console.error('Erro ao exibir transcrição na interface:', error);
     }
   }
 
