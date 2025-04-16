@@ -1619,12 +1619,22 @@ class WhisperTranscriptionService {
       }
 
       // Verificar formatação da resposta
-      const text = data.text || data.transcript || data.content || data.result || (data.data ? data.data.text : null);
+      let text = data.text || data.transcript || data.content || data.result || (data.data ? data.data.text : null);
       
       if (!text) {
         console.error('Resposta sem texto:', data);
         this._dispatchEvent('transcriptionError', { error: 'Resposta sem texto reconhecível' });
         throw new Error('Resposta sem texto reconhecível');
+      }
+      
+      // NOVO: Limpar texto de legendas falsas
+      text = this._cleanTranscriptionText(text);
+      
+      // Se após limpeza o texto ficou muito curto, ignorar
+      if (text.length < 5) {
+        console.warn('Texto de transcrição muito curto após limpeza, provavelmente era apenas legendas');
+        // Em vez de ignorar completamente, podemos continuar com valor alternativo
+        text = "...";
       }
 
       console.log('Transcrição recebida:', text.substring(0, 100) + (text.length > 100 ? '...' : ''));
@@ -3401,6 +3411,51 @@ class WhisperTranscriptionService {
     if (startRecording) {
       setTimeout(() => this.startRecording(), 1000);
     }
+  }
+
+  /**
+   * Limpa o texto da transcrição removendo legendas falsas e outros textos indesejados
+   * @param {string} text - Texto da transcrição
+   * @returns {string} - Texto limpo
+   * @private
+   */
+  _cleanTranscriptionText(text) {
+    if (!text || typeof text !== 'string') return text;
+    
+    // Registrar o tamanho original para debug
+    const originalLength = text.length;
+    
+    // Lista de padrões para remover
+    const patterns = [
+      /legendas pela comunidade amara\.org/gi,
+      /amara\.org/gi,
+      /legendas pela comunidade/gi,
+      /por favor, desative todas as extensões de tradução do navegador/gi,
+      /^legendas\s+|^subtitles\s+/gi,
+      /\s+legendas$|\s+subtitles$/gi,
+      /tamara\.org/gi,
+      /www\.[\w\-\.]+\.(?:com|org|net)/gi,
+      /https?:\/\/[\w\-\.]+\.(?:com|org|net)[\w\-\.\/?=&%]*/gi
+    ];
+    
+    // Aplicar cada padrão para limpeza
+    let cleanedText = text;
+    for (const pattern of patterns) {
+      cleanedText = cleanedText.replace(pattern, '');
+    }
+    
+    // Remover múltiplos espaços e fazer trim
+    cleanedText = cleanedText.replace(/\s{2,}/g, ' ').trim();
+    
+    // Se a limpeza removeu conteúdo significativo, log para debug
+    const newLength = cleanedText.length;
+    if (newLength < originalLength * 0.7) { // Se removeu mais de 30% do conteúdo
+      console.log(`🧹 Limpeza removeu texto significativo: ${originalLength} -> ${newLength} caracteres`);
+      console.log(`Original: "${text.substring(0, 100)}${text.length > 100 ? '...' : ''}"`);
+      console.log(`Limpo: "${cleanedText.substring(0, 100)}${cleanedText.length > 100 ? '...' : ''}"`);
+    }
+    
+    return cleanedText;
   }
 }
 

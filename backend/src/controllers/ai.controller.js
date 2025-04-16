@@ -1500,6 +1500,12 @@ const aiController = {
         .replace(/tamara\.org/gi, '') // Remover "tamara.org"
         .replace(/w{3}\.[\w\-\.]+\.(?:com|org|net)/gi, '') // Remover qualquer URL comum 
         .replace(/\s{2,}/g, ' ') // Substituir múltiplos espaços por um único
+        .replace(/legendas pela comunidade amara\.org/gi, '') // Remover legendas da Amara
+        .replace(/amara\.org/gi, '') // Remover referências a amara.org
+        .replace(/legendas pela comunidade/gi, '') // Remover parte da frase de legendas
+        .replace(/por favor, desative todas as extensões de tradução do navegador/gi, '') // Remover mensagens de instruções
+        .replace(/^legendas\s+|^subtitles\s+/gi, '') // Remover palavras 'legendas' ou 'subtitles' no início
+        .replace(/\s+legendas$|\s+subtitles$/gi, '') // Remover palavras 'legendas' ou 'subtitles' no final
         .trim();
       
       console.log(`AI Controller: Transcrição filtrada: ${cleanedTranscription}`);
