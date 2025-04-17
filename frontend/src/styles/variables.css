@@ -1,0 +1,90 @@
+:root {
+  /* Paleta de cores principal */
+  --primary-color: #3E78B2;      /* Azul principal */
+  --secondary-color: #7AB8BF;    /* Verde-água */
+  --accent-color: #FF6B6B;       /* Coral/rosa */
+  --success-color: #4CAF50;      /* Verde */
+  --warning-color: #FF9800;      /* Laranja */
+  --error-color: #F44336;        /* Vermelho */
+  
+  /* Tons neutros */
+  --white: #FFFFFF;
+  --gray-100: #F5F7FA;
+  --gray-200: #E4E7EB;
+  --gray-300: #CBD2D9;
+  --gray-400: #9AA5B1;
+  --gray-500: #7B8794;
+  --gray-600: #616E7C;
+  --gray-700: #4A5568;
+  --gray-800: #323F4B;
+  --gray-900: #1F2933;
+  --black: #0F172A;
+  
+  /* Cores de texto */
+  --text-dark: var(--gray-800);
+  --text-medium: var(--gray-600);
+  --text-light: var(--gray-500);
+  --text-muted: var(--gray-400);
+  
+  /* Cores de fundo */
+  --background-light: var(--white);
+  --background-subtle: var(--gray-100);
+  --background-muted: var(--gray-200);
+  
+  /* Tipografia */
+  --font-heading: 'Montserrat', sans-serif;
+  --font-body: 'Open Sans', sans-serif;
+  
+  /* Tamanhos de fonte */
+  --font-size-xs: 0.75rem;   /* 12px */
+  --font-size-sm: 0.875rem;  /* 14px */
+  --font-size-base: 1rem;    /* 16px */
+  --font-size-md: 1.125rem;  /* 18px */
+  --font-size-lg: 1.25rem;   /* 20px */
+  --font-size-xl: 1.5rem;    /* 24px */
+  --font-size-xxl: 2rem;     /* 32px */
+  --font-size-xxxl: 2.5rem;  /* 40px */
+  
+  /* Espaçamento */
+  --space-xxs: 0.25rem;  /* 4px */
+  --space-xs: 0.5rem;    /* 8px */
+  --space-sm: 1rem;      /* 16px */
+  --space-md: 1.5rem;    /* 24px */
+  --space-lg: 2rem;      /* 32px */
+  --space-xl: 3rem;      /* 48px */
+  --space-xxl: 4rem;     /* 64px */
+  
+  /* Bordas */
+  --border-radius-sm: 0.25rem;  /* 4px */
+  --border-radius-md: 0.5rem;   /* 8px */
+  --border-radius-lg: 1rem;     /* 16px */
+  --border-radius-full: 999px;
+  
+  /* Sombras */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1);
+  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1);
+  --shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.1);
+  
+  /* Transições */
+  --transition-fast: 150ms;
+  --transition-normal: 300ms;
+  --transition-slow: 500ms;
+  
+  /* Z-index */
+  --z-below: -1;
+  --z-normal: 1;
+  --z-above: 10;
+  --z-dropdown: 100;
+  --z-sticky: 200;
+  --z-fixed: 300;
+  --z-modal: 400;
+  --z-popover: 500;
+  --z-tooltip: 600;
+  
+  /* Layout */
+  --header-height: 70px;
+  --footer-height: 60px;
+  --sidebar-width: 260px;
+  --container-max-width: 1200px;
+} 

@@ -1,0 +1,74 @@
+<svg width="600" height="500" viewBox="0 0 600 500" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Fundo Gradiente -->
+  <ellipse cx="300" cy="350" rx="250" ry="80" fill="url(#paint_gradient_bg)" opacity="0.2"/>
+  
+  <!-- Pessoa Meditando -->
+  <g id="person">
+    <!-- Cabeça -->
+    <circle cx="300" cy="180" r="40" fill="#FCDEC0"/>
+    
+    <!-- Cabelo -->
+    <path d="M300 150C330 150 335 180 335 190C335 200 330 210 300 210C270 210 265 200 265 190C265 180 270 150 300 150Z" fill="#5D4037"/>
+    
+    <!-- Corpo -->
+    <path d="M290 220L280 320C280 320 285 330 300 330C315 330 320 320 320 320L310 220" fill="#A3D9C9"/>
+    
+    <!-- Braços -->
+    <path d="M280 320C280 320 230 310 220 320C210 330 210 340 220 345C230 350 260 335 280 330" fill="#A3D9C9"/>
+    <path d="M320 320C320 320 370 310 380 320C390 330 390 340 380 345C370 350 340 335 320 330" fill="#A3D9C9"/>
+    
+    <!-- Pernas cruzadas -->
+    <path d="M250 370C250 370 270 350 300 350C330 350 350 370 350 370C350 370 340 390 300 390C260 390 250 370 250 370Z" fill="#4A90E2"/>
+    
+    <!-- Mãos em posição de meditação -->
+    <circle cx="220" cy="345" r="10" fill="#FCDEC0"/>
+    <circle cx="380" cy="345" r="10" fill="#FCDEC0"/>
+    
+    <!-- Rosto -->
+    <path d="M290 185C290 185 295 190 300 190C305 190 310 185 310 185" stroke="#5D4037" stroke-width="2" stroke-linecap="round"/>
+    <ellipse cx="285" cy="175" rx="2" ry="4" fill="#5D4037"/>
+    <ellipse cx="315" cy="175" rx="2" ry="4" fill="#5D4037"/>
+  </g>
+  
+  <!-- Elementos decorativos de relaxamento -->
+  <path d="M230 150C230 150 220 140 200 145C180 150 170 160 170 160" stroke="#4A90E2" stroke-width="2" stroke-dasharray="4 4"/>
+  <path d="M370 150C370 150 380 140 400 145C420 150 430 160 430 160" stroke="#4A90E2" stroke-width="2" stroke-dasharray="4 4"/>
+  
+  <path d="M200 220C200 220 190 210 170 215C150 220 140 230 140 230" stroke="#A3D9C9" stroke-width="2" stroke-dasharray="4 4"/>
+  <path d="M400 220C400 220 410 210 430 215C450 220 460 230 460 230" stroke="#A3D9C9" stroke-width="2" stroke-dasharray="4 4"/>
+  
+  <!-- Planetas / Círculos flutuantes -->
+  <circle cx="150" cy="150" r="15" fill="url(#paint_orb1)"/>
+  <circle cx="450" cy="150" r="12" fill="url(#paint_orb2)"/>
+  <circle cx="200" cy="280" r="10" fill="url(#paint_orb3)"/>
+  <circle cx="400" cy="280" r="8" fill="url(#paint_orb1)"/>
+  <circle cx="180" cy="380" r="12" fill="url(#paint_orb2)"/>
+  <circle cx="420" cy="380" r="10" fill="url(#paint_orb3)"/>
+  
+  <!-- Padrões ondulados -->
+  <path d="M100 300C120 290 140 310 160 300C180 290 200 310 220 300" stroke="#F5C77E" stroke-width="2" stroke-linecap="round"/>
+  <path d="M380 300C400 290 420 310 440 300C460 290 480 310 500 300" stroke="#F5C77E" stroke-width="2" stroke-linecap="round"/>
+  
+  <!-- Definições de gradientes -->
+  <defs>
+    <linearGradient id="paint_gradient_bg" x1="300" y1="270" x2="300" y2="430" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4A90E2" stop-opacity="0.3"/>
+      <stop offset="1" stop-color="#A3D9C9" stop-opacity="0.1"/>
+    </linearGradient>
+    
+    <radialGradient id="paint_orb1" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(150 150) rotate(90) scale(15)">
+      <stop offset="0" stop-color="#4A90E2"/>
+      <stop offset="1" stop-color="#A3D9C9"/>
+    </radialGradient>
+    
+    <radialGradient id="paint_orb2" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(450 150) rotate(90) scale(12)">
+      <stop offset="0" stop-color="#A3D9C9"/>
+      <stop offset="1" stop-color="#F5C77E"/>
+    </radialGradient>
+    
+    <radialGradient id="paint_orb3" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(200 280) rotate(90) scale(10)">
+      <stop offset="0" stop-color="#F5C77E"/>
+      <stop offset="1" stop-color="#4A90E2"/>
+    </radialGradient>
+  </defs>
+</svg> 

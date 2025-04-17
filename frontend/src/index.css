@@ -1,15 +1,30 @@
+/* Importando as fontes Google */
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Open+Sans:wght@400;500;600&display=swap');
+
 :root {
-  --primary-color: #3498db;
-  --primary-dark: #2980b9;
-  --secondary-color: #2ecc71;
-  --secondary-dark: #27ae60;
-  --danger-color: #e74c3c;
-  --text-dark: #2c3e50;
-  --text-light: #7f8c8d;
-  --background-light: #f5f7fa;
-  --background-white: #ffffff;
-  --border-color: #dfe1e5;
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  /* Nova paleta de cores TheraConnect */
+  --primary-color: #4A90E2; /* Azul Suave */
+  --primary-dark: #3A80D2;  /* Azul mais escuro para hover */
+  --secondary-color: #A3D9C9; /* Verde Água */
+  --secondary-light: #BFEDE2; /* Verde Água claro para hover */
+  --white: #FFFFFF; /* Branco */
+  --gray-light: #E8ECEF; /* Cinza Claro */
+  --gold: #F5C77E; /* Dourado Suave */ 
+  --text-dark: #2c3e50; /* Texto escuro */
+  --text-light: #7f8c8d; /* Texto claro */
+  --background-light: #f5f7fa; /* Fundo claro */
+  --background-white: #ffffff; /* Fundo branco */
+  --border-color: #dfe1e5; /* Cor de borda */
+  
+  /* Configurações de elementos de UI */
+  --border-radius-sm: 8px; /* Arredondamento para botões */
+  --border-radius-lg: 12px; /* Arredondamento para cards */
+  --spacing-sm: 16px; /* Espaçamento pequeno */
+  --spacing-md: 24px; /* Espaçamento médio */
+  --box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.1); /* Sombra leve */
+  
+  /* Definindo as fontes padrão */
+  font-family: 'Open Sans', sans-serif;
 }
 
 * {
@@ -24,17 +39,93 @@ body {
   line-height: 1.6;
 }
 
+h1, h2, h3, h4, h5, h6, button, .btn {
+  font-family: 'Montserrat', sans-serif;
+  font-weight: 600;
+}
+
+p, span, div, a, input, textarea, select, label {
+  font-family: 'Open Sans', sans-serif;
+}
+
 button {
   cursor: pointer;
+  border-radius: var(--border-radius-sm);
+  transition: all 0.2s ease;
 }
 
 a {
   text-decoration: none;
   color: var(--primary-color);
+  transition: all 0.2s ease;
 }
 
 input, textarea, select, button {
   font-family: inherit;
+}
+
+/* Estilos para botões */
+.btn-primary {
+  background-color: var(--primary-color);
+  color: var(--white);
+  border: none;
+  padding: 10px 20px;
+  border-radius: var(--border-radius-sm);
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.btn-primary:hover {
+  background-color: var(--primary-dark);
+  transform: translateY(-2px);
+  box-shadow: var(--box-shadow);
+}
+
+.btn-secondary {
+  background-color: var(--white);
+  color: var(--primary-color);
+  border: 1px solid var(--secondary-color);
+  padding: 10px 20px;
+  border-radius: var(--border-radius-sm);
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.btn-secondary:hover {
+  background-color: var(--secondary-light);
+  transform: translateY(-2px);
+  box-shadow: var(--box-shadow);
+}
+
+/* Estilos para cards */
+.card {
+  background-color: var(--white);
+  border-radius: var(--border-radius-lg);
+  box-shadow: var(--box-shadow);
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.08);
+}
+
+.card-header {
+  padding: var(--spacing-md);
+  border-bottom: 1px solid var(--gray-light);
+  background: linear-gradient(to right, var(--primary-color), var(--secondary-color));
+  color: var(--white);
+}
+
+.card-body {
+  padding: var(--spacing-md);
+}
+
+.card-footer {
+  padding: var(--spacing-sm);
+  border-top: 1px solid var(--gray-light);
+  background-color: var(--gray-light);
 }
 
 /* AI Tools para toda a aplicação */

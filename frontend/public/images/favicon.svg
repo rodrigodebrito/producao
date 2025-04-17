@@ -1,4 +1,8 @@
 <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Fundo circular suave -->
+  <circle cx="16" cy="16" r="16" fill="white"/>
+  <circle cx="16" cy="16" r="15" fill="url(#paint_bg_gradient)" opacity="0.1"/>
+  
   <!-- Ícone do TheraConnect: Duas mãos formando um coração sutil -->
   <path d="M10.5 8C7.5 11 4.5 15.5 8.5 19.5C12.5 23.5 16 20.5 19 18" stroke="url(#paint0_linear)" stroke-width="2" stroke-linecap="round"/>
   <path d="M21.5 8C24.5 11 27.5 15.5 23.5 19.5C19.5 23.5 16 20.5 13 18" stroke="url(#paint1_linear)" stroke-width="2" stroke-linecap="round"/>
@@ -10,25 +14,34 @@
   
   <!-- Definições de gradientes -->
   <defs>
+    <linearGradient id="paint_bg_gradient" x1="1" y1="1" x2="31" y2="31" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#4A90E2"/>
+      <stop offset="1" stop-color="#A3D9C9"/>
+    </linearGradient>
+    
     <linearGradient id="paint0_linear" x1="7" y1="8" x2="19" y2="19" gradientUnits="userSpaceOnUse">
       <stop stop-color="#4A90E2"/>
       <stop offset="1" stop-color="#A3D9C9"/>
     </linearGradient>
+    
     <linearGradient id="paint1_linear" x1="25" y1="8" x2="13" y2="19" gradientUnits="userSpaceOnUse">
       <stop stop-color="#4A90E2"/>
       <stop offset="1" stop-color="#A3D9C9"/>
     </linearGradient>
+    
     <linearGradient id="paint2_linear" x1="16" y1="21" x2="16" y2="24" gradientUnits="userSpaceOnUse">
       <stop stop-color="#F5C77E"/>
       <stop offset="1" stop-color="#F5C77E" stop-opacity="0.5"/>
     </linearGradient>
+    
     <linearGradient id="paint3_linear" x1="12.5" y1="19.5" x2="12.5" y2="21.5" gradientUnits="userSpaceOnUse">
       <stop stop-color="#F5C77E"/>
       <stop offset="1" stop-color="#F5C77E" stop-opacity="0.5"/>
     </linearGradient>
+    
     <linearGradient id="paint4_linear" x1="19.5" y1="19.5" x2="19.5" y2="21.5" gradientUnits="userSpaceOnUse">
       <stop stop-color="#F5C77E"/>
       <stop offset="1" stop-color="#F5C77E" stop-opacity="0.5"/>
     </linearGradient>
   </defs>
-</svg>
+</svg> 

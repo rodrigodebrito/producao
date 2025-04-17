@@ -1,0 +1,122 @@
+<svg width="400" height="250" viewBox="0 0 400 250" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Fundo gradiente suave -->
+  <rect width="400" height="250" rx="20" fill="url(#paint_bg)" opacity="0.1"/>
+  
+  <!-- Elementos decorativos - círculos -->
+  <circle cx="50" cy="50" r="20" fill="url(#circle1)" opacity="0.8"/>
+  <circle cx="350" cy="200" r="15" fill="url(#circle2)" opacity="0.6"/>
+  <circle cx="320" cy="30" r="10" fill="url(#circle3)" opacity="0.5"/>
+  <circle cx="70" cy="180" r="12" fill="url(#circle1)" opacity="0.4"/>
+  <circle cx="240" cy="70" r="8" fill="url(#circle2)" opacity="0.3"/>
+  
+  <!-- Ondas decorativas -->
+  <path d="M50 140C70 130 90 150 110 140C130 130 150 150 170 140" stroke="url(#line1)" stroke-width="2" stroke-linecap="round" opacity="0.7"/>
+  <path d="M200 160C220 150 240 170 260 160C280 150 300 170 320 160" stroke="url(#line2)" stroke-width="2" stroke-linecap="round" opacity="0.7"/>
+  <path d="M80 190C100 180 120 200 140 190C160 180 180 200 200 190" stroke="url(#line3)" stroke-width="1.5" stroke-linecap="round" opacity="0.5"/>
+  
+  <!-- Ilustração central - mente serena -->
+  <g transform="translate(170, 100)">
+    <!-- Cabeça -->
+    <circle cx="30" cy="30" r="28" fill="#FCDEC0"/>
+    
+    <!-- Cabelo -->
+    <path d="M30 2C45 2 58 15 58 30C58 45 45 58 30 58C15 58 2 45 2 30C2 15 15 2 30 2Z" fill="#5D4037" opacity="0.2"/>
+    <path d="M50 16C55 25 58 36 50 46M10 16C5 25 2 36 10 46" stroke="#5D4037" stroke-width="2"/>
+    
+    <!-- Rosto sereno -->
+    <ellipse cx="20" cy="25" rx="2" ry="3" fill="#5D4037"/>
+    <ellipse cx="40" cy="25" rx="2" ry="3" fill="#5D4037"/>
+    
+    <!-- Expressão meditativa -->
+    <path d="M22 35C26 39 34 39 38 35" stroke="#5D4037" stroke-width="1.5" stroke-linecap="round"/>
+    
+    <!-- Aura da mente -->
+    <circle cx="30" cy="30" r="38" stroke="url(#aura)" stroke-width="2" stroke-dasharray="3 3" opacity="0.6"/>
+    <circle cx="30" cy="30" r="45" stroke="url(#aura)" stroke-width="1.5" stroke-dasharray="2 4" opacity="0.4"/>
+    <circle cx="30" cy="30" r="52" stroke="url(#aura)" stroke-width="1" stroke-dasharray="1 5" opacity="0.3"/>
+  </g>
+  
+  <!-- Ícones de terapia e bem-estar -->
+  <g transform="translate(80, 50)">
+    <!-- Ícone de coração -->
+    <path d="M20 10C17 7 12 7 9 10C6 13 6 18 9 21L20 32L31 21C34 18 34 13 31 10C28 7 23 7 20 10Z" fill="url(#heart)" opacity="0.7"/>
+  </g>
+  
+  <g transform="translate(300, 120)">
+    <!-- Ícone de estrela -->
+    <path d="M10 0L13 6L20 7L15 12L16 20L10 16L4 20L5 12L0 7L7 6L10 0Z" fill="url(#star)" opacity="0.7"/>
+  </g>
+  
+  <g transform="translate(110, 170)">
+    <!-- Ícone de folha -->
+    <path d="M20 0C20 0 20 20 0 20C0 20 0 10 10 0C10 0 15 5 20 0Z" fill="url(#leaf)" opacity="0.7"/>
+    <path d="M10 10C10 10 15 15 17 20" stroke="#A3D9C9" stroke-width="1.5" stroke-linecap="round"/>
+  </g>
+  
+  <g transform="translate(260, 40)">
+    <!-- Ícone de equilíbrio -->
+    <path d="M10 0V20M0 15H20" stroke="#4A90E2" stroke-width="2" stroke-linecap="round"/>
+    <circle cx="10" cy="7" r="3" fill="#A3D9C9"/>
+    <circle cx="5" cy="15" r="2" fill="#F5C77E"/>
+    <circle cx="15" cy="15" r="2" fill="#F5C77E"/>
+  </g>
+  
+  <!-- Definições de gradientes -->
+  <defs>
+    <linearGradient id="paint_bg" x1="0" y1="0" x2="400" y2="250" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4A90E2" stop-opacity="0.3"/>
+      <stop offset="1" stop-color="#A3D9C9" stop-opacity="0.3"/>
+    </linearGradient>
+    
+    <radialGradient id="circle1" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(50 50) rotate(90) scale(20)">
+      <stop stop-color="#4A90E2"/>
+      <stop offset="1" stop-color="#A3D9C9"/>
+    </radialGradient>
+    
+    <radialGradient id="circle2" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(350 200) rotate(90) scale(15)">
+      <stop stop-color="#A3D9C9"/>
+      <stop offset="1" stop-color="#F5C77E"/>
+    </radialGradient>
+    
+    <radialGradient id="circle3" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(320 30) rotate(90) scale(10)">
+      <stop stop-color="#F5C77E"/>
+      <stop offset="1" stop-color="#4A90E2"/>
+    </radialGradient>
+    
+    <linearGradient id="line1" x1="50" y1="140" x2="170" y2="140" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#4A90E2"/>
+      <stop offset="1" stop-color="#A3D9C9"/>
+    </linearGradient>
+    
+    <linearGradient id="line2" x1="200" y1="160" x2="320" y2="160" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#A3D9C9"/>
+      <stop offset="1" stop-color="#F5C77E"/>
+    </linearGradient>
+    
+    <linearGradient id="line3" x1="80" y1="190" x2="200" y2="190" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F5C77E"/>
+      <stop offset="1" stop-color="#4A90E2"/>
+    </linearGradient>
+    
+    <linearGradient id="aura" x1="0" y1="0" x2="60" y2="60" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#4A90E2"/>
+      <stop offset="0.5" stop-color="#A3D9C9"/>
+      <stop offset="1" stop-color="#F5C77E"/>
+    </linearGradient>
+    
+    <linearGradient id="heart" x1="9" y1="10" x2="31" y2="32" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#4A90E2"/>
+      <stop offset="1" stop-color="#A3D9C9"/>
+    </linearGradient>
+    
+    <linearGradient id="star" x1="0" y1="7" x2="20" y2="13" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F5C77E"/>
+      <stop offset="1" stop-color="#4A90E2"/>
+    </linearGradient>
+    
+    <linearGradient id="leaf" x1="0" y1="20" x2="20" y2="0" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#A3D9C9"/>
+      <stop offset="1" stop-color="#4A90E2"/>
+    </linearGradient>
+  </defs>
+</svg> 

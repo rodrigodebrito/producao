@@ -5,9 +5,8 @@ import api from '../services/api';
 import { createTestSession } from '../services/sessionService';
 import './TherapistDashboard.css';
 import { Link } from 'react-router-dom';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faCalendarAlt, faCalendarCheck } from '@fortawesome/free-solid-svg-icons';
 import { toast } from 'react-toastify';
+import Button from '../components/Button';
 
 const TherapistDashboard = () => {
   const { user, logout } = useAuth();
@@ -106,97 +105,160 @@ const TherapistDashboard = () => {
   return (
     <div className="therapist-dashboard-container">
       <header className="dashboard-header">
-        <h1>Dashboard do Terapeuta</h1>
+        <h1>Meu Dashboard</h1>
         <div className="user-info">
           <span>Olá, {user?.name}</span>
-          <button onClick={logout} className="logout-button">Sair</button>
+          <Button 
+            onClick={logout} 
+            variant="danger" 
+            size="small"
+            className="btn-icon"
+          >
+            <i className="feather-icon feather-log-out"></i>
+            Sair
+          </Button>
         </div>
       </header>
 
       <main className="dashboard-content">
         {loading ? (
-          <div className="loading-indicator">Carregando...</div>
+          <div className="loading-indicator">
+            <i className="feather-icon feather-loader"></i>
+            <span>Carregando...</span>
+          </div>
         ) : error ? (
-          <div className="error-message">{error}</div>
+          <div className="error-message">
+            <i className="feather-icon feather-alert-circle"></i>
+            <p>{error}</p>
+          </div>
         ) : (
           <>
             {!isProfileComplete() && (
               <div className="alert-message">
-                <strong>Seu perfil está incompleto!</strong> 
+                <div className="alert-header">
+                  <i className="feather-icon feather-alert-triangle"></i>
+                  <strong>Seu perfil está incompleto!</strong>
+                </div>
                 <p>Complete seu perfil para aumentar suas chances de conseguir clientes.</p>
-                <button onClick={handleUpdateProfile} className="alert-action-button">
+                <Button 
+                  onClick={handleUpdateProfile} 
+                  variant="warning"
+                  className="btn-icon"
+                >
+                  <i className="feather-icon feather-edit-2"></i>
                   Completar Perfil
-                </button>
+                </Button>
               </div>
             )}
             
             <section className="welcome-section">
-              <h2>Bem-vindo(a) à sua área de terapeuta</h2>
-              <p>Gerencie seus agendamentos, disponibilidade e perfil profissional.</p>
+              <div className="welcome-content">
+                <h2>Bem-vindo(a) à sua área de terapeuta</h2>
+                <p>Gerencie seus agendamentos, disponibilidade e perfil profissional.</p>
+              </div>
+              <div className="welcome-illustration">
+                <img src="/images/dashboard-welcome.svg" alt="Bem-vindo" />
+              </div>
             </section>
 
             <div className="dashboard-grid">
-              <section className="upcoming-appointments">
-                <h3>Próximos Agendamentos</h3>
-                <div className="placeholder-content">
-                  <p>Nenhum agendamento próximo no momento.</p>
-                  <button 
-                    onClick={handleViewAppointments} 
-                    className="action-button"
-                  >
-                    Ver Agenda Completa
-                  </button>
+              <section className="upcoming-appointments card">
+                <div className="card-header">
+                  <h3>
+                    <i className="feather-icon feather-calendar"></i>
+                    Próximos Agendamentos
+                  </h3>
+                </div>
+                <div className="card-body">
+                  <div className="placeholder-content">
+                    <p>Nenhum agendamento próximo no momento.</p>
+                    <Button 
+                      onClick={handleViewAppointments} 
+                      variant="primary"
+                      className="btn-icon"
+                    >
+                      <i className="feather-icon feather-list"></i>
+                      Ver Agenda Completa
+                    </Button>
+                  </div>
                 </div>
               </section>
 
-              <section className="quick-actions">
-                <h3>Ações Rápidas</h3>
-                <div className="action-buttons">
-                  <button 
-                    onClick={handleManageSchedule} 
-                    className="action-button"
-                  >
-                    Gerenciar Agenda
-                  </button>
-                  <button 
-                    onClick={handleUpdateProfile} 
-                    className="action-button"
-                  >
-                    Atualizar Perfil
-                  </button>
-                  <button 
-                    onClick={handleSetAvailability} 
-                    className="action-button"
-                  >
-                    Definir Horários Disponíveis
-                  </button>
+              <section className="quick-actions card">
+                <div className="card-header">
+                  <h3>
+                    <i className="feather-icon feather-zap"></i>
+                    Ações Rápidas
+                  </h3>
+                </div>
+                <div className="card-body">
+                  <div className="action-buttons">
+                    <Button 
+                      onClick={handleManageSchedule} 
+                      variant="secondary"
+                      className="btn-icon action-button"
+                    >
+                      <i className="feather-icon feather-calendar"></i>
+                      Gerenciar Agenda
+                    </Button>
+                    <Button 
+                      onClick={handleUpdateProfile} 
+                      variant="secondary"
+                      className="btn-icon action-button"
+                    >
+                      <i className="feather-icon feather-user"></i>
+                      Atualizar Perfil
+                    </Button>
+                    <Button 
+                      onClick={handleSetAvailability} 
+                      variant="secondary"
+                      className="btn-icon action-button"
+                    >
+                      <i className="feather-icon feather-clock"></i>
+                      Definir Horários Disponíveis
+                    </Button>
+                  </div>
                 </div>
               </section>
 
-              <section className="statistics">
-                <h3>Estatísticas</h3>
-                <div className="stats-grid">
-                  <div className="stat-card">
-                    <h4>0</h4>
-                    <p>Sessões Este Mês</p>
-                  </div>
-                  <div className="stat-card">
-                    <h4>0</h4>
-                    <p>Clientes Ativos</p>
-                  </div>
-                  <div className="stat-card">
-                    <h4>0%</h4>
-                    <p>Taxa de Ocupação</p>
+              <section className="statistics card">
+                <div className="card-header">
+                  <h3>
+                    <i className="feather-icon feather-bar-chart-2"></i>
+                    Estatísticas
+                  </h3>
+                </div>
+                <div className="card-body">
+                  <div className="stats-grid">
+                    <div className="stat-card">
+                      <h4>0</h4>
+                      <p>Sessões Este Mês</p>
+                      <i className="feather-icon feather-video"></i>
+                    </div>
+                    <div className="stat-card">
+                      <h4>0</h4>
+                      <p>Clientes Ativos</p>
+                      <i className="feather-icon feather-users"></i>
+                    </div>
+                    <div className="stat-card">
+                      <h4>0%</h4>
+                      <p>Taxa de Ocupação</p>
+                      <i className="feather-icon feather-percent"></i>
+                    </div>
                   </div>
                 </div>
               </section>
             </div>
 
             {/* Seção de cards de ações */}
+            <h3 className="section-title">
+              <i className="feather-icon feather-grid"></i>
+              Gestão de Serviços
+            </h3>
             <div className="dashboard-cards">
               <div className="dashboard-card" onClick={handleUpdateProfile}>
                 <div className="card-icon">
-                  <i className="profile-icon">👤</i>
+                  <i className="feather-icon feather-user"></i>
                 </div>
                 <h3>Perfil Profissional</h3>
                 <p>Edite seu perfil e configure seus serviços</p>
@@ -204,7 +266,7 @@ const TherapistDashboard = () => {
               
               <div className="dashboard-card" onClick={handleSetAvailability}>
                 <div className="card-icon">
-                  <i className="calendar-icon">📅</i>
+                  <i className="feather-icon feather-clock"></i>
                 </div>
                 <h3>Minha Disponibilidade</h3>
                 <p>Configure os horários que você está disponível</p>
@@ -212,7 +274,7 @@ const TherapistDashboard = () => {
               
               <div className="dashboard-card" onClick={handleManageSchedule}>
                 <div className="card-icon">
-                  <i className="schedule-icon">🕒</i>
+                  <i className="feather-icon feather-calendar"></i>
                 </div>
                 <h3>Agenda</h3>
                 <p>Visualize e gerencie seus agendamentos</p>
@@ -220,14 +282,17 @@ const TherapistDashboard = () => {
               
               <div className="dashboard-card" onClick={() => navigate('/directory')}>
                 <div className="card-icon">
-                  <i className="search-icon">🔍</i>
+                  <i className="feather-icon feather-search"></i>
                 </div>
                 <h3>Diretório de Terapeutas</h3>
                 <p>Encontre outros terapeutas na plataforma</p>
               </div>
 
               <div className="dashboard-card services-card">
-                <h3>Serviços e Valores</h3>
+                <div className="card-header-sm">
+                  <i className="feather-icon feather-dollar-sign"></i>
+                  <h3>Serviços e Valores</h3>
+                </div>
                 <div className="dashboard-content">
                   <p><strong>Valor base:</strong> R$ {parseFloat(therapistData?.baseSessionPrice || 0).toFixed(2)}</p>
                   <p><strong>Duração da sessão:</strong> {therapistData?.sessionDuration || 60} minutos</p>
@@ -251,32 +316,38 @@ const TherapistDashboard = () => {
                   
                   {therapistData?.offersFreeSession && (
                     <p className="free-session-info">
+                      <i className="feather-icon feather-gift"></i>
                       <strong>Sessão experimental gratuita:</strong> {therapistData.freeSessionDuration || 30} minutos
                     </p>
                   )}
                   
-                  <Link to="/therapist/profile" className="dashboard-btn">
+                  <Button 
+                    onClick={handleUpdateProfile}
+                    variant="secondary"
+                    className="btn-icon"
+                  >
+                    <i className="feather-icon feather-edit-2"></i>
                     Editar Valores e Serviços
-                  </Link>
+                  </Button>
                 </div>
               </div>
 
               {/* Card para gerenciar disponibilidade simples */}
               <div className="dashboard-card" onClick={handleSetAvailabilitySimple}>
                 <div className="card-icon">
-                  <i className="calendar-icon">📅</i>
+                  <i className="feather-icon feather-calendar"></i>
                 </div>
                 <h3>Disponibilidade Simplificada</h3>
                 <p>Gerencie horários específicos de forma simples e direta</p>
               </div>
               
               {/* Card para criar sessão de teste */}
-              <div className="dashboard-card" onClick={handleCreateTestSession}>
+              <div className="dashboard-card test-card" onClick={handleCreateTestSession}>
                 <div className="card-icon">
-                  <i className="test-icon">🧪</i>
+                  <i className="feather-icon feather-cpu"></i>
                 </div>
                 <h3>Sessão de Teste</h3>
-                <p>Criar uma sessão de teste para avaliar a funcionalidade</p>
+                <p>Criar uma sessão de teste para avaliar as funcionalidades</p>
               </div>
             </div>
           </>

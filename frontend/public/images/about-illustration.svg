@@ -1,0 +1,112 @@
+<svg width="600" height="400" viewBox="0 0 600 400" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Tela de notebook/tela virtual -->
+  <rect x="100" y="80" width="400" height="260" rx="10" fill="#FFFFFF" stroke="#E8ECEF" stroke-width="8"/>
+  <rect x="100" y="80" width="400" height="260" rx="10" fill="url(#screen_gradient)" fill-opacity="0.1"/>
+  
+  <!-- Barra superior do notebook -->
+  <rect x="100" y="80" width="400" height="20" rx="10" fill="#E8ECEF"/>
+  <circle cx="120" cy="90" r="5" fill="#FF6B6B"/>
+  <circle cx="140" cy="90" r="5" fill="#FFD93D"/>
+  <circle cx="160" cy="90" r="5" fill="#6BCB77"/>
+  
+  <!-- Terapeuta na tela -->
+  <g id="therapist">
+    <!-- Cabeça -->
+    <circle cx="200" cy="170" r="35" fill="#FCDEC0"/>
+    <!-- Cabelo -->
+    <path d="M200 145C225 145 230 165 230 175C230 185 225 195 200 190C175 185 170 185 170 175C170 165 175 145 200 145Z" fill="#5D4037"/>
+    <!-- Óculos -->
+    <circle cx="190" cy="170" r="10" stroke="#4A90E2" stroke-width="2" fill="none"/>
+    <circle cx="210" cy="170" r="10" stroke="#4A90E2" stroke-width="2" fill="none"/>
+    <line x1="200" y1="170" x2="200" y2="170" stroke="#4A90E2" stroke-width="2"/>
+    <!-- Corpo -->
+    <path d="M175 205L170 260C170 260 185 270 200 270C215 270 230 260 230 260L225 205" fill="#A3D9C9"/>
+    <!-- Boca -->
+    <path d="M190 185C190 185 195 190 200 190C205 190 210 185 210 185" stroke="#5D4037" stroke-width="2" stroke-linecap="round"/>
+    <!-- Olhos -->
+    <ellipse cx="190" cy="170" rx="2" ry="3" fill="#5D4037"/>
+    <ellipse cx="210" cy="170" rx="2" ry="3" fill="#5D4037"/>
+  </g>
+  
+  <!-- Cliente -->
+  <g id="client">
+    <!-- Cabeça -->
+    <circle cx="400" cy="170" r="35" fill="#FFDAB9"/>
+    <!-- Cabelo -->
+    <path d="M400 145C425 140 435 165 435 175C435 185 430 190 400 190C370 190 365 185 365 175C365 165 375 150 400 145Z" fill="#8D6E63"/>
+    <!-- Corpo -->
+    <path d="M375 205L370 260C370 260 385 270 400 270C415 270 430 260 430 260L425 205" fill="#4A90E2"/>
+    <!-- Boca -->
+    <path d="M390 180C390 180 395 185 400 185C405 185 410 180 410 180" stroke="#8D6E63" stroke-width="2" stroke-linecap="round"/>
+    <!-- Olhos -->
+    <ellipse cx="390" cy="170" rx="2" ry="3" fill="#8D6E63"/>
+    <ellipse cx="410" cy="170" rx="2" ry="3" fill="#8D6E63"/>
+  </g>
+  
+  <!-- Elementos de interface virtual -->
+  <rect x="275" y="240" width="50" height="30" rx="15" fill="#4A90E2" opacity="0.8"/>
+  <rect x="175" y="240" width="80" height="5" rx="2.5" fill="white" opacity="0.5"/>
+  <rect x="345" y="240" width="80" height="5" rx="2.5" fill="white" opacity="0.5"/>
+  
+  <!-- Elementos abstratos em torno da tela: ondas de conexão -->
+  <path d="M80 120C60 140 50 180 60 220C70 260 90 300 120 320" stroke="url(#connect_gradient1)" stroke-width="2" stroke-dasharray="4 4"/>
+  <path d="M520 120C540 140 550 180 540 220C530 260 510 300 480 320" stroke="url(#connect_gradient2)" stroke-width="2" stroke-dasharray="4 4"/>
+  
+  <!-- Círculos decorativos -->
+  <circle cx="60" cy="120" r="10" fill="url(#circle_gradient1)"/>
+  <circle cx="540" cy="120" r="10" fill="url(#circle_gradient2)"/>
+  <circle cx="120" cy="320" r="10" fill="url(#circle_gradient2)"/>
+  <circle cx="480" cy="320" r="10" fill="url(#circle_gradient1)"/>
+  
+  <!-- Bolhas/ícones de pensamento -->
+  <circle cx="250" cy="130" r="15" fill="#F5C77E" opacity="0.6"/>
+  <circle cx="280" cy="110" r="10" fill="#F5C77E" opacity="0.4"/>
+  <circle cx="300" cy="130" r="12" fill="#F5C77E" opacity="0.5"/>
+  
+  <circle cx="350" cy="130" r="15" fill="#A3D9C9" opacity="0.6"/>
+  <circle cx="320" cy="110" r="10" fill="#A3D9C9" opacity="0.4"/>
+  <circle cx="300" cy="130" r="12" fill="#A3D9C9" opacity="0.5"/>
+  
+  <!-- Ícones de IA e assistência -->
+  <circle cx="300" cy="60" r="20" fill="url(#ai_gradient)"/>
+  <path d="M295 55L300 60L305 55M295 65L300 60L305 65" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M290 60H310" stroke="white" stroke-width="2" stroke-linecap="round"/>
+  
+  <!-- Ondas suaves na parte inferior -->
+  <path d="M100 350C150 330 200 370 250 350C300 330 350 370 400 350C450 330 500 370 550 350" stroke="#E8ECEF" stroke-width="3" stroke-linecap="round"/>
+  <path d="M50 370C100 350 150 390 200 370C250 350 300 390 350 370C400 350 450 390 500 370" stroke="#A3D9C9" stroke-width="2" stroke-linecap="round"/>
+  
+  <!-- Definições de gradientes -->
+  <defs>
+    <linearGradient id="screen_gradient" x1="100" y1="80" x2="500" y2="340" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4A90E2"/>
+      <stop offset="1" stop-color="#A3D9C9"/>
+    </linearGradient>
+    
+    <linearGradient id="connect_gradient1" x1="60" y1="120" x2="120" y2="320" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4A90E2"/>
+      <stop offset="1" stop-color="#A3D9C9"/>
+    </linearGradient>
+    
+    <linearGradient id="connect_gradient2" x1="540" y1="120" x2="480" y2="320" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#A3D9C9"/>
+      <stop offset="1" stop-color="#4A90E2"/>
+    </linearGradient>
+    
+    <radialGradient id="circle_gradient1" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(60 120) rotate(90) scale(10)">
+      <stop offset="0" stop-color="#4A90E2"/>
+      <stop offset="1" stop-color="#A3D9C9"/>
+    </radialGradient>
+    
+    <radialGradient id="circle_gradient2" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(540 120) rotate(90) scale(10)">
+      <stop offset="0" stop-color="#A3D9C9"/>
+      <stop offset="1" stop-color="#F5C77E"/>
+    </radialGradient>
+    
+    <radialGradient id="ai_gradient" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(300 60) rotate(90) scale(20)">
+      <stop offset="0" stop-color="#4A90E2"/>
+      <stop offset="0.5" stop-color="#A3D9C9"/>
+      <stop offset="1" stop-color="#F5C77E"/>
+    </radialGradient>
+  </defs>
+</svg> 
