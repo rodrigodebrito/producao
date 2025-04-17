@@ -4007,24 +4007,62 @@ class WhisperTranscriptionService {
       const result = await response.json();
       console.log('Resposta completa da análise de emoções:', result);
       
-      // Extrair dados de emoção da análise
-      // REMOVIDO FALLBACK - vamos mostrar o erro se não encontrar o formato esperado
-      const emotionData = result.analysis || result;
+      // SOLUÇÃO: Processar resposta no formato textual que a API está enviando
+      if (result.success && (result.analysis || result.text)) {
+        // Extrair o texto da análise
+        const analysisText = result.analysis || result.text || '';
+        
+        // Extrair emoções usando processamento de texto
+        const emotions = this._extractEmotionsFromText(analysisText);
+        
+        // Adicionar o texto completo da análise e metadados da resposta
+        const enhancedResponse = {
+          ...emotions,
+          fullAnalysis: analysisText,
+          source: 'text-analysis',
+          success: true,
+          originalResponse: result
+        };
+        
+        console.log('Análise de emoções processada com sucesso:', enhancedResponse);
+        return enhancedResponse;
+      }
       
-      if (!emotionData || (!emotionData.dominant && !emotionData.sentiment)) {
-        console.error('ERRO: Formato de dados de emoção não reconhecido', emotionData);
+      // Se chegamos aqui, temos dados estruturados ou outro formato desconhecido
+      // Vamos extrair o que pudermos
+      const emotionData = result.analysis || result.emotions || result;
+      
+      // Se temos um objeto estruturado que parece uma resposta de emoção
+      if (typeof emotionData === 'object' && (emotionData.dominant || emotionData.sentiment)) {
+        console.log('Análise de emoções estruturada recebida:', emotionData);
+        return emotionData;
+      }
+      
+      // Formato desconhecido - tentar extrair informações úteis
+      console.log('Formato de resposta desconhecido, tentando processar dados:', result);
+      
+      // Verificar se existe algum texto em qualquer campo para analisar
+      const potentialText = this._findTextFieldInObject(result);
+      if (potentialText) {
+        const emotions = this._extractEmotionsFromText(potentialText);
+        console.log('Emoções extraídas de campo de texto:', emotions);
         return {
-          error: 'Formato de dados não reconhecido',
-          rawResponse: result,
-          dominant: 'error',
-          sentiment: 'error'
+          ...emotions,
+          fullAnalysis: potentialText,
+          source: 'extracted-from-unknown-format',
+          originalResponse: result
         };
       }
       
-      console.log('Análise de emoções concluída com sucesso:', emotionData);
-      return emotionData;
+      // Se não conseguimos extrair nada útil, retornar erro com os dados originais
+      return {
+        error: 'Formato de dados não reconhecido',
+        rawResponse: result,
+        dominant: 'unknown',
+        sentiment: 'unknown',
+        source: 'error-processing'
+      };
     } catch (error) {
-      // Não vamos esconder o erro - vamos retornar para diagnóstico
       console.error('Falha na análise de emoções:', error);
       return {
         error: error.message,
@@ -4033,6 +4071,257 @@ class WhisperTranscriptionService {
         timestamp: new Date().toISOString()
       };
     }
+  }
+
+  /**
+   * Extrai emoções de um texto de análise
+   * @param {string} text - Texto para analisar
+   * @returns {Object} - Objeto com emoções extraídas
+   * @private
+   */
+  _extractEmotionsFromText(text) {
+    if (!text || typeof text !== 'string') return { dominant: 'unknown', sentiment: 'neutral' };
+    
+    // Dicionário de palavras-chave de emoções em português
+    const emotionKeywords = {
+      // Emoções positivas
+      happiness: ['feliz', 'felicidade', 'alegr', 'content', 'satisf', 'entusiasm', 'otimis', 'empolga'],
+      hope: ['esperan', 'otimis', 'confian', 'fé', 'acredit'],
+      love: ['amor', 'afeição', 'carinho', 'adora', 'aprecia', 'paixão'],
+      relief: ['alívio', 'alivia', 'consol', 'reconfort'],
+      pride: ['orgulh', 'realiza', 'conquist', 'valoriza'],
+      gratitude: ['grat', 'agradec', 'reconhec'],
+      
+      // Emoções negativas
+      anger: ['raiva', 'irrita', 'frustração', 'fúria', 'ódio', 'revolta', 'agressiv', 'hostil'],
+      anxiety: ['ansie', 'preocupa', 'nerv', 'inquieta', 'angústia', 'tensa', 'tenso', 'tensão', 'aflito', 'desconforto'],
+      sadness: ['triste', 'melancol', 'depress', 'desola', 'desesperan', 'infeliz'],
+      fear: ['medo', 'temer', 'assust', 'aterroriza', 'pavor', 'receio', 'apavora'],
+      shame: ['vergonha', 'culpa', 'constrang', 'humilha', 'embaraç'],
+      disgust: ['nojo', 'repugn', 'repulsa', 'asco', 'desagrad'],
+      
+      // Estados emocionais complexos
+      confused: ['confus', 'perdido', 'incompreens', 'desorienta', 'incerteza'],
+      conflicted: ['conflito', 'ambivalen', 'contraditór', 'indecis'],
+      overwhelmed: ['sobrecarrega', 'oprimid', 'sobrecarga', 'exaustão', 'esgotado', 'estresse'],
+    };
+    
+    // Palavras para inferir sentimento global
+    const sentimentKeywords = {
+      positive: ['positiv', 'construtiv', 'produtiv', 'enriquec', 'benéfic', 'progress', 'melhora'],
+      negative: ['negativ', 'prejudic', 'destrutiv', 'preocupa', 'dificul', 'problem', 'complicad'],
+      neutral: ['neutr', 'ambivalen', 'equilibr', 'balancea']
+    };
+    
+    // Lógica especial para detectar menções de cliente, paciente ou assuntos
+    const clientMentionPatterns = [
+      /cliente (?:está|parece|mostra|demonstra|exibe|apresenta|sente|sentiu|expressa|expressou) ([\w\s\-àáâãéêíóôõúüçÀÁÂÃÉÊÍÓÔÕÚÜÇ]+)/gi,
+      /paciente (?:está|parece|mostra|demonstra|exibe|apresenta|sente|sentiu|expressa|expressou) ([\w\s\-àáâãéêíóôõúüçÀÁÂÃÉÊÍÓÔÕÚÜÇ]+)/gi,
+      /(?:evidencia|evidências|sinais|sinal|indicação|indic.) (?:de|da|do) ([\w\s\-àáâãéêíóôõúüçÀÁÂÃÉÊÍÓÔÕÚÜÇ]+)/gi,
+      /(?:demonstra|demonstrou|expressa|expressou|mostra|exibe|apresenta) ([\w\s\-àáâãéêíóôõúüçÀÁÂÃÉÊÍÓÔÕÚÜÇ]+) (?:ao|quando|sobre|a respeito)/gi
+    ];
+    
+    // Inicializar contadores
+    const emotionCounts = {};
+    let sentences = [];
+    
+    try {
+      // Dividir texto em parágrafos e sentenças para análise mais precisa
+      const paragraphs = text.split(/\n+/);
+      for (const paragraph of paragraphs) {
+        // Dividir em sentenças (considerando pontuação)
+        const paragraphSentences = paragraph.split(/[.!?:]+/).filter(s => s.trim());
+        sentences = sentences.concat(paragraphSentences);
+      }
+      
+      // Inicializar insights e emoções detectadas
+      let emotionalInsights = [];
+      let clientEmotionDescriptions = [];
+      
+      // Analisar cada sentença em busca de padrões de emoção
+      for (const sentence of sentences) {
+        // Verificar padrões específicos de menções do cliente
+        for (const pattern of clientMentionPatterns) {
+          const matches = sentence.matchAll(pattern);
+          for (const match of matches) {
+            if (match[1]) {
+              const emotionPhrase = match[1].trim();
+              clientEmotionDescriptions.push(emotionPhrase);
+              
+              // Adicionamos ao insight com a sentença inteira para contexto
+              emotionalInsights.push({
+                type: 'client_emotion',
+                description: sentence.trim(),
+                emotion: emotionPhrase
+              });
+            }
+          }
+        }
+        
+        // Para cada categoria de emoção, contabilizar ocorrências
+        for (const [emotion, keywords] of Object.entries(emotionKeywords)) {
+          for (const keyword of keywords) {
+            if (sentence.toLowerCase().includes(keyword.toLowerCase())) {
+              emotionCounts[emotion] = (emotionCounts[emotion] || 0) + 1;
+              
+              // Se encontramos um termo emocional significativo, adicionar à lista de insights
+              if (!emotionalInsights.some(i => i.description === sentence.trim())) {
+                emotionalInsights.push({
+                  type: 'emotional_reference',
+                  description: sentence.trim(),
+                  emotion: emotion
+                });
+              }
+              
+              break; // Evitar contar múltiplas vezes na mesma sentença
+            }
+          }
+        }
+      }
+      
+      // Determinar emoção dominante
+      let dominantEmotion = 'neutral';
+      let highestCount = 0;
+      
+      for (const [emotion, count] of Object.entries(emotionCounts)) {
+        if (count > highestCount) {
+          highestCount = count;
+          dominantEmotion = emotion;
+        }
+      }
+      
+      // Determinar sentimento global
+      let globalSentiment = 'neutral';
+      const positiveEmotions = ['happiness', 'hope', 'love', 'relief', 'pride', 'gratitude'];
+      const negativeEmotions = ['anger', 'anxiety', 'sadness', 'fear', 'shame', 'disgust', 'overwhelmed'];
+      
+      // Contar emoções positivas e negativas
+      let positiveCount = 0;
+      let negativeCount = 0;
+      
+      for (const emotion of positiveEmotions) {
+        positiveCount += emotionCounts[emotion] || 0;
+      }
+      
+      for (const emotion of negativeEmotions) {
+        negativeCount += emotionCounts[emotion] || 0;
+      }
+      
+      // Determinar sentimento com base nas contagens
+      if (positiveCount > negativeCount * 1.2) { // 20% mais positivo
+        globalSentiment = 'positive';
+      } else if (negativeCount > positiveCount * 1.2) { // 20% mais negativo
+        globalSentiment = 'negative';
+      }
+      
+      // Verificar explicitamente termos de sentimento no texto
+      for (const [sentiment, keywords] of Object.entries(sentimentKeywords)) {
+        for (const keyword of keywords) {
+          if (text.toLowerCase().includes(keyword.toLowerCase())) {
+            // Ponderar em direção ao sentimento explícito
+            if (sentiment === 'positive') positiveCount += 2;
+            if (sentiment === 'negative') negativeCount += 2;
+            if (sentiment === 'neutral') {
+              positiveCount += 1;
+              negativeCount += 1;
+            }
+          }
+        }
+      }
+      
+      // Redeterminar sentimento após considerar termos explícitos
+      if (positiveCount > negativeCount * 1.2) {
+        globalSentiment = 'positive';
+      } else if (negativeCount > positiveCount * 1.2) {
+        globalSentiment = 'negative';
+      }
+      
+      // Criar scores normalizados para cada emoção
+      const totalEmotions = Object.values(emotionCounts).reduce((a, b) => a + b, 0) || 1;
+      const scores = {};
+      
+      for (const [emotion, count] of Object.entries(emotionCounts)) {
+        scores[emotion] = count / totalEmotions;
+      }
+      
+      // Se não detectamos nenhuma emoção, garantir que temos algo
+      if (Object.keys(scores).length === 0) {
+        scores.neutral = 1.0;
+      }
+      
+      // Criar objeto de resposta
+      const emotionResult = {
+        dominant: dominantEmotion,
+        sentiment: globalSentiment,
+        scores: scores,
+        confidence: highestCount > 0 ? Math.min(0.9, (highestCount / sentences.length) * 2) : 0.5,
+        insights: emotionalInsights.slice(0, 5), // Limitar a 5 insights
+        clientEmotions: clientEmotionDescriptions
+      };
+      
+      // Criar mensagem de resumo para exibição
+      let emotionSummary = `Principais estados emocionais: `;
+      
+      // Selecionar as top 3 emoções
+      const topEmotions = Object.entries(scores)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3)
+        .map(([emotion, score]) => emotion);
+      
+      emotionResult.summary = `Principais estados emocionais: ${topEmotions.join(', ')}. Sentimento global: ${globalSentiment}.`;
+      
+      if (clientEmotionDescriptions.length > 0) {
+        emotionResult.clientSummary = `O cliente demonstra: ${clientEmotionDescriptions.slice(0, 3).join('; ')}`;
+      }
+      
+      return emotionResult;
+    } catch (error) {
+      console.error('Erro ao extrair emoções do texto:', error);
+      return {
+        dominant: 'neutral',
+        sentiment: 'neutral',
+        scores: { neutral: 1.0 },
+        error: 'Erro ao processar emoções do texto'
+      };
+    }
+  }
+
+  /**
+   * Procura recursivamente por campos de texto em um objeto
+   * @param {Object} obj - O objeto a ser pesquisado
+   * @param {Array} [candidates=[]] - Array interno para armazenar candidatos encontrados
+   * @returns {string} - O maior texto encontrado ou string vazia
+   * @private
+   */
+  _findTextFieldInObject(obj, candidates = []) {
+    if (!obj || typeof obj !== 'object') return '';
+    
+    // Campos que provavelmente contêm texto relevante
+    const textFieldNames = ['analysis', 'text', 'content', 'description', 'transcript', 'summary', 'message'];
+    
+    // Verificar campos de primeiro nível
+    for (const fieldName of textFieldNames) {
+      if (obj[fieldName] && typeof obj[fieldName] === 'string' && obj[fieldName].length > 30) {
+        candidates.push(obj[fieldName]);
+      }
+    }
+    
+    // Verificar recursivamente subobjects
+    for (const [key, value] of Object.entries(obj)) {
+      if (value && typeof value === 'object') {
+        this._findTextFieldInObject(value, candidates);
+      } else if (typeof value === 'string' && value.length > 100) {
+        // Qualquer string longa pode ser relevante
+        candidates.push(value);
+      }
+    }
+    
+    // Retornar o texto mais longo encontrado
+    if (candidates.length > 0) {
+      return candidates.sort((a, b) => b.length - a.length)[0];
+    }
+    
+    return '';
   }
 
   /**
