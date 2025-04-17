@@ -53,7 +53,7 @@ class WhisperTranscriptionService {
     // Configurações para detecção de silêncio
     this.silenceDetectionEnabled = true;
     this.silenceThreshold = -45; // dB (mais negativo = mais sensível)
-    this.silenceDuration = 5000; // AJUSTADO: 5 segundos de silêncio para enviar e parar
+    this.silenceDuration = 8000; // Aumentado para 8 segundos de silêncio (era 5s)
     this.maxChunkDuration = 15000; // AJUSTADO: 15 segundos máximos por chunk (mais rápido)
     this.minChunkDuration = 1500; // AJUSTADO: 1.5 segundos mínimos por chunk
     
@@ -1374,8 +1374,8 @@ class WhisperTranscriptionService {
         this._dispatchEvent('recordingError', { error: 'Erro na gravação de áudio' });
       };
       
-      // 12. Iniciar gravação com chunks MUITO pequenos para melhor controle
-      this.mediaRecorder.start(300); // 300ms por chunk para maior controle
+      // 12. Iniciar gravação com chunks maiores para reduzir número de requisições
+      this.mediaRecorder.start(1000); // 1000ms por chunk para reduzir custos (era 300ms)
       console.log('Gravação WAV iniciada com nova instância de MediaRecorder');
       
       // 13. Configurar detecção de silêncio
@@ -3931,27 +3931,18 @@ class WhisperTranscriptionService {
       return {
         error: 'Texto insuficiente',
         dominant: 'neutral',
-        sentiment: 'neutral',
-        scores: {
-          neutral: 1.0,
-          positive: 0,
-          negative: 0
-        }
+        sentiment: 'neutral'
       };
     }
 
     try {
       // Usar o endpoint de análise de texto em vez do endpoint de análise de áudio
       if (!this.analysisEndpoint) {
-        console.log('Endpoint de análise de texto não configurado, retornando valores padrão');
+        console.error('Endpoint de análise de texto não configurado - ERRO DE CONFIGURAÇÃO');
         return {
-          dominant: 'neutral',
-          sentiment: 'neutral',
-          scores: {
-            neutral: 1.0,
-            positive: 0,
-            negative: 0
-          }
+          error: 'Endpoint de análise não configurado',
+          dominant: 'error',
+          sentiment: 'error'
         };
       }
 
@@ -3961,16 +3952,11 @@ class WhisperTranscriptionService {
       const hasTranscriptions = this._checkIfSessionHasTranscriptions(sessionId);
       
       if (!hasTranscriptions) {
-        console.log('Sessão não possui transcrições, retornando valores padrão sem chamar API');
+        console.log('Sessão não possui transcrições, retornando erro');
         return {
-          dominant: 'neutral',
-          sentiment: 'neutral',
-          scores: {
-            neutral: 1.0,
-            positive: 0,
-            negative: 0
-          },
-          note: 'Sessão sem transcrições'
+          error: 'Sessão sem transcrições',
+          dominant: 'error',
+          sentiment: 'error'
         };
       }
 
@@ -3981,23 +3967,21 @@ class WhisperTranscriptionService {
                        sessionStorage.getItem('token');
       
       if (!authToken) {
-        console.warn('Token de autenticação não encontrado para análise de emoções');
+        console.error('Token de autenticação não encontrado para análise de emoções');
         return {
-          dominant: 'neutral',
-          sentiment: 'neutral',
-          scores: {
-            neutral: 1.0,
-            positive: 0,
-            negative: 0
-          }
+          error: 'Token de autenticação não encontrado',
+          dominant: 'error',
+          sentiment: 'error'
         };
       }
       
       // Limitar o texto para evitar problemas com APIs
       const limitedText = text.substring(0, 500);
       
-      // Fazer a requisição para a API de análise do backend
-      // A rota /api/ai/analyze é usada para análise de sessão e funciona com texto
+      // Fazer a requisição para a API de análise do backend com logs detalhados
+      console.log(`Enviando análise de emoções para: ${this.analysisEndpoint}`);
+      console.log(`Dados enviados: sessionId=${sessionId}, texto=${limitedText.substring(0, 50)}...`);
+      
       const response = await fetch(this.analysisEndpoint, {
         method: 'POST',
         headers: {
@@ -4011,45 +3995,42 @@ class WhisperTranscriptionService {
         }),
       });
 
+      // Loggar resposta completa para diagnóstico
+      console.log(`Status da resposta: ${response.status} ${response.statusText}`);
+      
       if (!response.ok) {
         const errorText = await response.text();
+        console.error(`Erro na análise de emoções: ${response.status} - ${errorText}`);
         throw new Error(`Erro na análise de emoções: ${response.status} - ${errorText}`);
       }
 
       const result = await response.json();
+      console.log('Resposta completa da análise de emoções:', result);
       
       // Extrair dados de emoção da análise
-      // Na ausência de análise específica de emoção, criar um objeto de fallback
+      // REMOVIDO FALLBACK - vamos mostrar o erro se não encontrar o formato esperado
       const emotionData = result.analysis || result;
       
-      // Formatar e normalizar os resultados
-      const emotions = {
-        dominant: 'neutral',
-        scores: {
-          neutral: 0.7,
-          positive: 0.2,
-          negative: 0.1
-        },
-        sentiment: 'neutral',
-        confidence: 0.7,
-        language: 'pt',
-        analysis: emotionData
-      };
-
-      console.log('Análise de emoções concluída:', emotions);
-      return emotions;
+      if (!emotionData || (!emotionData.dominant && !emotionData.sentiment)) {
+        console.error('ERRO: Formato de dados de emoção não reconhecido', emotionData);
+        return {
+          error: 'Formato de dados não reconhecido',
+          rawResponse: result,
+          dominant: 'error',
+          sentiment: 'error'
+        };
+      }
+      
+      console.log('Análise de emoções concluída com sucesso:', emotionData);
+      return emotionData;
     } catch (error) {
+      // Não vamos esconder o erro - vamos retornar para diagnóstico
       console.error('Falha na análise de emoções:', error);
-      // Evitar que a falha na análise de emoções interrompa o fluxo principal
       return {
         error: error.message,
-        dominant: 'neutral',
-        sentiment: 'neutral',
-        scores: {
-          neutral: 1.0,
-          positive: 0,
-          negative: 0
-        }
+        dominant: 'error',
+        sentiment: 'error',
+        timestamp: new Date().toISOString()
       };
     }
   }
@@ -4357,6 +4338,7 @@ class WhisperTranscriptionService {
 
   /**
    * Processar o audio e enviar para a API
+   * Incluindo rastreamento de custos
    * @param {Array} audioChunks - Chunks de áudio para processar
    * @returns {Promise<Object>} - Resultado da transcrição
    */
@@ -4382,10 +4364,16 @@ class WhisperTranscriptionService {
       // WAV mono 16-bit a 16kHz: ~1.92MB por minuto (32000 bytes por segundo)
       const estimatedMinutes = blob.size / (32000 * 60);
       
-      // Rastrear uso do Whisper
-      costTracker.trackWhisperUsage(estimatedMinutes);
+      // IMPORTANTE: Rastrear uso do Whisper para contabilizar custo
+      if (window.costTracker) {
+        window.costTracker.trackWhisperUsage(estimatedMinutes);
+      } else if (typeof costTracker !== 'undefined') {
+        costTracker.trackWhisperUsage(estimatedMinutes);
+      } else {
+        console.log(`Áudio processado: duração estimada de ${estimatedMinutes.toFixed(2)} minutos (não rastreado)`);
+      }
       
-      console.log(`Áudio processado: duração estimada de ${estimatedMinutes.toFixed(2)} minutos`);
+      console.log(`Áudio processado: duração estimada de ${estimatedMinutes.toFixed(2)} minutos, custo rastreado`);
 
       // Criar um formulário para enviar o arquivo
       const formData = new FormData();
@@ -4394,6 +4382,7 @@ class WhisperTranscriptionService {
       formData.append('language', 'pt');
       
       // Rest of the existing method...
+      return { success: true, text: '', estimatedMinutes };
     } catch (error) {
       console.error('Erro ao processar áudio:', error);
       return { success: false, text: '', error: error.message };
