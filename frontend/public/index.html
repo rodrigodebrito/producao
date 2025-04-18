@@ -5,6 +5,8 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>TerapiaConect</title>
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
     <style>
       /* Estilos globais para os botões de IA garantindo que sempre fiquem acima do iframe */
       .ai-tools-container-direct {
@@ -138,30 +140,88 @@
         font-size: 14px !important;
         font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif !important;
       }
-    </style>
-    <!-- Feather Icons -->
-    <script src="https://cdn.jsdelivr.net/npm/feather-icons@4.29.0/dist/feather.min.js"></script>
-    <style>
-      /* Estilos para os ícones Feather */
-      .feather-icon {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-      }
       
-      .feather-icon svg {
-        width: 1em;
-        height: 1em;
-      }
-      
+      /* Estilos para substituir os ícones Feather por Font Awesome */
       .card-icon i {
         font-size: 28px;
+        color: white;
       }
       
-      .card-icon i svg {
-        width: 28px;
-        height: 28px;
+      /* Estilos para os cards do dashboard */
+      .card-icon {
+        width: 70px;
+        height: 70px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+        margin: 0 auto 25px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
         color: white;
+      }
+      
+      /* Helper para substituir automaticamente os ícones Feather por Font Awesome */
+      [data-feather="user"] { display: none; }
+      [data-feather="user"]::before { content: "\f007"; font-family: "Font Awesome 6 Free"; font-weight: 900; display: inline-block; }
+      
+      [data-feather="clock"] { display: none; }
+      [data-feather="clock"]::before { content: "\f017"; font-family: "Font Awesome 6 Free"; font-weight: 900; display: inline-block; }
+      
+      [data-feather="calendar"] { display: none; }
+      [data-feather="calendar"]::before { content: "\f133"; font-family: "Font Awesome 6 Free"; font-weight: 900; display: inline-block; }
+      
+      [data-feather="search"] { display: none; }
+      [data-feather="search"]::before { content: "\f002"; font-family: "Font Awesome 6 Free"; font-weight: 900; display: inline-block; }
+      
+      [data-feather="dollar-sign"] { display: none; }
+      [data-feather="dollar-sign"]::before { content: "\f155"; font-family: "Font Awesome 6 Free"; font-weight: 900; display: inline-block; }
+      
+      [data-feather="gift"] { display: none; }
+      [data-feather="gift"]::before { content: "\f06b"; font-family: "Font Awesome 6 Free"; font-weight: 900; display: inline-block; }
+      
+      [data-feather="edit-2"] { display: none; }
+      [data-feather="edit-2"]::before { content: "\f044"; font-family: "Font Awesome 6 Free"; font-weight: 900; display: inline-block; }
+      
+      [data-feather="cpu"] { display: none; }
+      [data-feather="cpu"]::before { content: "\f2db"; font-family: "Font Awesome 6 Free"; font-weight: 900; display: inline-block; }
+      
+      [data-feather="log-out"] { display: none; }
+      [data-feather="log-out"]::before { content: "\f2f5"; font-family: "Font Awesome 6 Free"; font-weight: 900; display: inline-block; }
+      
+      [data-feather="loader"] { display: none; }
+      [data-feather="loader"]::before { content: "\f110"; font-family: "Font Awesome 6 Free"; font-weight: 900; display: inline-block; animation: fa-spin 2s linear infinite; }
+      
+      [data-feather="alert-circle"] { display: none; }
+      [data-feather="alert-circle"]::before { content: "\f06a"; font-family: "Font Awesome 6 Free"; font-weight: 900; display: inline-block; }
+      
+      [data-feather="alert-triangle"] { display: none; }
+      [data-feather="alert-triangle"]::before { content: "\f071"; font-family: "Font Awesome 6 Free"; font-weight: 900; display: inline-block; }
+      
+      [data-feather="zap"] { display: none; }
+      [data-feather="zap"]::before { content: "\f0e7"; font-family: "Font Awesome 6 Free"; font-weight: 900; display: inline-block; }
+      
+      [data-feather="list"] { display: none; }
+      [data-feather="list"]::before { content: "\f03a"; font-family: "Font Awesome 6 Free"; font-weight: 900; display: inline-block; }
+      
+      [data-feather="bar-chart-2"] { display: none; }
+      [data-feather="bar-chart-2"]::before { content: "\f080"; font-family: "Font Awesome 6 Free"; font-weight: 900; display: inline-block; }
+      
+      [data-feather="video"] { display: none; }
+      [data-feather="video"]::before { content: "\f03d"; font-family: "Font Awesome 6 Free"; font-weight: 900; display: inline-block; }
+      
+      [data-feather="users"] { display: none; }
+      [data-feather="users"]::before { content: "\f0c0"; font-family: "Font Awesome 6 Free"; font-weight: 900; display: inline-block; }
+      
+      [data-feather="percent"] { display: none; }
+      [data-feather="percent"]::before { content: "\f295"; font-family: "Font Awesome 6 Free"; font-weight: 900; display: inline-block; }
+      
+      [data-feather="grid"] { display: none; }
+      [data-feather="grid"]::before { content: "\f00a"; font-family: "Font Awesome 6 Free"; font-weight: 900; display: inline-block; }
+      
+      /* Animação para o ícone de carregamento */
+      @keyframes fa-spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
       }
     </style>
   </head>
@@ -389,71 +449,11 @@
         }
       }, 5000);
       
-      // Inicializar os ícones Feather após carregamento da página
+      // Converter elementos data-feather para Font Awesome
       document.addEventListener('DOMContentLoaded', function() {
-        // Função para processamento seguro de ícones
-        function safelyReplaceIcons() {
-          if (typeof feather === 'undefined') return;
-          
-          try {
-            // Primeiro, processe apenas os ícones não processados
-            document.querySelectorAll('[data-feather]:not([data-feather-processed])').forEach(function(icon) {
-              try {
-                const iconName = icon.getAttribute('data-feather');
-                // Remover SVGs existentes para evitar duplicação
-                const existingSvg = icon.querySelector('svg');
-                if (existingSvg) existingSvg.remove();
-                
-                // Criar elemento feather manualmente para mais controle
-                const svg = feather.icons[iconName].toSvg();
-                const tempDiv = document.createElement('div');
-                tempDiv.innerHTML = svg;
-                const svgElement = tempDiv.firstChild;
-                
-                // Adicionar o ícone
-                icon.appendChild(svgElement);
-                icon.setAttribute('data-feather-processed', 'true');
-              } catch (e) {
-                console.warn('Erro ao processar ícone individual:', e);
-              }
-            });
-          } catch (err) {
-            console.warn('Erro ao processar ícones:', err);
-          }
-        }
-        
-        // Inicializar ícones Feather
-        if (typeof feather !== 'undefined') {
-          try {
-            // Substituir por nossa função customizada
-            safelyReplaceIcons();
-            
-            // Verificar e substituir novos ícones periodicamente
-            setInterval(safelyReplaceIcons, 1000);
-          } catch (e) {
-            console.error('Erro ao inicializar ícones Feather:', e);
-          }
-        } else {
-          console.warn('Biblioteca Feather não encontrada. Carregando polyfill...');
-          // Fallback - carregar Feather Icons se não estiver disponível
-          const script = document.createElement('script');
-          script.src = 'https://cdn.jsdelivr.net/npm/feather-icons@4.29.0/dist/feather.min.js';
-          script.onload = function() {
-            if (typeof feather !== 'undefined') {
-              try {
-                safelyReplaceIcons();
-                setInterval(safelyReplaceIcons, 1000);
-                console.log('Feather Icons carregado com sucesso via fallback');
-              } catch (e) {
-                console.error('Erro ao inicializar Feather via fallback:', e);
-              }
-            }
-          };
-          script.onerror = function() {
-            console.error('Falha ao carregar Feather Icons via fallback');
-          };
-          document.head.appendChild(script);
-        }
+        // Solução simplificada - vamos simplesmente aplicar os estilos CSS
+        // que já foram definidos acima para substituir os ícones
+        console.log('Inicializando substituição de ícones Font Awesome');
       });
     </script>
   </body>

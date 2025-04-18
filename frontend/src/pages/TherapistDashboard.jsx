@@ -114,7 +114,7 @@ const TherapistDashboard = () => {
             size="small"
             className="btn-icon"
           >
-            <i data-feather="log-out"></i>
+            <i className="fas fa-sign-out-alt"></i>
             Sair
           </Button>
         </div>
@@ -123,12 +123,12 @@ const TherapistDashboard = () => {
       <main className="dashboard-content">
         {loading ? (
           <div className="loading-indicator">
-            <i data-feather="loader"></i>
+            <i className="fas fa-spinner fa-spin"></i>
             <span>Carregando...</span>
           </div>
         ) : error ? (
           <div className="error-message">
-            <i data-feather="alert-circle"></i>
+            <i className="fas fa-exclamation-circle"></i>
             <p>{error}</p>
           </div>
         ) : (
@@ -136,7 +136,7 @@ const TherapistDashboard = () => {
             {!isProfileComplete() && (
               <div className="alert-message">
                 <div className="alert-header">
-                  <i data-feather="alert-triangle"></i>
+                  <i className="fas fa-exclamation-triangle"></i>
                   <strong>Seu perfil está incompleto!</strong>
                 </div>
                 <p>Complete seu perfil para aumentar suas chances de conseguir clientes.</p>
@@ -145,7 +145,7 @@ const TherapistDashboard = () => {
                   variant="warning"
                   className="btn-icon"
                 >
-                  <i data-feather="edit-2"></i>
+                  <i className="fas fa-edit"></i>
                   Completar Perfil
                 </Button>
               </div>
@@ -165,7 +165,7 @@ const TherapistDashboard = () => {
               <section className="upcoming-appointments card">
                 <div className="card-header">
                   <h3>
-                    <i data-feather="calendar"></i>
+                    <i className="fas fa-calendar-alt"></i>
                     Próximos Agendamentos
                   </h3>
                 </div>
@@ -177,7 +177,7 @@ const TherapistDashboard = () => {
                       variant="primary"
                       className="btn-icon"
                     >
-                      <i data-feather="list"></i>
+                      <i className="fas fa-list"></i>
                       Ver Agenda Completa
                     </Button>
                   </div>
@@ -187,7 +187,7 @@ const TherapistDashboard = () => {
               <section className="quick-actions card">
                 <div className="card-header">
                   <h3>
-                    <i data-feather="zap"></i>
+                    <i className="fas fa-bolt"></i>
                     Ações Rápidas
                   </h3>
                 </div>
@@ -198,7 +198,7 @@ const TherapistDashboard = () => {
                       variant="secondary"
                       className="btn-icon action-button"
                     >
-                      <i data-feather="calendar"></i>
+                      <i className="fas fa-calendar-alt"></i>
                       Gerenciar Agenda
                     </Button>
                     <Button 
@@ -206,7 +206,7 @@ const TherapistDashboard = () => {
                       variant="secondary"
                       className="btn-icon action-button"
                     >
-                      <i data-feather="user"></i>
+                      <i className="fas fa-user"></i>
                       Atualizar Perfil
                     </Button>
                     <Button 
@@ -214,7 +214,7 @@ const TherapistDashboard = () => {
                       variant="secondary"
                       className="btn-icon action-button"
                     >
-                      <i data-feather="clock"></i>
+                      <i className="fas fa-clock"></i>
                       Definir Horários Disponíveis
                     </Button>
                   </div>
@@ -224,7 +224,7 @@ const TherapistDashboard = () => {
               <section className="statistics card">
                 <div className="card-header">
                   <h3>
-                    <i data-feather="bar-chart-2"></i>
+                    <i className="fas fa-chart-bar"></i>
                     Estatísticas
                   </h3>
                 </div>
@@ -233,17 +233,17 @@ const TherapistDashboard = () => {
                     <div className="stat-card">
                       <h4>0</h4>
                       <p>Sessões Este Mês</p>
-                      <i data-feather="video"></i>
+                      <i className="fas fa-video"></i>
                     </div>
                     <div className="stat-card">
                       <h4>0</h4>
                       <p>Clientes Ativos</p>
-                      <i data-feather="users"></i>
+                      <i className="fas fa-users"></i>
                     </div>
                     <div className="stat-card">
                       <h4>0%</h4>
                       <p>Taxa de Ocupação</p>
-                      <i data-feather="percent"></i>
+                      <i className="fas fa-percentage"></i>
                     </div>
                   </div>
                 </div>
@@ -252,13 +252,13 @@ const TherapistDashboard = () => {
 
             {/* Seção de cards de ações */}
             <h3 className="section-title">
-              <i data-feather="grid"></i>
+              <i className="fas fa-th-large"></i>
               Gestão de Serviços
             </h3>
             <div className="dashboard-cards">
               <div className="dashboard-card" onClick={handleUpdateProfile}>
                 <div className="card-icon">
-                  <i data-feather="user"></i>
+                  <i className="fas fa-user"></i>
                 </div>
                 <h3>Perfil Profissional</h3>
                 <p>Edite seu perfil e configure seus serviços</p>
@@ -266,7 +266,7 @@ const TherapistDashboard = () => {
               
               <div className="dashboard-card" onClick={handleSetAvailability}>
                 <div className="card-icon">
-                  <i data-feather="clock"></i>
+                  <i className="fas fa-clock"></i>
                 </div>
                 <h3>Minha Disponibilidade</h3>
                 <p>Configure os horários que você está disponível</p>
@@ -274,7 +274,7 @@ const TherapistDashboard = () => {
               
               <div className="dashboard-card" onClick={handleManageSchedule}>
                 <div className="card-icon">
-                  <i data-feather="calendar"></i>
+                  <i className="fas fa-calendar-alt"></i>
                 </div>
                 <h3>Agenda</h3>
                 <p>Visualize e gerencie seus agendamentos</p>
@@ -282,7 +282,7 @@ const TherapistDashboard = () => {
               
               <div className="dashboard-card" onClick={() => navigate('/directory')}>
                 <div className="card-icon">
-                  <i data-feather="search"></i>
+                  <i className="fas fa-search"></i>
                 </div>
                 <h3>Diretório de Terapeutas</h3>
                 <p>Encontre outros terapeutas na plataforma</p>
@@ -290,7 +290,7 @@ const TherapistDashboard = () => {
 
               <div className="dashboard-card services-card">
                 <div className="card-header-sm">
-                  <i data-feather="dollar-sign"></i>
+                  <i className="fas fa-dollar-sign"></i>
                   <h3>Serviços e Valores</h3>
                 </div>
                 <div className="dashboard-content">
@@ -316,7 +316,7 @@ const TherapistDashboard = () => {
                   
                   {therapistData?.offersFreeSession && (
                     <p className="free-session-info">
-                      <i data-feather="gift"></i>
+                      <i className="fas fa-gift"></i>
                       <strong>Sessão experimental gratuita:</strong> {therapistData.freeSessionDuration || 30} minutos
                     </p>
                   )}
@@ -326,7 +326,7 @@ const TherapistDashboard = () => {
                     variant="secondary"
                     className="btn-icon"
                   >
-                    <i data-feather="edit-2"></i>
+                    <i className="fas fa-edit"></i>
                     Editar Valores e Serviços
                   </Button>
                 </div>
@@ -335,7 +335,7 @@ const TherapistDashboard = () => {
               {/* Card para gerenciar disponibilidade simples */}
               <div className="dashboard-card" onClick={handleSetAvailabilitySimple}>
                 <div className="card-icon">
-                  <i data-feather="calendar"></i>
+                  <i className="fas fa-calendar-check"></i>
                 </div>
                 <h3>Disponibilidade Simplificada</h3>
                 <p>Gerencie horários específicos de forma simples e direta</p>
@@ -344,7 +344,7 @@ const TherapistDashboard = () => {
               {/* Card para criar sessão de teste */}
               <div className="dashboard-card test-card" onClick={handleCreateTestSession}>
                 <div className="card-icon">
-                  <i data-feather="cpu"></i>
+                  <i className="fas fa-microchip"></i>
                 </div>
                 <h3>Sessão de Teste</h3>
                 <p>Criar uma sessão de teste para avaliar as funcionalidades</p>
