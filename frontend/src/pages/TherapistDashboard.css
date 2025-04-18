@@ -342,6 +342,13 @@
   font-size: 28px;
 }
 
+.card-icon i svg {
+  width: 28px !important;
+  height: 28px !important;
+  color: white !important;
+  stroke: white !important;
+}
+
 .dashboard-card h3 {
   color: var(--text-dark);
   margin: 0 0 15px 0;
@@ -502,4 +509,27 @@
   .welcome-section h2 {
     font-size: 22px;
   }
+}
+
+/* Outros ícones */
+[data-feather] {
+  stroke: currentColor;
+  width: 1em;
+  height: 1em;
+}
+
+.btn-icon [data-feather] {
+  width: 16px;
+  height: 16px;
+  margin-right: 5px;
+}
+
+.stat-card [data-feather] {
+  position: absolute;
+  bottom: -10px;
+  right: -10px;
+  width: 50px !important;
+  height: 50px !important;
+  color: rgba(74, 144, 226, 0.1) !important;
+  transform: rotate(-10deg);
 } 

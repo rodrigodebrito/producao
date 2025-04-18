@@ -114,7 +114,7 @@ const TherapistDashboard = () => {
             size="small"
             className="btn-icon"
           >
-            <i className="feather-icon feather-log-out"></i>
+            <i data-feather="log-out"></i>
             Sair
           </Button>
         </div>
@@ -123,12 +123,12 @@ const TherapistDashboard = () => {
       <main className="dashboard-content">
         {loading ? (
           <div className="loading-indicator">
-            <i className="feather-icon feather-loader"></i>
+            <i data-feather="loader"></i>
             <span>Carregando...</span>
           </div>
         ) : error ? (
           <div className="error-message">
-            <i className="feather-icon feather-alert-circle"></i>
+            <i data-feather="alert-circle"></i>
             <p>{error}</p>
           </div>
         ) : (
@@ -136,7 +136,7 @@ const TherapistDashboard = () => {
             {!isProfileComplete() && (
               <div className="alert-message">
                 <div className="alert-header">
-                  <i className="feather-icon feather-alert-triangle"></i>
+                  <i data-feather="alert-triangle"></i>
                   <strong>Seu perfil está incompleto!</strong>
                 </div>
                 <p>Complete seu perfil para aumentar suas chances de conseguir clientes.</p>
@@ -145,7 +145,7 @@ const TherapistDashboard = () => {
                   variant="warning"
                   className="btn-icon"
                 >
-                  <i className="feather-icon feather-edit-2"></i>
+                  <i data-feather="edit-2"></i>
                   Completar Perfil
                 </Button>
               </div>
@@ -165,7 +165,7 @@ const TherapistDashboard = () => {
               <section className="upcoming-appointments card">
                 <div className="card-header">
                   <h3>
-                    <i className="feather-icon feather-calendar"></i>
+                    <i data-feather="calendar"></i>
                     Próximos Agendamentos
                   </h3>
                 </div>
@@ -177,7 +177,7 @@ const TherapistDashboard = () => {
                       variant="primary"
                       className="btn-icon"
                     >
-                      <i className="feather-icon feather-list"></i>
+                      <i data-feather="list"></i>
                       Ver Agenda Completa
                     </Button>
                   </div>
@@ -187,7 +187,7 @@ const TherapistDashboard = () => {
               <section className="quick-actions card">
                 <div className="card-header">
                   <h3>
-                    <i className="feather-icon feather-zap"></i>
+                    <i data-feather="zap"></i>
                     Ações Rápidas
                   </h3>
                 </div>
@@ -198,7 +198,7 @@ const TherapistDashboard = () => {
                       variant="secondary"
                       className="btn-icon action-button"
                     >
-                      <i className="feather-icon feather-calendar"></i>
+                      <i data-feather="calendar"></i>
                       Gerenciar Agenda
                     </Button>
                     <Button 
@@ -206,7 +206,7 @@ const TherapistDashboard = () => {
                       variant="secondary"
                       className="btn-icon action-button"
                     >
-                      <i className="feather-icon feather-user"></i>
+                      <i data-feather="user"></i>
                       Atualizar Perfil
                     </Button>
                     <Button 
@@ -214,7 +214,7 @@ const TherapistDashboard = () => {
                       variant="secondary"
                       className="btn-icon action-button"
                     >
-                      <i className="feather-icon feather-clock"></i>
+                      <i data-feather="clock"></i>
                       Definir Horários Disponíveis
                     </Button>
                   </div>
@@ -224,7 +224,7 @@ const TherapistDashboard = () => {
               <section className="statistics card">
                 <div className="card-header">
                   <h3>
-                    <i className="feather-icon feather-bar-chart-2"></i>
+                    <i data-feather="bar-chart-2"></i>
                     Estatísticas
                   </h3>
                 </div>
@@ -233,17 +233,17 @@ const TherapistDashboard = () => {
                     <div className="stat-card">
                       <h4>0</h4>
                       <p>Sessões Este Mês</p>
-                      <i className="feather-icon feather-video"></i>
+                      <i data-feather="video"></i>
                     </div>
                     <div className="stat-card">
                       <h4>0</h4>
                       <p>Clientes Ativos</p>
-                      <i className="feather-icon feather-users"></i>
+                      <i data-feather="users"></i>
                     </div>
                     <div className="stat-card">
                       <h4>0%</h4>
                       <p>Taxa de Ocupação</p>
-                      <i className="feather-icon feather-percent"></i>
+                      <i data-feather="percent"></i>
                     </div>
                   </div>
                 </div>
@@ -252,13 +252,13 @@ const TherapistDashboard = () => {
 
             {/* Seção de cards de ações */}
             <h3 className="section-title">
-              <i className="feather-icon feather-grid"></i>
+              <i data-feather="grid"></i>
               Gestão de Serviços
             </h3>
             <div className="dashboard-cards">
               <div className="dashboard-card" onClick={handleUpdateProfile}>
                 <div className="card-icon">
-                  <i className="feather-icon feather-user"></i>
+                  <i data-feather="user"></i>
                 </div>
                 <h3>Perfil Profissional</h3>
                 <p>Edite seu perfil e configure seus serviços</p>
@@ -266,7 +266,7 @@ const TherapistDashboard = () => {
               
               <div className="dashboard-card" onClick={handleSetAvailability}>
                 <div className="card-icon">
-                  <i className="feather-icon feather-clock"></i>
+                  <i data-feather="clock"></i>
                 </div>
                 <h3>Minha Disponibilidade</h3>
                 <p>Configure os horários que você está disponível</p>
@@ -274,7 +274,7 @@ const TherapistDashboard = () => {
               
               <div className="dashboard-card" onClick={handleManageSchedule}>
                 <div className="card-icon">
-                  <i className="feather-icon feather-calendar"></i>
+                  <i data-feather="calendar"></i>
                 </div>
                 <h3>Agenda</h3>
                 <p>Visualize e gerencie seus agendamentos</p>
@@ -282,7 +282,7 @@ const TherapistDashboard = () => {
               
               <div className="dashboard-card" onClick={() => navigate('/directory')}>
                 <div className="card-icon">
-                  <i className="feather-icon feather-search"></i>
+                  <i data-feather="search"></i>
                 </div>
                 <h3>Diretório de Terapeutas</h3>
                 <p>Encontre outros terapeutas na plataforma</p>
@@ -290,7 +290,7 @@ const TherapistDashboard = () => {
 
               <div className="dashboard-card services-card">
                 <div className="card-header-sm">
-                  <i className="feather-icon feather-dollar-sign"></i>
+                  <i data-feather="dollar-sign"></i>
                   <h3>Serviços e Valores</h3>
                 </div>
                 <div className="dashboard-content">
@@ -316,7 +316,7 @@ const TherapistDashboard = () => {
                   
                   {therapistData?.offersFreeSession && (
                     <p className="free-session-info">
-                      <i className="feather-icon feather-gift"></i>
+                      <i data-feather="gift"></i>
                       <strong>Sessão experimental gratuita:</strong> {therapistData.freeSessionDuration || 30} minutos
                     </p>
                   )}
@@ -326,7 +326,7 @@ const TherapistDashboard = () => {
                     variant="secondary"
                     className="btn-icon"
                   >
-                    <i className="feather-icon feather-edit-2"></i>
+                    <i data-feather="edit-2"></i>
                     Editar Valores e Serviços
                   </Button>
                 </div>
@@ -335,7 +335,7 @@ const TherapistDashboard = () => {
               {/* Card para gerenciar disponibilidade simples */}
               <div className="dashboard-card" onClick={handleSetAvailabilitySimple}>
                 <div className="card-icon">
-                  <i className="feather-icon feather-calendar"></i>
+                  <i data-feather="calendar"></i>
                 </div>
                 <h3>Disponibilidade Simplificada</h3>
                 <p>Gerencie horários específicos de forma simples e direta</p>
@@ -344,7 +344,7 @@ const TherapistDashboard = () => {
               {/* Card para criar sessão de teste */}
               <div className="dashboard-card test-card" onClick={handleCreateTestSession}>
                 <div className="card-icon">
-                  <i className="feather-icon feather-cpu"></i>
+                  <i data-feather="cpu"></i>
                 </div>
                 <h3>Sessão de Teste</h3>
                 <p>Criar uma sessão de teste para avaliar as funcionalidades</p>
