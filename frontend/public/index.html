@@ -140,7 +140,7 @@
       }
     </style>
     <!-- Feather Icons -->
-    <script src="https://unpkg.com/feather-icons"></script>
+    <script src="https://cdn.jsdelivr.net/npm/feather-icons@4.29.0/dist/feather.min.js"></script>
     <style>
       /* Estilos para os ícones Feather */
       .feather-icon {
@@ -391,14 +391,68 @@
       
       // Inicializar os ícones Feather após carregamento da página
       document.addEventListener('DOMContentLoaded', function() {
-        // Inicializar ícones Feather
-        if (feather) {
-          feather.replace();
+        // Função para processamento seguro de ícones
+        function safelyReplaceIcons() {
+          if (typeof feather === 'undefined') return;
           
-          // Verificar e substituir novos ícones periodicamente (para componentes renderizados dinamicamente)
-          setInterval(function() {
-            feather.replace();
-          }, 1000);
+          try {
+            // Primeiro, processe apenas os ícones não processados
+            document.querySelectorAll('[data-feather]:not([data-feather-processed])').forEach(function(icon) {
+              try {
+                const iconName = icon.getAttribute('data-feather');
+                // Remover SVGs existentes para evitar duplicação
+                const existingSvg = icon.querySelector('svg');
+                if (existingSvg) existingSvg.remove();
+                
+                // Criar elemento feather manualmente para mais controle
+                const svg = feather.icons[iconName].toSvg();
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = svg;
+                const svgElement = tempDiv.firstChild;
+                
+                // Adicionar o ícone
+                icon.appendChild(svgElement);
+                icon.setAttribute('data-feather-processed', 'true');
+              } catch (e) {
+                console.warn('Erro ao processar ícone individual:', e);
+              }
+            });
+          } catch (err) {
+            console.warn('Erro ao processar ícones:', err);
+          }
+        }
+        
+        // Inicializar ícones Feather
+        if (typeof feather !== 'undefined') {
+          try {
+            // Substituir por nossa função customizada
+            safelyReplaceIcons();
+            
+            // Verificar e substituir novos ícones periodicamente
+            setInterval(safelyReplaceIcons, 1000);
+          } catch (e) {
+            console.error('Erro ao inicializar ícones Feather:', e);
+          }
+        } else {
+          console.warn('Biblioteca Feather não encontrada. Carregando polyfill...');
+          // Fallback - carregar Feather Icons se não estiver disponível
+          const script = document.createElement('script');
+          script.src = 'https://cdn.jsdelivr.net/npm/feather-icons@4.29.0/dist/feather.min.js';
+          script.onload = function() {
+            if (typeof feather !== 'undefined') {
+              try {
+                safelyReplaceIcons();
+                setInterval(safelyReplaceIcons, 1000);
+                console.log('Feather Icons carregado com sucesso via fallback');
+              } catch (e) {
+                console.error('Erro ao inicializar Feather via fallback:', e);
+              }
+            }
+          };
+          script.onerror = function() {
+            console.error('Falha ao carregar Feather Icons via fallback');
+          };
+          document.head.appendChild(script);
         }
       });
     </script>
