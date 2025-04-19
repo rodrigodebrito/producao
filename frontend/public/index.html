@@ -235,299 +235,68 @@
     <script type="module" src="/src/main.jsx"></script>
     <!-- Script para corrigir ícones -->
     <script src="/js/icons-fix.js"></script>
+    <!-- Script inline de emergência para adicionar ícones -->
     <script>
-      // Limpar qualquer botão de IA existente
-      function cleanupOldAIButtons() {
-        // Remover qualquer container antigo de AI
-        const oldContainers = [
-          '.ai-buttons-container',
-          '.ai-toolbar',
-          '.ai-tools-wrapper',
-          '.ai-tools-container',
-          '.ai-buttons-wrapper',
-          '.ai-tools'
-        ];
+      // Script de emergência para adicionar ícones diretamente nos elementos
+      window.addEventListener('load', function() {
+        console.log('Script de emergência para ícones - iniciado');
         
-        oldContainers.forEach(selector => {
-          const elements = document.querySelectorAll(selector);
-          elements.forEach(el => {
-            if (el && el.className !== 'ai-tools-container-direct') {
-              el.remove();
-            }
-          });
-        });
-        
-        // Procurar e remover botões específicos pelo texto ou classe
-        document.querySelectorAll('button').forEach(button => {
-          const text = button.textContent || '';
-          if (
-            (text.includes('Analisar') || 
-             text.includes('Sugestões') || 
-             text.includes('Relatório')) && 
-            !button.closest('.ai-tools-container-direct')
-          ) {
-            const parent = button.parentElement;
-            if (parent && parent.children.length <= 3) {
-              parent.remove(); // Remover o container inteiro se tiver poucos filhos
-            } else {
-              button.remove(); // Remover só o botão
-            }
-          }
-        });
-      }
-
-      // Garantir que os botões de IA sempre sejam visíveis
-      document.addEventListener('DOMContentLoaded', function() {
-        // Limpar primeiro
-        cleanupOldAIButtons();
-        
-        // Verificar periodicamente e limpar botões antigos
-        setInterval(cleanupOldAIButtons, 5000);
-        
-        // Iniciar script de emergência após 5 segundos 
-        // para garantir que a página carregou completamente
-        setTimeout(createEmergencyButtons, 5000);
-      });
-      
-      // Função para criar botões de emergência
-      function createEmergencyButtons() {
-        // Verificar se já existem botões de IA funcionando
-        const existingButtons = document.querySelectorAll('.ai-simple-button, [id*="ai-"], [class*="ai-tool"]');
-        let hasVisibleButtons = false;
-        
-        existingButtons.forEach(button => {
-          if (isElementVisible(button)) {
-            hasVisibleButtons = true;
-          }
-        });
-        
-        // Se já temos botões visíveis, não precisamos criar novos
-        if (hasVisibleButtons) {
-          console.log('Botões de IA já estão visíveis, não criando botões de emergência.');
-          return;
+        // Tentar novamente múltiplas vezes
+        try {
+          setTimeout(addIcons, 1000);
+          setTimeout(addIcons, 3000);
+          setTimeout(addIcons, 5000);
+          setTimeout(addIcons, 10000);
+        } catch (e) {
+          console.error('Erro no script de emergência:', e);
         }
         
-        console.log('Nenhum botão de IA visível encontrado. Criando botões de emergência...');
-        
-        // Remover qualquer botão de emergência existente
-        const existingEmergency = document.getElementById('emergency-ai-buttons');
-        if (existingEmergency) {
-          existingEmergency.remove();
-        }
-        
-        // Obter contexto de IA se disponível
-        const aiContext = window.__AI_CONTEXT;
-        
-        // Obter ID da sessão
-        function getSessionId() {
-          try {
-            const path = window.location.pathname;
-            // Verificar várias possibilidades de formato de URL
-            const sessionMatch = path.match(/\/sessions\/([a-zA-Z0-9-]+)/);
-            if (sessionMatch && sessionMatch[1]) return sessionMatch[1];
-            
-            const roomMatch = path.match(/\/room\/([a-zA-Z0-9-]+)/);
-            if (roomMatch && roomMatch[1]) {
-              const parts = roomMatch[1].split('-');
-              return parts.length > 1 ? parts[1] : roomMatch[1];
-            }
-          } catch (err) {
-            console.error('Erro ao extrair ID de sessão:', err);
+        function addIcons() {
+          // Verificar se os ícones já estão visíveis
+          const visibleIcon = document.querySelector('.card-icon i');
+          if (visibleIcon && (visibleIcon.offsetWidth > 0 || visibleIcon.offsetHeight > 0)) {
+            console.log('Ícones parecem estar funcionando, script de emergência não necessário');
+            return;
           }
-          return 'unknown-session';
-        }
-        
-        // Handlers para os botões
-        function handleAnalyze() {
-          if (aiContext && aiContext.analyze) {
-            console.log('Chamando função de análise com sessão:', getSessionId());
-            aiContext.analyze(getSessionId());
-          } else {
-            alert('Função de análise não está disponível no momento');
-          }
-        }
-        
-        function handleSuggest() {
-          if (aiContext && aiContext.suggest) {
-            console.log('Chamando função de sugestões com sessão:', getSessionId());
-            aiContext.suggest(getSessionId());
-          } else {
-            alert('Função de sugestões não está disponível no momento');
-          }
-        }
-        
-        function handleReport() {
-          if (aiContext && aiContext.report) {
-            console.log('Chamando função de relatório com sessão:', getSessionId());
-            aiContext.report(getSessionId());
-          } else {
-            alert('Função de relatório não está disponível no momento');
-          }
-        }
-        
-        // Criar container
-        const container = document.createElement('div');
-        container.id = 'emergency-ai-buttons';
-        
-        // Criar toolbar
-        const toolbar = document.createElement('div');
-        
-        // Função para criar botão
-        function createButton(emoji, text, clickHandler) {
-          const button = document.createElement('button');
           
-          const emojiSpan = document.createElement('span');
-          emojiSpan.style.fontSize = '18px';
-          emojiSpan.textContent = emoji;
+          console.log('Executando script de emergência para ícones');
           
-          const textSpan = document.createElement('span');
-          textSpan.textContent = text;
-          
-          button.appendChild(emojiSpan);
-          button.appendChild(textSpan);
-          button.addEventListener('click', clickHandler);
-          
-          return button;
-        }
-        
-        // Criar botões
-        const analyzeBtn = createButton('🧠', 'Analisar', handleAnalyze);
-        const suggestBtn = createButton('💡', 'Sugestões', handleSuggest);
-        const reportBtn = createButton('📝', 'Relatório', handleReport);
-        
-        // Montar UI
-        toolbar.appendChild(analyzeBtn);
-        toolbar.appendChild(suggestBtn);
-        toolbar.appendChild(reportBtn);
-        container.appendChild(toolbar);
-        
-        // Adicionar ao body
-        document.body.appendChild(container);
-        console.log('Botões de emergência criados com sucesso');
-      }
-      
-      // Helper para verificar visibilidade
-      function isElementVisible(element) {
-        if (!element) return false;
-        
-        const style = window.getComputedStyle(element);
-        if (style.display === 'none') return false;
-        if (style.visibility !== 'visible') return false;
-        if (style.opacity === '0') return false;
-        
-        const rect = element.getBoundingClientRect();
-        return rect.width > 0 && rect.height > 0;
-      }
-
-      // Verificador de botões de IA
-      setInterval(() => {
-        if (window.location.pathname.includes('/session/') || window.location.pathname.includes('/room/')) {
-          const buttonsExist = document.getElementById('direct-ai-buttons');
-          if (!buttonsExist) {
-            console.log('Botões IA não encontrados, forçando reconstrução');
-            
-            // Remover qualquer container existente
-            document.querySelectorAll('[id*="ai-"], [class*="ai-buttons"], [class*="ai-tools"]').forEach(el => {
-              if (el.id !== 'direct-ai-buttons') {
-                el.remove();
-              }
-            });
-            
-            // Limpar botões específicos
-            document.querySelectorAll('button').forEach(btn => {
-              const text = btn.textContent || '';
-              if ((text.includes('Analisar') || text.includes('Sugestões') || text.includes('Relatório')) && 
-                  !btn.closest('#direct-ai-buttons')) {
-                const parent = btn.parentElement;
-                if (parent && parent.children.length <= 3) {
-                  parent.remove();
-                } else {
-                  btn.remove();
-                }
-              }
-            });
-            
-            // Isso forçará o useEffect no FallbackMeeting a criar novos botões
-            // na próxima verificação
-          }
-        }
-      }, 5000);
-      
-      // Converter elementos data-feather para Font Awesome
-      document.addEventListener('DOMContentLoaded', function() {
-        console.log('Inicializando substituição de ícones Font Awesome');
-        
-        // Verificar se Font Awesome está carregado corretamente
-        var styleSheets = document.styleSheets;
-        var fontAwesomeLoaded = false;
-        
-        for (var i = 0; i < styleSheets.length; i++) {
-          try {
-            var rules = styleSheets[i].cssRules;
-            for (var j = 0; j < rules.length; j++) {
-              if (rules[j].selectorText && rules[j].selectorText.includes('.fa-') || 
-                  rules[j].selectorText && rules[j].selectorText.includes('.fas')) {
-                fontAwesomeLoaded = true;
-                break;
-              }
-            }
-            if (fontAwesomeLoaded) break;
-          } catch (e) {
-            // Erro ao tentar acessar cssRules de uma folha de estilo de outro domínio
-            console.warn('Não foi possível verificar folha de estilo:', e);
-          }
-        }
-        
-        console.log('Font Awesome carregado:', fontAwesomeLoaded);
-        
-        // Se Font Awesome não estiver carregado, carregar uma versão de fallback
-        if (!fontAwesomeLoaded) {
-          console.warn('Font Awesome não está carregado, tentando fallback');
-          var fallbackLink = document.createElement('link');
-          fallbackLink.rel = 'stylesheet';
-          fallbackLink.href = 'https://use.fontawesome.com/releases/v5.15.4/css/all.css';
-          document.head.appendChild(fallbackLink);
-          
-          fallbackLink.onload = function() {
-            console.log('Font Awesome fallback carregado com sucesso');
+          // Fazer injeção direta de SVGs em vez de depender de Font Awesome
+          const iconSVGs = {
+            'user': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" width="28" height="28" fill="white"><path d="M224 256A128 128 0 1 0 224 0a128 128 0 1 0 0 256zm-45.7 48C79.8 304 0 383.8 0 482.3C0 498.7 13.3 512 29.7 512H418.3c16.4 0 29.7-13.3 29.7-29.7C448 383.8 368.2 304 269.7 304H178.3z"/></svg>',
+            'clock': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="28" height="28" fill="white"><path d="M256 0a256 256 0 1 1 0 512A256 256 0 1 1 256 0zM232 120V256c0 8 4 15.5 10.7 20l96 64c11 7.4 25.9 4.4 33.3-6.7s4.4-25.9-6.7-33.3L280 243.2V120c0-13.3-10.7-24-24-24s-24 10.7-24 24z"/></svg>',
+            'calendar': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" width="28" height="28" fill="white"><path d="M152 24c0-13.3-10.7-24-24-24s-24 10.7-24 24V64H64C28.7 64 0 92.7 0 128v320c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V128c0-35.3-28.7-64-64-64H344V24c0-13.3-10.7-24-24-24s-24 10.7-24 24V64H152V24zM48 448V192H400V448c0 8.8-7.2 16-16 16H64c-8.8 0-16-7.2-16-16z"/></svg>',
+            'search': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="28" height="28" fill="white"><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352a144 144 0 1 0 0-288 144 144 0 1 0 0 288z"/></svg>',
+            'dollar': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512" width="28" height="28" fill="white"><path d="M160 0c17.7 0 32 14.3 32 32V67.7c1.6 .2 3.1 .4 4.7 .7c.4 .1 .7 .1 1.1 .2l48 8.8c17.4 3.2 28.9 19.9 25.7 37.2s-19.9 28.9-37.2 25.7l-47.5-8.7c-31.3-4.6-58.9-1.5-78.3 6.2s-27.2 18.3-29.6 28.9c-5.5 24.3 11.7 58.2 72.5 81.9c5.6 2.2 11.1 4.2 16.6 6.1c40.2 13.8 82.1 28.2 104.6 56.3c14.1 17.5 20.4 38.5 18.4 59.9c-2.7 29.3-23.6 58.4-58.8 74c-8.7 3.9-18 7-27.8 9.1V480c0 17.7-14.3 32-32 32s-32-14.3-32-32V445.9c-.6-.1-1.1-.2-1.7-.3c-13.2-2.2-26.7-6.1-39.9-11.5c-37.4-15.3-63.2-41.5-69.3-70.5c-5.2-24.5 5.3-51.7 32.5-71.6c14.9-10.9 34.1-8.6 46.4 1.4s13.2 27.8 .1 41.9c-6.2 6.7-6.7 10.3-6.5 10.4c2 7.4 12.3 20.3 31.6 27.9c8.7 3.5 18.6 6 29.3 7.4c38.2 5.1 58.8-8.9 64.4-25.8c3.4-10.1 1.9-20.5-5.5-31c-10.5-14.4-31.7-23-64.8-34.5c-5.6-1.9-11.3-4-16.8-6.2c-91.6-35.6-130.6-99.9-111.9-183c7.3-32.6 25.5-60.2 51.7-80c19-14.4 41.6-24.7 66.1-30.3V32c0-17.7 14.3-32 32-32z"/></svg>',
+            'calendar-check': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" width="28" height="28" fill="white"><path d="M128 0c17.7 0 32 14.3 32 32V64H288V32c0-17.7 14.3-32 32-32s32 14.3 32 32V64h48c26.5 0 48 21.5 48 48v48H0V112C0 85.5 21.5 64 48 64H96V32c0-17.7 14.3-32 32-32zM0 192H448V464c0 26.5-21.5 48-48 48H48c-26.5 0-48-21.5-48-48V192zm328.8 83.7L176.5 402.6l-55.4-55.5c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3l77.8 77.8c12 12 31.3 12.5 43.9 1.1l175.9-151c13.5-11.5 15.1-31.9 3.5-45.4s-31.9-15.1-45.4-3.5z"/></svg>',
+            'microchip': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="28" height="28" fill="white"><path d="M176 24c0-13.3-10.7-24-24-24s-24 10.7-24 24V64c-35.3 0-64 28.7-64 64H24c-13.3 0-24 10.7-24 24s10.7 24 24 24H64v56H24c-13.3 0-24 10.7-24 24s10.7 24 24 24H64v56H24c-13.3 0-24 10.7-24 24s10.7 24 24 24H64c0 35.3 28.7 64 64 64v40c0 13.3 10.7 24 24 24s24-10.7 24-24V448h56v40c0 13.3 10.7 24 24 24s24-10.7 24-24V448h56v40c0 13.3 10.7 24 24 24s24-10.7 24-24V448c35.3 0 64-28.7 64-64h40c13.3 0 24-10.7 24-24s-10.7-24-24-24H448V280h40c13.3 0 24-10.7 24-24s-10.7-24-24-24H448V176h40c13.3 0 24-10.7 24-24s-10.7-24-24-24H448c0-35.3-28.7-64-64-64V24c0-13.3-10.7-24-24-24s-24 10.7-24 24V64H280V24c0-13.3-10.7-24-24-24s-24 10.7-24 24V64H176V24zM160 128H352c17.7 0 32 14.3 32 32V352c0 17.7-14.3 32-32 32H160c-17.7 0-32-14.3-32-32V160c0-17.7 14.3-32 32-32zm192 32H160V352H352V160z"/></svg>'
           };
-        }
-
-        // Verificar se existem ícones que precisam ser corrigidos
-        setTimeout(function checkIcons() {
-          try {
-            // Verificar se os ícones estão visíveis
-            var testIcon = document.querySelector('.card-icon i');
-            if (testIcon) {
-              var hasVisibleContent = (
-                testIcon.offsetWidth > 0 || 
-                testIcon.offsetHeight > 0 || 
-                window.getComputedStyle(testIcon).getPropertyValue('font-family').toLowerCase().includes('awesome')
-              );
-              
-              console.log('Verificação de ícones:', {
-                existe: !!testIcon, 
-                visível: hasVisibleContent, 
-                familiaFonte: window.getComputedStyle(testIcon).getPropertyValue('font-family')
-              });
-              
-              // Se os ícones não estiverem visíveis, tentar corrigir
-              if (!hasVisibleContent) {
-                document.querySelectorAll('.card-icon i').forEach(function(icon) {
-                  if (!icon.classList.contains('fas')) {
-                    icon.className = 'fas fa-star'; // Ícone genérico se não tiver classe
-                  }
-                });
-                console.log('Aplicada correção para ícones');
-              }
-            }
-          } catch (e) {
-            console.warn('Erro ao verificar ícones:', e);
-          }
           
-          // Verificar novamente em 2 segundos
-          setTimeout(checkIcons, 2000);
-        }, 1000);
+          // Adicionar ícones diretos aos cards
+          document.querySelectorAll('.dashboard-card').forEach(function(card) {
+            const title = card.querySelector('h3')?.textContent || '';
+            const iconContainer = card.querySelector('.card-icon');
+            
+            if (!iconContainer) return;
+            
+            let iconType = 'user'; // Default
+            
+            if (title.includes('Perfil')) iconType = 'user';
+            else if (title.includes('Disponibilidade') && title.includes('Simplificada')) iconType = 'calendar-check';
+            else if (title.includes('Disponibilidade')) iconType = 'clock';
+            else if (title.includes('Agenda')) iconType = 'calendar';
+            else if (title.includes('Diretório')) iconType = 'search';
+            else if (title.includes('Serviços')) iconType = 'dollar';
+            else if (title.includes('Teste')) iconType = 'microchip';
+            
+            // Limpar container
+            iconContainer.innerHTML = '';
+            
+            // Adicionar SVG diretamente
+            iconContainer.innerHTML = iconSVGs[iconType] || iconSVGs['user'];
+            console.log('Emergência: Ícone SVG adicionado para', title);
+          });
+        }
       });
     </script>
   </body>
