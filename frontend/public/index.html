@@ -5,7 +5,9 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>TerapiaConect</title>
-    <!-- Font Awesome -->
+    <!-- Font Awesome - Garantir a versão correta e imediata -->
+    <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css" crossorigin="anonymous">
+    <!-- Fallback para Font Awesome 6 se necessário -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
     <style>
       /* Estilos globais para os botões de IA garantindo que sempre fiquem acima do iframe */
@@ -231,6 +233,8 @@
       <!-- Container para os botões de IA que será controlado via JavaScript -->
     </div>
     <script type="module" src="/src/main.jsx"></script>
+    <!-- Script para corrigir ícones -->
+    <script src="/js/icons-fix.js"></script>
     <script>
       // Limpar qualquer botão de IA existente
       function cleanupOldAIButtons() {
@@ -451,9 +455,79 @@
       
       // Converter elementos data-feather para Font Awesome
       document.addEventListener('DOMContentLoaded', function() {
-        // Solução simplificada - vamos simplesmente aplicar os estilos CSS
-        // que já foram definidos acima para substituir os ícones
         console.log('Inicializando substituição de ícones Font Awesome');
+        
+        // Verificar se Font Awesome está carregado corretamente
+        var styleSheets = document.styleSheets;
+        var fontAwesomeLoaded = false;
+        
+        for (var i = 0; i < styleSheets.length; i++) {
+          try {
+            var rules = styleSheets[i].cssRules;
+            for (var j = 0; j < rules.length; j++) {
+              if (rules[j].selectorText && rules[j].selectorText.includes('.fa-') || 
+                  rules[j].selectorText && rules[j].selectorText.includes('.fas')) {
+                fontAwesomeLoaded = true;
+                break;
+              }
+            }
+            if (fontAwesomeLoaded) break;
+          } catch (e) {
+            // Erro ao tentar acessar cssRules de uma folha de estilo de outro domínio
+            console.warn('Não foi possível verificar folha de estilo:', e);
+          }
+        }
+        
+        console.log('Font Awesome carregado:', fontAwesomeLoaded);
+        
+        // Se Font Awesome não estiver carregado, carregar uma versão de fallback
+        if (!fontAwesomeLoaded) {
+          console.warn('Font Awesome não está carregado, tentando fallback');
+          var fallbackLink = document.createElement('link');
+          fallbackLink.rel = 'stylesheet';
+          fallbackLink.href = 'https://use.fontawesome.com/releases/v5.15.4/css/all.css';
+          document.head.appendChild(fallbackLink);
+          
+          fallbackLink.onload = function() {
+            console.log('Font Awesome fallback carregado com sucesso');
+          };
+        }
+
+        // Verificar se existem ícones que precisam ser corrigidos
+        setTimeout(function checkIcons() {
+          try {
+            // Verificar se os ícones estão visíveis
+            var testIcon = document.querySelector('.card-icon i');
+            if (testIcon) {
+              var hasVisibleContent = (
+                testIcon.offsetWidth > 0 || 
+                testIcon.offsetHeight > 0 || 
+                window.getComputedStyle(testIcon).getPropertyValue('font-family').toLowerCase().includes('awesome')
+              );
+              
+              console.log('Verificação de ícones:', {
+                existe: !!testIcon, 
+                visível: hasVisibleContent, 
+                familiaFonte: window.getComputedStyle(testIcon).getPropertyValue('font-family')
+              });
+              
+              // Se os ícones não estiverem visíveis, tentar corrigir
+              if (!hasVisibleContent) {
+                document.querySelectorAll('.card-icon i').forEach(function(icon) {
+                  if (!icon.classList.contains('fas')) {
+                    icon.className = 'fas fa-star'; // Ícone genérico se não tiver classe
+                  }
+                });
+                console.log('Aplicada correção para ícones');
+              }
+            }
+          } catch (e) {
+            console.warn('Erro ao verificar ícones:', e);
+          }
+          
+          // Verificar novamente em 2 segundos
+          setTimeout(checkIcons, 2000);
+        }, 1000);
       });
     </script>
   </body>
