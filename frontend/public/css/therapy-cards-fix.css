@@ -1,0 +1,143 @@
+/**
+ * Estilos para corrigir cards de ferramentas terapêuticas
+ * - Resolve problemas de fundos pretos
+ * - Corrige textos saindo para fora
+ */
+
+/* Estilos gerais para todos os cards */
+.tool-item,
+.niche-item,
+[class*="tool-item"],
+[class*="niche-item"],
+.tools-grid > div {
+  background-color: #ffffff !important;
+  color: #333333 !important;
+  border: 1px solid #e0e0e0 !important;
+  border-radius: 8px !important;
+  padding: 12px !important;
+  transition: all 0.2s ease !important;
+  position: relative !important;
+  overflow: visible !important;
+  min-height: unset !important;
+  height: auto !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
+}
+
+/* Hover state */
+.tool-item:hover,
+.niche-item:hover,
+[class*="tool-item"]:hover,
+[class*="niche-item"]:hover,
+.tools-grid > div:hover {
+  border-color: #4299e1 !important;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1) !important;
+}
+
+/* Selected state */
+.tool-item.selected,
+.niche-item.selected,
+[class*="tool-item"].selected,
+[class*="niche-item"].selected,
+.tools-grid > div.selected {
+  background-color: #e8f4fd !important;
+  border-color: #4299e1 !important;
+}
+
+/* Nome da ferramenta */
+.tool-name,
+[class*="tool-name"],
+.tool-header span,
+.tool-header label {
+  color: #333333 !important;
+  font-weight: 600 !important;
+  text-shadow: none !important;
+  white-space: normal !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  font-size: 0.9rem !important;
+  line-height: 1.3 !important;
+  max-width: unset !important;
+  width: auto !important;
+}
+
+/* Selected state para nomes */
+.tool-item.selected .tool-name,
+.niche-item.selected .tool-name,
+[class*="tool-item"].selected .tool-name,
+[class*="niche-item"].selected .tool-name,
+.tools-grid > div.selected .tool-name {
+  color: #2c5282 !important;
+}
+
+/* Garantir que checkboxes sejam visíveis */
+.tool-item input[type="checkbox"],
+.niche-item input[type="checkbox"],
+[class*="tool-item"] input[type="checkbox"],
+[class*="niche-item"] input[type="checkbox"],
+.tools-grid > div input[type="checkbox"] {
+  visibility: visible !important;
+  opacity: 1 !important;
+  position: static !important;
+  width: 20px !important;
+  height: 20px !important;
+  margin-left: 8px !important;
+  cursor: pointer !important;
+}
+
+/* Layout do cabeçalho do card */
+.tool-header,
+[class*="tool-header"] {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  margin-bottom: 0.75rem !important;
+  flex-wrap: nowrap !important;
+}
+
+/* Correção específica para o card de Constelação Familiar */
+.tool-item:has(span:contains("Constelação")),
+.niche-item:has(span:contains("Constelação")),
+[class*="tool-item"]:has(span:contains("Constelação")),
+[class*="niche-item"]:has(span:contains("Constelação")),
+div:has(> span:contains("Constelação Familiar")) {
+  background-color: #ffffff !important;
+  color: #333333 !important;
+  border: 1px solid #4299e1 !important;
+}
+
+/* Quando selecionado */
+.tool-item:has(span:contains("Constelação")).selected,
+.niche-item:has(span:contains("Constelação")).selected,
+[class*="tool-item"]:has(span:contains("Constelação")).selected,
+[class*="niche-item"]:has(span:contains("Constelação")).selected,
+div:has(> span:contains("Constelação Familiar")).selected {
+  background-color: #e8f4fd !important;
+}
+
+/* Layout e espaçamento melhorados */
+.tools-grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)) !important;
+  gap: 16px !important;
+  margin-top: 20px !important;
+}
+
+@media (max-width: 768px) {
+  .tools-grid {
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)) !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .tools-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* Ajuste para rótulos de duração e valor */
+.config-row {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  gap: 12px !important;
+  margin-top: 8px !important;
+} 
