@@ -1,0 +1,12 @@
+Snapshot do repositório - Versão dd8a5eb
+
+Este arquivo marca o retorno ao snapshot do commit dd8a5eb:
+"Substituído ícones Font Awesome por SVGs nativos para resolver problemas de exibição"
+
+Data de criação: 2025-04-20 18:34:58
+Timestamp: 1744967698
+
+Notas:
+- Versão estável do repositório
+- Commit de referência: dd8a5eb
+- Funcionalidades de perfil em funcionamento correto 
