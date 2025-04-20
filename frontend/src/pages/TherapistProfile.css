@@ -252,6 +252,7 @@ input[type="number"]::-webkit-inner-spin-button {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
+  min-width: 0;
 }
 
 .config-group label {
@@ -277,7 +278,7 @@ textarea {
 
 .tools-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 1rem;
   margin-top: 1rem;
 }
@@ -289,6 +290,8 @@ textarea {
   transition: all 0.2s ease;
   background: white;
   width: 100%;
+  overflow: hidden;
+  position: relative;
 }
 
 .tool-item:hover {
@@ -306,6 +309,9 @@ textarea {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 1rem;
+  background-color: #f5f7fa;
+  padding: 8px;
+  border-radius: 4px;
 }
 
 .tool-name {
@@ -315,6 +321,7 @@ textarea {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: #333;
 }
 
 .custom-tool-input {
@@ -392,6 +399,7 @@ textarea {
   padding-top: 0.75rem;
   border-top: 1px solid #e0e0e0;
   width: 100%;
+  overflow: hidden;
 }
 
 .form-actions {
@@ -587,6 +595,8 @@ textarea {
   height: 36px;
   padding: 0 4px;
   width: 100%;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .custom-duration-input input[type="number"] {
@@ -656,6 +666,8 @@ textarea {
   height: 36px;
   padding: 0 4px;
   width: 100%;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .custom-currency-input input[type="number"] {
@@ -697,6 +709,8 @@ textarea {
   height: 36px;
   padding: 0 4px;
   width: 100%;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .custom-duration-input {
@@ -735,49 +749,14 @@ textarea {
     grid-template-columns: 1fr;
     gap: 1rem;
   }
-}
 
-/* Vamos remover os estilos antigos dos componentes de duração e valor */
-/* Remover estilos antigos que causam conflitos */
-.duration-input, .currency-input {
-  display: none !important;
-}
+  .config-row {
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+  }
 
-/* Ajuste específico para a grid de nichos */
-.form-section .tools-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 0.75rem;
-  margin-top: 1rem;
-}
-
-/* Ajuste específico para os itens de nicho */
-.form-section .tool-item.niche-item {
-  border: 1px solid #e0e0e0;
-  border-radius: 6px;
-  padding: 0.75rem 1rem;
-  min-height: auto;
-  height: auto;
-}
-
-.form-section .tool-item.niche-item .tool-header {
-  margin-bottom: 0;
-}
-
-/* Estilo mais compacto para nichos personalizados */
-.custom-tools-section .tool-item {
-  padding: 0.75rem;
-}
-
-.custom-tools-section .custom-tool-input {
-  width: 100%;
-  font-size: 0.85rem;
-}
-
-/* Responsividade para nichos */
-@media (max-width: 768px) {
-  .form-section .tools-grid {
-    grid-template-columns: repeat(2, 1fr);
+  .custom-currency-input, .custom-duration-input {
+    max-width: 100%;
   }
 }
 
@@ -931,5 +910,147 @@ textarea {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+/* Vamos remover os estilos antigos dos componentes de duração e valor */
+/* Remover estilos antigos que causam conflitos */
+.duration-input, .currency-input {
+  display: none !important;
+}
+
+/* Ajuste específico para a grid de nichos */
+.form-section .tools-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+/* Ajuste específico para os itens de nicho */
+.form-section .tool-item.niche-item {
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  min-height: auto;
+  height: auto;
+}
+
+.form-section .tool-item.niche-item .tool-header {
+  margin-bottom: 0;
+  background-color: #f5f7fa; /* Adicionando fundo claro nos headers dos nichos também */
+}
+
+/* Estilo mais compacto para nichos personalizados */
+.custom-tools-section .tool-item {
+  padding: 0.75rem;
+}
+
+.custom-tools-section .custom-tool-input {
+  width: 100%;
+  font-size: 0.85rem;
+}
+
+/* Responsividade para nichos */
+@media (max-width: 768px) {
+  .form-section .tools-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .config-row {
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+  }
+  
+  .custom-currency-input, .custom-duration-input {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .form-section .tools-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Adicionando estilos para melhorar a visualização das ferramentas terapêuticas */
+.tool-item .tool-header {
+  background-color: #f5f7fa; /* Fundo claro para substituir o preto */
+  color: #333; /* Cor escura para o texto */
+  border-radius: 4px;
+  padding: 8px;
+}
+
+/* Ajuste adicional para evitar que elementos ultrapassem os limites */
+.tools-section .tool-item {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.custom-duration-input, .custom-currency-input {
+  max-width: 100%;
+  overflow: hidden;
+}
+
+/* Ajuste específico para os fundos das ferramentas terapêuticas */
+.tools-section .tool-item {
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+/* Ajuste para o cabeçalho da ferramenta */
+.tools-section .tool-header,
+.custom-tools-section .tool-header {
+  background-color: #f5f7fa !important; /* Utilizando !important para substituir qualquer estilo inline */
+  color: #333 !important;
+  padding: 8px;
+  border-radius: 4px;
+  margin-bottom: 0.5rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* Ajuste para o nome da ferramenta */
+.tools-section .tool-name,
+.custom-tools-section .tool-name {
+  color: #333 !important;
+  font-weight: 500;
+}
+
+/* Ajuste para os componentes de input personalizados */
+.custom-duration-input,
+.custom-currency-input {
+  max-width: 100% !important;
+  overflow: hidden !important;
+  box-sizing: border-box;
+}
+
+/* Garantir que os inputs não ultrapassem os limites dos contêineres */
+.config-group input,
+.config-group .custom-duration-input,
+.config-group .custom-currency-input {
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box;
+}
+
+/* Ajuste responsivo para os inputs nos contêineres menores */
+@media (max-width: 768px) {
+  .config-row {
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+  }
+  
+  .config-group {
+    width: 100%;
+  }
+  
+  .tool-config {
+    width: 100%;
+    overflow: hidden;
   }
 } 

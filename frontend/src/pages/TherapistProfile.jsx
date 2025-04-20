@@ -820,6 +820,65 @@ const TherapistProfile = () => {
     }));
   };
 
+  // Alterando a renderização das ferramentas terapêuticas para melhorar a aparência visual
+  const renderTherapyTools = () => {
+    return (
+      <div className="tools-section">
+        <h3>Ferramentas Terapêuticas</h3>
+        <p className="section-description">
+          Selecione as ferramentas que você utiliza em suas sessões. 
+          Por padrão, cada ferramenta terá o mesmo valor e duração da sessão base.
+        </p>
+
+        <div className="tools-grid">
+          {THERAPY_TOOLS.map(tool => (
+            <div 
+              key={tool.id}
+              className={`tool-item ${selectedTools.some(t => t.toolId === tool.id) ? 'selected' : ''}`}
+            >
+              <div className="tool-header">
+                <span className="tool-name">{tool.label}</span>
+                <input
+                  type="checkbox"
+                  checked={selectedTools.some(t => t.toolId === tool.id)}
+                  onChange={() => toggleTool(tool.id)}
+                />
+              </div>
+              
+              {selectedTools.some(t => t.toolId === tool.id) && (
+                <div className="tool-config">
+                  <div className="config-row">
+                    <div className="config-group">
+                      <label>Duração</label>
+                      <DurationInput
+                        name={`toolDuration-${tool.id}`}
+                        value={selectedTools.find(t => t.toolId === tool.id)?.duration || formData.sessionDuration}
+                        onChange={(e) => handleToolDurationChange(tool.id, e.target.value)}
+                        min={30}
+                        step={30}
+                      />
+                    </div>
+                    
+                    <div className="config-group">
+                      <label>Valor</label>
+                      <CurrencyInput
+                        name={`toolPrice-${tool.id}`}
+                        value={selectedTools.find(t => t.toolId === tool.id)?.price || formData.baseSessionPrice}
+                        onChange={(e) => handleToolPriceChange(tool.id, e.target.value)}
+                        min={0}
+                        step={0.01}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="therapist-profile">
       <div className="page-header">
@@ -1181,133 +1240,81 @@ const TherapistProfile = () => {
           </div>
           
           {/* Ferramentas Terapêuticas */}
-          <div className="tools-section">
-            <h3>Ferramentas Terapêuticas</h3>
+          {renderTherapyTools()}
+          
+          <div className="custom-tools-section">
+            <h3>Ferramentas Personalizadas</h3>
             <p className="section-description">
-              Selecione as ferramentas que você utiliza em suas sessões. 
-              Por padrão, cada ferramenta terá o mesmo valor e duração da sessão base.
+              Adicione até 3 ferramentas personalizadas que não estejam na lista acima.
             </p>
 
             <div className="tools-grid">
-              {THERAPY_TOOLS.map(tool => (
-                <div 
-                  key={tool.id}
-                  className={`tool-item ${selectedTools.some(t => t.toolId === tool.id) ? 'selected' : ''}`}
-                >
+              {customTools.map((tool, index) => (
+                <div key={index} className="tool-item">
                   <div className="tool-header">
-                    <span className="tool-name">{tool.label}</span>
                     <input
-                      type="checkbox"
-                      checked={selectedTools.some(t => t.toolId === tool.id)}
-                      onChange={() => toggleTool(tool.id)}
+                      type="text"
+                      value={tool.name}
+                      onChange={(e) => handleCustomToolChange(index, 'name', e.target.value)}
+                      placeholder="Nome da ferramenta..."
+                      className="custom-tool-input"
                     />
+                    <button
+                      type="button"
+                      className="remove-tool-button"
+                      onClick={() => removeCustomTool(index)}
+                    >
+                      ×
+                    </button>
                   </div>
-                  
-                  {selectedTools.some(t => t.toolId === tool.id) && (
-                    <div className="tool-config">
-                      <div className="config-row">
-                        <div className="config-group">
-                          <label>Duração</label>
-                          <DurationInput
-                            name={`toolDuration-${tool.id}`}
-                            value={selectedTools.find(t => t.toolId === tool.id)?.duration || formData.sessionDuration}
-                            onChange={(e) => handleToolDurationChange(tool.id, e.target.value)}
-                            min={30}
-                            step={30}
-                          />
-                        </div>
-                        
-                        <div className="config-group">
-                          <label>Valor</label>
-                          <CurrencyInput
-                            name={`toolPrice-${tool.id}`}
-                            value={selectedTools.find(t => t.toolId === tool.id)?.price || formData.baseSessionPrice}
-                            onChange={(e) => handleToolPriceChange(tool.id, e.target.value)}
-                            min={0}
-                            step={0.01}
-                          />
-                        </div>
+                  <div className="tool-config">
+                    <div className="config-row">
+                      <div className="config-group">
+                        <label>Duração</label>
+                        <DurationInput
+                          name={`customToolDuration-${index}`}
+                          value={tool.duration}
+                          onChange={(e) => handleCustomToolChange(index, 'duration', e.target.value)}
+                          min={30}
+                          step={30}
+                        />
+                      </div>
+                      <div className="config-group">
+                        <label>Valor</label>
+                        <CurrencyInput
+                          name={`customToolPrice-${index}`}
+                          value={tool.price}
+                          onChange={(e) => handleCustomToolChange(index, 'price', e.target.value)}
+                          min={0}
+                          step={0.01}
+                        />
                       </div>
                     </div>
-                  )}
+                  </div>
                 </div>
               ))}
-            </div>
-            
-            <div className="custom-tools-section">
-              <h3>Ferramentas Personalizadas</h3>
-              <p className="section-description">
-                Adicione até 3 ferramentas personalizadas que não estejam na lista acima.
-              </p>
 
-              <div className="tools-grid">
-                {customTools.map((tool, index) => (
-                  <div key={index} className="tool-item">
-                    <div className="tool-header">
-                      <input
-                        type="text"
-                        value={tool.name}
-                        onChange={(e) => handleCustomToolChange(index, 'name', e.target.value)}
-                        placeholder="Nome da ferramenta..."
-                        className="custom-tool-input"
-                      />
-                      <button
-                        type="button"
-                        className="remove-tool-button"
-                        onClick={() => removeCustomTool(index)}
-                      >
-                        ×
-                      </button>
-                    </div>
-                    <div className="tool-config">
-                      <div className="config-row">
-                        <div className="config-group">
-                          <label>Duração</label>
-                          <DurationInput
-                            name={`customToolDuration-${index}`}
-                            value={tool.duration}
-                            onChange={(e) => handleCustomToolChange(index, 'duration', e.target.value)}
-                            min={30}
-                            step={30}
-                          />
-                        </div>
-                        <div className="config-group">
-                          <label>Valor</label>
-                          <CurrencyInput
-                            name={`customToolPrice-${index}`}
-                            value={tool.price}
-                            onChange={(e) => handleCustomToolChange(index, 'price', e.target.value)}
-                            min={0}
-                            step={0.01}
-                          />
-                        </div>
-                      </div>
-                    </div>
+              {customTools.length < 3 && (
+                <div className="tool-item add-tool">
+                  <div className="tool-header">
+                    <input
+                      type="text"
+                      value={newCustomTool}
+                      onChange={(e) => setNewCustomTool(e.target.value)}
+                      placeholder="Nova ferramenta..."
+                      className="custom-tool-input"
+                    />
+                    <button
+                      type="button"
+                      className="add-tool-button"
+                      onClick={addCustomTool}
+                      disabled={!newCustomTool.trim()}
+                    >
+                      +
+                    </button>
                   </div>
-                ))}
-
-                {customTools.length < 3 && (
-                  <div className="tool-item add-tool">
-                    <div className="tool-header">
-                      <input
-                        type="text"
-                        value={newCustomTool}
-                        onChange={(e) => setNewCustomTool(e.target.value)}
-                        placeholder="Nova ferramenta..."
-                        className="custom-tool-input"
-                      />
-                      <button
-                        type="button"
-                        className="add-tool-button"
-                        onClick={addCustomTool}
-                        disabled={!newCustomTool.trim()}
-                      >
-                        +
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
