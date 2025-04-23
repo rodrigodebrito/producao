@@ -192,13 +192,6 @@ export const validateRoom = async (roomName) => {
 };
 
 export default {
-  getSessionById,
-  markSessionCompleted,
-  startSession,
-  cancelSession,
-  rescheduleSession,
-  createRobustSession,
-  createTestSession,
   createMeeting,
   joinMeeting,
   endMeeting,
