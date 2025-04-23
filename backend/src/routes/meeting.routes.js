@@ -7,14 +7,13 @@ const router = express.Router();
 const meetingController = require('../controllers/meeting.controller');
 const { authenticate } = require('../middleware/auth.middleware');
 
-// Middleware para verificar se o usuário está autenticado
-// router.use(authenticate);
+// Aplicar autenticação para todas as rotas
+router.use(authenticate);
 
-// Rota pública para validação de sala
 /**
  * @route GET /api/meetings/validate-room/:roomName
  * @desc Verifica se uma sala existe e a cria se necessário
- * @access Público - Qualquer pessoa pode validar uma sala
+ * @access Privado - Apenas terapeutas podem validar/criar salas
  */
 router.get('/validate-room/:roomName', async (req, res) => {
   try {
@@ -24,6 +23,23 @@ router.get('/validate-room/:roomName', async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Nome da sala não fornecido'
+      });
+    }
+
+    // Verificar se o usuário está autenticado
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({
+        success: false,
+        message: 'Usuário não autenticado'
+      });
+    }
+
+    // Verificar se o usuário é um terapeuta
+    const isTherapist = req.user.role === 'THERAPIST';
+    if (!isTherapist) {
+      return res.status(403).json({
+        success: false, 
+        message: 'Apenas terapeutas podem validar salas'
       });
     }
     
@@ -48,13 +64,10 @@ router.get('/validate-room/:roomName', async (req, res) => {
   }
 });
 
-// Aplicar autenticação apenas para as rotas protegidas
-router.use(authenticate);
-
 /**
  * @route POST /api/meetings
  * @desc Cria uma nova reunião para uma sessão
- * @access Privado - Terapeuta e Cliente
+ * @access Privado - Apenas Terapeutas
  */
 router.post('/', meetingController.createMeeting);
 
@@ -82,11 +95,20 @@ router.get('/:sessionId/status', meetingController.getMeetingStatus);
 /**
  * @route POST /api/meetings/daily-room
  * @desc Cria uma nova sala usando a API do Daily.co
- * @access Privado - Qualquer usuário autenticado
+ * @access Privado - Apenas Terapeutas
  */
 router.post('/daily-room', async (req, res) => {
   try {
     const { roomName } = req.body;
+    
+    // Verificar se o usuário é um terapeuta
+    const isTherapist = req.user.role === 'THERAPIST';
+    if (!isTherapist) {
+      return res.status(403).json({
+        success: false, 
+        message: 'Apenas terapeutas podem criar salas'
+      });
+    }
     
     // Importar o serviço Daily
     const dailyService = require('../services/daily.service');

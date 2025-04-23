@@ -4,6 +4,7 @@ import { toast } from 'react-toastify';
 import './FallbackMeeting.css';
 import config from '../environments';
 import axios from 'axios';
+import { joinMeeting } from '../services/meetingService';
 
 // Componente de erro para capturar falhas na renderização do vídeo
 class VideoErrorBoundary extends React.Component {
@@ -110,11 +111,50 @@ const FallbackMeeting = ({
   const [error, setError] = useState(null);
   const [isPipMode, setIsPipMode] = useState(false);
   const [isVideoEnabled, setIsVideoEnabled] = useState(videoEnabled);
+  const [waitingForTherapist, setWaitingForTherapist] = useState(false);
   
-  // Função para obter a URL da sala
+  // Função para obter a URL da sala usando o serviço de meeting
   const getRoomUrl = useCallback(async () => {
     try {
-      console.log('Verificando/criando sala:', roomName);
+      console.log('Verificando/criando sala via API:', roomName);
+      
+      // Verificar se estamos em um contexto de sessão
+      const isSessionContext = roomName && (
+        roomName.includes('session-') || 
+        roomName.includes('-session') || 
+        roomName.includes('sessao-')
+      );
+      
+      if (isSessionContext) {
+        // Usar o serviço joinMeeting para obter URL da sala se for contexto de sessão
+        const userRole = localStorage.getItem('userRole') || '';
+        console.log('Contexto de sessão detectado, usando joinMeeting. Role:', userRole);
+        
+        try {
+          const meetingData = await joinMeeting(roomName);
+          console.log('Dados da reunião obtidos via joinMeeting:', meetingData);
+          
+          // Retornar a URL da sala do Daily.co
+          return meetingData.roomName || meetingData.url;
+        } catch (sessionError) {
+          // Se for erro de sala não criada e usuário for cliente
+          if (sessionError.message?.includes('não foi criada') || 
+              sessionError.message?.includes('Aguarde o terapeuta')) {
+            console.log('Cliente tentando acessar sala que ainda não foi criada pelo terapeuta');
+            setWaitingForTherapist(true);
+            throw new Error('WAITING_FOR_THERAPIST');
+          }
+          
+          // Se for erro de horário (cliente tentando acessar fora do horário)
+          if (sessionError.message?.includes('horário agendado')) {
+            console.log('Cliente tentando acessar sala fora do horário agendado');
+            throw new Error('OUTSIDE_SCHEDULED_TIME');
+          }
+          
+          // Propagar outros erros
+          throw sessionError;
+        }
+      }
       
       // Importar as configurações
       const { SOCKET_URL } = await import('../config');
@@ -167,6 +207,26 @@ const FallbackMeeting = ({
     } catch (err) {
       console.error('Erro ao validar sala no backend:', err);
       
+      // Se estiver aguardando o terapeuta, não criar fallback
+      if (err.message === 'WAITING_FOR_THERAPIST') {
+        setError('Aguardando o terapeuta iniciar a sessão');
+        return null;
+      }
+      
+      // Se o erro for de horário, mostrar mensagem específica
+      if (err.message === 'OUTSIDE_SCHEDULED_TIME') {
+        setError('Você não pode acessar a sala fora do horário agendado');
+        return null;
+      }
+      
+      // Se for erro de permissão (403)
+      if (err.response && err.response.status === 403) {
+        if (err.response.data.message.includes('Apenas terapeutas')) {
+          setError('Apenas terapeutas podem criar salas de videoconferência');
+          return null;
+        }
+      }
+      
       // Tentar extrair mais informações do erro
       console.log('Detalhes do erro:', err.response?.data || err.message);
       
@@ -214,8 +274,21 @@ const FallbackMeeting = ({
         
         setIsLoading(true);
         
-        // Obter URL da sala diretamente sem verificações
+        // Obter URL da sala 
         const roomUrl = await getRoomUrl();
+        
+        // Se não conseguimos URL (e não há erro específico), mostrar erro genérico
+        if (!roomUrl && !error) {
+          setError('Não foi possível inicializar a sala de videoconferência');
+          setIsLoading(false);
+          return;
+        }
+        
+        // Se temos um erro de espera pelo terapeuta, não tentar continuar
+        if (waitingForTherapist) {
+          setIsLoading(false);
+          return;
+        }
         
         // Configurar detalhes da sessão
         setSessionDetails({
@@ -227,13 +300,13 @@ const FallbackMeeting = ({
         setIsLoading(false);
       } catch (err) {
         console.error('Erro ao inicializar sessão:', err);
-        setError('Não foi possível inicializar a sessão de vídeo. Por favor, recarregue a página.');
+        setError(err.message || 'Não foi possível inicializar a sessão de vídeo. Por favor, recarregue a página.');
         setIsLoading(false);
       }
     };
     
     startSession();
-  }, [roomName, userName, getRoomUrl]);
+  }, [roomName, userName, getRoomUrl, error, waitingForTherapist]);
   
   // Função para limpar transcrições antigas
   const clearPreviousTranscriptions = useCallback(async () => {
@@ -444,26 +517,60 @@ const FallbackMeeting = ({
 
   // Renderizar a reunião
   return (
-    <div className="fallback-meeting-container">
-      <VideoErrorBoundary onReset={() => window.location.reload()}>
-        <div className="video-container" ref={videoContainerRef}>
-          {sessionDetails && (
+    <div className={`video-call-container ${floating ? 'floating' : 'fullscreen'} ${isPipMode ? 'pip-mode' : ''}`}>
+      <div className="video-wrapper" ref={videoContainerRef}>
+        {isLoading && (
+          <div className="loading-container">
+            <div className="loading-spinner"></div>
+            <p>Conectando à sala de videoconferência...</p>
+          </div>
+        )}
+        
+        {!isLoading && error && (
+          <div className="error-container">
+            <div className="error-message">
+              <h3>{waitingForTherapist ? 'Aguardando terapeuta' : 'Erro de conexão'}</h3>
+              <p>{error}</p>
+              {waitingForTherapist && (
+                <p className="info-message">O terapeuta precisa iniciar a sessão antes que você possa entrar. 
+                Por favor, aguarde ou entre em contato com seu terapeuta.</p>
+              )}
+              <button 
+                onClick={() => {
+                  setError(null);
+                  setIsLoading(true);
+                  setTimeout(() => window.location.reload(), 500);
+                }}
+                className="retry-button"
+              >
+                Tentar novamente
+              </button>
+            </div>
+          </div>
+        )}
+        
+        {!isLoading && !error && sessionDetails && (
+          <VideoErrorBoundary onReset={() => window.location.reload()}>
             <DailyFrame 
               roomUrl={sessionDetails.url} 
-              onLoad={handleIframeLoad}
+              onLoad={(iframe) => {
+                if (dailyFrameRef.current !== iframe) {
+                  dailyFrameRef.current = iframe;
+                }
+              }} 
             />
-          )}
-          
-          {document.pictureInPictureEnabled && !floating && isVideoEnabled && (
-            <button 
-              onClick={handlePipClick}
-              className="pip-button"
-            >
-              PiP
-            </button>
-          )}
-        </div>
-      </VideoErrorBoundary>
+          </VideoErrorBoundary>
+        )}
+      </div>
+      
+      {document.pictureInPictureEnabled && !floating && isVideoEnabled && (
+        <button 
+          onClick={handlePipClick}
+          className="pip-button"
+        >
+          PiP
+        </button>
+      )}
     </div>
   );
 };

@@ -1,12 +1,13 @@
 /**
- * Serviço para gerenciar videoconferências usando Jitsi Meet
+ * Serviço para gerenciar videoconferências usando Daily.co
  * 
  * Este serviço lida com a criação, configuração e gerenciamento
  * de sessões de videoconferência através da API do backend,
- * que se integra com a plataforma Jitsi Meet
+ * que se integra com a plataforma Daily.co
  */
 
 import api from './api';
+import { toast } from 'react-toastify';
 
 /**
  * Cria uma reunião para uma sessão específica
@@ -25,6 +26,13 @@ export const createMeeting = async (sessionId, title = '') => {
     return response.data;
   } catch (error) {
     console.error('Erro ao criar reunião:', error);
+    
+    // Tratar erros específicos de permissão
+    if (error.response && error.response.status === 403) {
+      const errorMessage = error.response.data.message || 'Você não tem permissão para criar salas de videoconferência.';
+      toast.error(errorMessage);
+    }
+    
     throw error;
   }
 };
@@ -60,38 +68,61 @@ export const joinMeeting = async (sessionId) => {
     
     return response.data;
   } catch (error) {
-    // Se o erro for 404 (sala não encontrada), tentar criar a sala primeiro
-    if (error.response && error.response.status === 404) {
-      console.log('Sala não encontrada, tentando criar uma nova sala para a sessão:', sessionId);
-      try {
-        // Chamar createMeeting para criar uma nova sala
-        const newMeeting = await createMeeting(sessionId);
-        console.log('Nova sala criada:', newMeeting);
-        
-        // Tentar entrar na sala novamente
-        const joinResponse = await api.get(`/meetings/${sessionId}/join`);
-        console.log('Token de acesso gerado após criar sala:', joinResponse.data);
-        
-        // Aplicar a mesma limpeza de URL
-        if (joinResponse.data && joinResponse.data.roomName) {
-          joinResponse.data.roomName = joinResponse.data.roomName.replace('/tc-', '/');
-          
-          if (!joinResponse.data.roomName.includes('teraconect.daily.co')) {
-            const roomNameSegment = joinResponse.data.roomName.split('/').pop();
-            joinResponse.data.roomName = `https://teraconect.daily.co/${roomNameSegment}`;
+    // Tratar erros específicos
+    if (error.response) {
+      const { status, data } = error.response;
+      
+      // Sala não existe e terapeuta pode criar
+      if (status === 404) {
+        // Verificar se o usuário atual é terapeuta antes de tentar criar
+        const userRole = localStorage.getItem('userRole') || '';
+        if (userRole.toUpperCase() === 'THERAPIST') {
+          console.log('Sala não encontrada, tentando criar como terapeuta para a sessão:', sessionId);
+          try {
+            // Chamar createMeeting para criar uma nova sala
+            const newMeeting = await createMeeting(sessionId);
+            console.log('Nova sala criada:', newMeeting);
+            
+            // Tentar entrar na sala novamente
+            return await joinMeeting(sessionId);
+          } catch (createError) {
+            console.error('Erro ao criar e entrar na reunião:', createError);
+            toast.error('Não foi possível criar a sala de videoconferência. Por favor, tente novamente.');
+            throw createError;
           }
-          
-          console.log('URL da sala processado (após criar):', joinResponse.data.roomName);
+        } else {
+          // Cliente não pode criar salas
+          toast.error('A sala de videoconferência ainda não foi criada pelo terapeuta.');
+          throw new Error('Aguarde o terapeuta iniciar a sessão.');
+        }
+      }
+      
+      // Erros de permissão/acesso
+      if (status === 403) {
+        const errorMessage = data.message || 'Você não tem permissão para acessar esta sala.';
+        toast.error(errorMessage);
+        
+        // Se for erro de horário para cliente, fornecer informações adicionais
+        if (errorMessage.includes('horário agendado')) {
+          // Verificar se temos dados do agendamento
+          try {
+            const { appointment } = data;
+            if (appointment && appointment.dateTime) {
+              const appointmentTime = new Date(appointment.dateTime);
+              const formattedTime = appointmentTime.toLocaleString();
+              toast.info(`Seu agendamento é para ${formattedTime}. Você poderá acessar 5 minutos antes.`);
+            }
+          } catch (e) {
+            console.error('Erro ao processar informações de agendamento:', e);
+          }
         }
         
-        return joinResponse.data;
-      } catch (createError) {
-        console.error('Erro ao criar e entrar na reunião:', createError);
-        throw createError;
+        throw new Error(errorMessage);
       }
     }
     
     console.error('Erro ao entrar na reunião:', error);
+    toast.error('Erro ao acessar a sala de videoconferência. Por favor, tente novamente.');
     throw error;
   }
 };
@@ -109,6 +140,14 @@ export const endMeeting = async (sessionId) => {
     return response.data;
   } catch (error) {
     console.error('Erro ao encerrar reunião:', error);
+    
+    // Tratar erros de permissão para encerrar reunião
+    if (error.response && error.response.status === 403) {
+      toast.error('Apenas o terapeuta pode encerrar a reunião.');
+    } else {
+      toast.error('Erro ao encerrar a reunião. Por favor, tente novamente.');
+    }
+    
     throw error;
   }
 };

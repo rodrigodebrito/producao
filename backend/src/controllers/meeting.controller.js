@@ -26,6 +26,14 @@ const meetingController = {
         return res.status(401).json({ error: 'Usuário não autenticado' });
       }
       
+      // Verificar se o usuário é um terapeuta
+      if (req.user.role !== 'THERAPIST') {
+        return res.status(403).json({ 
+          error: 'Acesso negado', 
+          message: 'Apenas terapeutas podem criar salas de videoconferência' 
+        });
+      }
+      
       // Gerar identificador único para a sessão se não fornecido
       const sessionId = roomName || `session-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
       
@@ -149,7 +157,8 @@ const meetingController = {
             include: {
               user: true
             }
-          }
+          },
+          appointment: true
         }
       });
 
@@ -159,7 +168,14 @@ const meetingController = {
 
       // Verificar se existe uma reunião criada
       if (!session.dyteMeetingId || !session.dyteRoomName) {
-        // Se não existir, criar uma nova reunião Daily.co
+        // Se não existir, verificar se o usuário atual é o terapeuta
+        // Apenas terapeutas podem criar salas
+        if (session.therapist.userId !== req.user.id) {
+          return res.status(403).json({ 
+            message: 'A sala de videoconferência ainda não foi criada. Apenas o terapeuta pode iniciar a sessão.' 
+          });
+        }
+        
         // Processar o ID para garantir compatibilidade com Daily.co
         let shortId = sessionId;
         
@@ -200,6 +216,40 @@ const meetingController = {
 
       if (!isTherapist && !isClient) {
         return res.status(403).json({ message: 'Não autorizado a participar desta reunião' });
+      }
+      
+      // Verificar se o agendamento está confirmado
+      if (session.appointment && session.appointment.status !== 'CONFIRMED') {
+        return res.status(403).json({ 
+          message: 'Não é possível acessar a sala: o agendamento não está confirmado' 
+        });
+      }
+      
+      // Verificar horário da sessão se for cliente
+      if (isClient) {
+        // Obter horário atual
+        const now = new Date();
+        
+        // Verificar se o agendamento existe
+        if (!session.appointment) {
+          return res.status(403).json({ 
+            message: 'Não é possível acessar a sala: agendamento não encontrado' 
+          });
+        }
+        
+        // Verificar se a sessão está programada para agora (com tolerância de 5 min)
+        const appointmentTime = new Date(session.appointment.dateTime);
+        const sessionEndTime = new Date(appointmentTime.getTime() + (session.scheduledDuration * 60000));
+        
+        // Permitir acesso 5 minutos antes do horário agendado
+        const earlyAccess = new Date(appointmentTime.getTime() - 5 * 60000);
+        
+        // Se o cliente estiver tentando acessar fora do horário permitido
+        if (now < earlyAccess || now > sessionEndTime) {
+          return res.status(403).json({ 
+            message: 'Acesso negado: você só pode entrar na sala a partir de 5 minutos antes do horário agendado' 
+          });
+        }
       }
 
       // Definir o papel com base em quem está entrando
