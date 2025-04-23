@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { getAppointments, cancelAppointment, syncPendingCancellations } from '../services/appointmentService';
 import './ClientAppointments.css';
-import { toast } from 'react-hot-toast';
+import toast from 'react-hot-toast';
 import api from '../services/api';
 import { format } from 'date-fns';
 import { createRobustSession } from '../services/sessionService';
@@ -180,16 +180,13 @@ function Appointments() {
       // Se o usuário estiver tentando acessar fora do horário permitido
       if (now < earlyAccessTime) {
         const minutesUntilSession = Math.ceil((earlyAccessTime - now) / 60000);
-        toast.info(
-          `Sua sessão está agendada para ${appointmentTime.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}. 
-          Você poderá acessar a sala ${minutesUntilSession} minutos antes do horário.`,
-          { autoClose: 7000 }
-        );
+        toast(`Sua sessão está agendada para ${appointmentTime.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}. 
+        Você poderá acessar a sala ${minutesUntilSession} minutos antes do horário.`);
         return;
       }
       
       if (now > appointmentEndTime) {
-        toast.info('Esta sessão já foi encerrada. Não é mais possível acessar a sala.');
+        toast('Esta sessão já foi encerrada. Não é mais possível acessar a sala.');
         return;
       }
       
@@ -225,13 +222,13 @@ function Appointments() {
       navigate(`/session/${session.id}`);
     } catch (error) {
       console.error('Erro ao acessar sessão:', error);
-      toast.error('Não foi possível acessar a sala de sessão. Tente novamente.');
+      toast('Não foi possível acessar a sala de sessão. Tente novamente.');
     }
   };
 
   const handleViewTherapist = (therapistId) => {
     if (!therapistId) {
-      toast.error('ID do terapeuta não disponível');
+      toast('ID do terapeuta não disponível');
       return;
     }
     navigate(`/therapist/${therapistId}`);
