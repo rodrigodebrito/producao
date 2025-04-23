@@ -3,8 +3,8 @@ import PropTypes from 'prop-types';
 import { toast } from 'react-toastify';
 import './FallbackMeeting.css';
 import config from '../environments';
-import axios from 'axios';
-import { joinMeeting } from '../services/meetingService';
+import api from '../services/api';
+import { joinMeeting, validateRoom } from '../services/meetingService';
 
 // Componente de erro para capturar falhas na renderização do vídeo
 class VideoErrorBoundary extends React.Component {
@@ -122,7 +122,8 @@ const FallbackMeeting = ({
       const isSessionContext = roomName && (
         roomName.includes('session-') || 
         roomName.includes('-session') || 
-        roomName.includes('sessao-')
+        roomName.includes('sessao-') ||
+        roomName.length > 30 // UUIDs geralmente são longos (IDs de sessão)
       );
       
       if (isSessionContext) {
@@ -156,56 +157,73 @@ const FallbackMeeting = ({
         }
       }
       
-      // Importar as configurações
-      const { SOCKET_URL } = await import('../config');
+      // Usar o serviço validateRoom para validar/criar sala
+      console.log('Chamando validateRoom para a sala:', roomName);
       
-      // Usar URL completa do backend para evitar CORS e problemas de rota
-      const apiUrl = `${SOCKET_URL}/api/meetings/validate-room/${roomName}`;
-      console.log('Chamando API com URL completa:', apiUrl);
-      
-      // Verificar se a sala existe ou criar uma nova através do backend
-      const response = await axios.get(apiUrl);
-      
-      console.log('Resposta da API de validação:', response.data);
-      
-      let baseUrl = null;
-      
-      // Verificar diferentes formatos possíveis de resposta
-      if (response.data && response.data.url) {
-        // Formato direto
-        baseUrl = response.data.url;
-      } else if (response.data && response.data.data && response.data.data.url) {
-        // Formato aninhado
-        baseUrl = response.data.data.url;
-      } else {
-        throw new Error('Formato de resposta desconhecido');
+      try {
+        // Verificar se a sala existe ou criar uma nova através do backend
+        const roomData = await validateRoom(roomName);
+        
+        console.log('Resposta da validação da sala:', roomData);
+        
+        let baseUrl = null;
+        
+        // Verificar diferentes formatos possíveis de resposta
+        if (roomData.url) {
+          baseUrl = roomData.url;
+        } else if (roomData.success && roomData.url) {
+          baseUrl = roomData.url;
+        } else {
+          throw new Error('Formato de resposta desconhecido');
+        }
+        
+        console.log('URL da sala validada:', baseUrl);
+        
+        // Construir parâmetros da URL
+        const params = new URLSearchParams();
+        
+        // Adicionar nome do usuário se disponível
+        if (userName) {
+          params.append('name', userName);
+        }
+        
+        // Configurações básicas
+        params.append('showLeaveButton', 'true');
+        params.append('showFullscreenButton', 'true');
+        
+        // Áudio e vídeo
+        params.append('startAudioOff', !audioEnabled);
+        params.append('startVideoOff', !videoEnabled);
+        
+        // Construir URL final
+        const finalUrl = `${baseUrl}?${params.toString()}`;
+        console.log('URL final da sala:', finalUrl);
+        
+        return finalUrl;
+      } catch (validationError) {
+        console.error('Erro na validação da sala:', validationError);
+        
+        // Se for erro de permissão (403), verificar se é terapeuta
+        if (validationError.response && validationError.response.status === 403) {
+          const userRole = localStorage.getItem('userRole');
+          if (userRole === 'THERAPIST') {
+            toast.error('Não foi possível validar sua sala. Verifique sua conexão e permissões.');
+          } else {
+            setError('Apenas terapeutas podem criar salas de videoconferência');
+            return null;
+          }
+        }
+        
+        // Se for erro de autenticação (401)
+        if (validationError.response && validationError.response.status === 401) {
+          setError('Erro de autenticação. Por favor, recarregue a página e faça login novamente.');
+          return null;
+        }
+        
+        throw validationError;
       }
-      
-      console.log('URL da sala validada:', baseUrl);
-      
-      // Construir parâmetros da URL
-      const params = new URLSearchParams();
-      
-      // Adicionar nome do usuário se disponível
-      if (userName) {
-        params.append('name', userName);
-      }
-      
-      // Configurações básicas
-      params.append('showLeaveButton', 'true');
-      params.append('showFullscreenButton', 'true');
-      
-      // Áudio e vídeo
-      params.append('startAudioOff', !audioEnabled);
-      params.append('startVideoOff', !videoEnabled);
-      
-      // Construir URL final
-      const finalUrl = `${baseUrl}?${params.toString()}`;
-      console.log('URL final da sala:', finalUrl);
-      
-      return finalUrl;
     } catch (err) {
-      console.error('Erro ao validar sala no backend:', err);
+      console.error('Erro ao obter URL da sala:', err);
       
       // Se estiver aguardando o terapeuta, não criar fallback
       if (err.message === 'WAITING_FOR_THERAPIST') {
@@ -217,14 +235,6 @@ const FallbackMeeting = ({
       if (err.message === 'OUTSIDE_SCHEDULED_TIME') {
         setError('Você não pode acessar a sala fora do horário agendado');
         return null;
-      }
-      
-      // Se for erro de permissão (403)
-      if (err.response && err.response.status === 403) {
-        if (err.response.data.message.includes('Apenas terapeutas')) {
-          setError('Apenas terapeutas podem criar salas de videoconferência');
-          return null;
-        }
       }
       
       // Tentar extrair mais informações do erro

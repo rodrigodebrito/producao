@@ -165,4 +165,43 @@ export const getMeetingStatus = async (sessionId) => {
     console.error('Erro ao verificar status da reunião:', error);
     throw error;
   }
+};
+
+/**
+ * Valida/cria uma sala de videoconferência através do backend
+ * @param {string} roomName - Nome da sala para validar/criar
+ * @returns {Promise<Object>} - Detalhes da sala criada
+ */
+export const validateRoom = async (roomName) => {
+  try {
+    console.log(`Validando sala: ${roomName}`);
+    const response = await api.get(`/meetings/validate-room/${roomName}`);
+    console.log('Sala validada:', response.data);
+    return response.data;
+  } catch (error) {
+    console.error('Erro ao validar sala:', error);
+    
+    // Se o erro for de permissão
+    if (error.response && error.response.status === 403) {
+      const message = error.response.data.message || 'Apenas terapeutas podem validar salas';
+      toast.error(message);
+    }
+    
+    throw error;
+  }
+};
+
+export default {
+  getSessionById,
+  markSessionCompleted,
+  startSession,
+  cancelSession,
+  rescheduleSession,
+  createRobustSession,
+  createTestSession,
+  createMeeting,
+  joinMeeting,
+  endMeeting,
+  getMeetingStatus,
+  validateRoom
 }; 
