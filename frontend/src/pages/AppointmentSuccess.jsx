@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faCheckCircle, faCalendarAlt, faUser, faClock, faVideo, faSpinner } from '@fortawesome/free-solid-svg-icons';
+import { faCheckCircle, faCalendarAlt, faUser, faClock, faVideo, faSpinner, faInfoCircle } from '@fortawesome/free-solid-svg-icons';
 import './AppointmentSuccess.css';
 import api from '../services/api';
 import { toast } from 'react-toastify';
@@ -43,7 +43,9 @@ const AppointmentSuccess = () => {
       
       if (response.data && response.data.id) {
         toast.success('Sala de sessão criada com sucesso!');
-        navigate(`/session/${response.data.id}`);
+        // Não redirecionar automaticamente para a sessão
+        // Apenas atualizar a UI para mostrar informações sobre a sessão
+        window.location.reload(); // Atualiza a página para mostrar os detalhes da sessão
       } else {
         throw new Error('Resposta inválida ao criar sessão');
       }
@@ -55,16 +57,14 @@ const AppointmentSuccess = () => {
     }
   };
 
-  // Se já tivermos dados da sessão, navegar diretamente para ela
-  useEffect(() => {
+  // Função para navegar para os detalhes da sessão (sem entrar na sala)
+  const handleViewSessionDetails = () => {
     if (sessionData && sessionData.id) {
-      const timer = setTimeout(() => {
-        navigate(`/session/${sessionData.id}`);
-      }, 2000);
-      
-      return () => clearTimeout(timer);
+      navigate('/client/appointments', { state: { highlightSessionId: sessionData.id } });
+    } else {
+      navigate('/client/appointments');
     }
-  }, [sessionData, navigate]);
+  };
   
   return (
     <div className="appointment-success-container">
@@ -107,13 +107,31 @@ const AppointmentSuccess = () => {
           </div>
         </div>
         
+        {sessionData && sessionData.id && (
+          <div className="session-info">
+            <div className="session-info-header">
+              <FontAwesomeIcon icon={faInfoCircle} />
+              <h3>Informações sobre a Sessão</h3>
+            </div>
+            <p>
+              Sua sessão está agendada para <strong>{formatDate(appointmentData.date)}</strong> às <strong>{appointmentData.time}</strong>.
+            </p>
+            <p>
+              Você poderá acessar a sala de videoconferência a partir de 5 minutos antes do horário agendado.
+            </p>
+            <p>
+              Para acessar a sala no momento da sessão, vá para a página "Meus Agendamentos" e clique em "Entrar na Sessão".
+            </p>
+          </div>
+        )}
+        
         <div className="action-buttons">
           {sessionData && sessionData.id ? (
             <button 
               className="primary-button" 
-              onClick={() => navigate(`/session/${sessionData.id}`)}
+              onClick={handleViewSessionDetails}
             >
-              <FontAwesomeIcon icon={faVideo} /> Entrar na Sala de Sessão Agora
+              <FontAwesomeIcon icon={faCalendarAlt} /> Ver Meus Agendamentos
             </button>
           ) : appointmentData.id && appointmentData.mode === 'ONLINE' ? (
             <button 

@@ -168,15 +168,45 @@ function Appointments() {
 
   const handleJoinSession = async (appointment) => {
     try {
-      // Primeiro, verificar se já existe uma sessão para este agendamento
-      let session;
+      // Verificar se o horário atual é compatível com o horário agendado
+      const now = new Date();
+      const appointmentDate = new Date(appointment.date);
+      const appointmentTime = new Date(appointment.date);
+      const appointmentEndTime = new Date(appointmentTime.getTime() + (appointment.duration * 60000));
       
-      // Buscar todas as sessões do usuário
-      const sessionsResponse = await api.get('/sessions');
-      const sessions = sessionsResponse.data;
+      // Permitir acesso 5 minutos antes do horário agendado
+      const earlyAccessTime = new Date(appointmentTime.getTime() - 5 * 60000);
       
-      // Verificar se alguma sessão já está associada a este agendamento
-      const existingSession = sessions.find(s => s.appointmentId === appointment.id);
+      // Se o usuário estiver tentando acessar fora do horário permitido
+      if (now < earlyAccessTime) {
+        const minutesUntilSession = Math.ceil((earlyAccessTime - now) / 60000);
+        toast.info(
+          `Sua sessão está agendada para ${appointmentTime.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}. 
+          Você poderá acessar a sala ${minutesUntilSession} minutos antes do horário.`,
+          { autoClose: 7000 }
+        );
+        return;
+      }
+      
+      if (now > appointmentEndTime) {
+        toast.info('Esta sessão já foi encerrada. Não é mais possível acessar a sala.');
+        return;
+      }
+      
+      // Se o status não for confirmado, impedir acesso
+      if (appointment.status !== 'CONFIRMED' && appointment.status !== 'SCHEDULED') {
+        toast.error('Não é possível acessar a sala: o agendamento não está confirmado');
+        return;
+      }
+      
+      // Verificar se já existe uma sessão para este agendamento
+      const response = await api.get(`/api/sessions/appointment/${appointment.id}`);
+      let session = null;
+      let existingSession = null;
+      
+      if (response.data && response.data.id) {
+        existingSession = response.data;
+      }
       
       if (existingSession) {
         session = existingSession;
@@ -189,10 +219,12 @@ function Appointments() {
         throw new Error('Não foi possível criar ou encontrar a sessão');
       }
       
-      // Navegar para a sala de sessão
+      // Agora que todas as verificações foram realizadas e o horário é válido, 
+      // podemos navegar para a sala de sessão
       toast.success('Entrando na sala de sessão...');
       navigate(`/session/${session.id}`);
     } catch (error) {
+      console.error('Erro ao acessar sessão:', error);
       toast.error('Não foi possível acessar a sala de sessão. Tente novamente.');
     }
   };

@@ -812,6 +812,81 @@ const sessionController = {
       res.status(500).json({ message: 'Erro ao atualizar notas da sessão' });
     }
   },
+
+  /**
+   * Busca uma sessão por ID de agendamento
+   * @param {Request} req - Requisição Express
+   * @param {Response} res - Resposta Express
+   */
+  getSessionByAppointment: async (req, res) => {
+    try {
+      const { appointmentId } = req.params;
+      
+      if (!appointmentId) {
+        return res.status(400).json({ 
+          message: 'ID do agendamento é obrigatório' 
+        });
+      }
+      
+      // Buscar a sessão pelo appointmentId
+      const session = await prisma.session.findFirst({
+        where: { 
+          appointmentId: appointmentId 
+        },
+        include: {
+          appointment: true,
+          therapist: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true
+                }
+              }
+            }
+          },
+          client: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true
+                }
+              }
+            }
+          }
+        }
+      });
+      
+      if (!session) {
+        return res.status(404).json({ 
+          message: 'Nenhuma sessão encontrada para este agendamento' 
+        });
+      }
+      
+      // Verificar se o usuário atual é o terapeuta ou cliente envolvido
+      const userId = req.user.id;
+      const isTherapist = session.therapist && session.therapist.userId === userId;
+      const isClient = session.client && session.client.userId === userId;
+      
+      if (!isTherapist && !isClient) {
+        return res.status(403).json({ 
+          message: 'Não autorizado a acessar informações desta sessão' 
+        });
+      }
+      
+      // Retornar a sessão encontrada
+      return res.status(200).json(session);
+    } catch (error) {
+      console.error('Erro ao buscar sessão por agendamento:', error);
+      return res.status(500).json({
+        message: 'Erro ao buscar sessão',
+        error: error.message
+      });
+    }
+  },
 };
 
 module.exports = sessionController; 

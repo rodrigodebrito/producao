@@ -93,4 +93,11 @@ router.post('/:id/cancel', validateSessionCancel, sessionController.cancelSessio
 // Atualizar notas
 router.patch('/:id/notes', validateSessionNotes, sessionController.updateSessionNotes);
 
+/**
+ * @route GET /api/sessions/appointment/:appointmentId
+ * @desc Busca uma sessão por ID de agendamento
+ * @access Privado - Cliente e Terapeuta do agendamento
+ */
+router.get('/appointment/:appointmentId', sessionController.getSessionByAppointment);
+
 module.exports = router; 
