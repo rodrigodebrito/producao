@@ -267,7 +267,7 @@ router.post('/', authenticate, async (req, res) => {
     }
 
     // Verificar disponibilidade do horário
-    const appointmentDate = new Date(`${date}T${time}Z`);
+    const appointmentDate = new Date(`${date}T${time}`);
     const appointmentEndDate = new Date(appointmentDate.getTime() + therapistTool.tool.duration * 60000);
 
     // Verificar se já existe agendamento para o horário

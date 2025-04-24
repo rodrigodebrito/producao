@@ -773,8 +773,8 @@ router.get('/therapists/:id/availability', async (req, res) => {
       where: {
         therapistId: id,
         date: {
-          gte: new Date(`${date}T00:00:00Z`),
-          lt: new Date(`${date}T23:59:59Z`)
+          gte: new Date(`${date}T00:00:00`),
+          lt: new Date(`${date}T23:59:59`)
         }
       },
       include: {
@@ -785,13 +785,13 @@ router.get('/therapists/:id/availability', async (req, res) => {
     // Gerar horários disponíveis baseado na disponibilidade e agendamentos existentes
     const timeSlots = [];
     for (const slot of availability) {
-      let currentTime = new Date(`${date}T${slot.startTime}Z`);
-      const endTime = new Date(`${date}T${slot.endTime}Z`);
+      let currentTime = new Date(`${date}T${slot.startTime}`);
+      const endTime = new Date(`${date}T${slot.endTime}`);
 
       while (currentTime < endTime) {
         const timeStr = currentTime.toISOString().split('T')[1].substring(0, 5);
         const isAvailable = !existingAppointments.some(appt => {
-          const appointmentStart = new Date(`${date}T${appt.time}Z`);
+          const appointmentStart = new Date(`${date}T${appt.time}`);
           const appointmentEnd = new Date(appointmentStart.getTime() + appt.tool.duration * 60000);
           return currentTime >= appointmentStart && currentTime < appointmentEnd;
         });
