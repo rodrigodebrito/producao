@@ -71,16 +71,31 @@ export const createTimezoneSafeDate = (dateStr, timeStr, useUTC = false, forceLo
     // Se forceLocalDate é verdadeiro, verifica se o dia corresponde ao esperado
     if (forceLocalDate) {
       const localDate = new Date(date);
-      const localDay = localDate.getDate();
+      const utcDay = date.getUTCDate();
       
       // Se a conversão de fuso horário alterou o dia, ajusta para manter o dia original
-      if (localDay !== day) {
-        console.log(`⚠️ Ajustando dia: convertido ${localDay} para o dia original ${day}`);
-        // Ajustar para manter o dia selecionado pelo usuário
-        date = new Date(Date.UTC(year, month - 1, day, hours, minutes));
-        // Aplicar offset para compensar a diferença de fuso horário
-        const offset = date.getTimezoneOffset();
-        date.setMinutes(date.getMinutes() - offset);
+      if (utcDay !== day) {
+        console.log(`⚠️ Diferença de dia detectada: UTC=${utcDay}, Local=${day}`);
+        console.log(`⚠️ Aplicando correção para preservar o dia escolhido pelo usuário`);
+        
+        // Abordagem 1: Corrigir o dia na data UTC
+        const correctedDate = new Date(Date.UTC(year, month - 1, day, hours, minutes));
+        
+        // Se ainda houver problema, tentar ajuste mais direto
+        if (correctedDate.getUTCDate() !== day) {
+          console.log(`⚠️ Correção básica não funcionou, aplicando método direto`);
+          
+          // Abordagem 2: Criar string ISO com dia forçado
+          const isoString = date.toISOString();
+          const [datePart, timePart] = isoString.split('T');
+          const [yearPart, monthPart, _] = datePart.split('-');
+          const correctedISO = `${yearPart}-${monthPart}-${day.toString().padStart(2, '0')}T${timePart}`;
+          
+          console.log(`🛠️ ISO corrigido: ${correctedISO}`);
+          return new Date(correctedISO);
+        }
+        
+        return correctedDate;
       }
     }
   } else {
@@ -134,6 +149,7 @@ export const toISOWithTimezone = (date, forceLocalDate = false) => {
   if (!date) return '';
   
   let dateObj;
+  let originalDay = null;
   
   if (typeof date === 'string') {
     if (date.includes('T')) {
@@ -143,31 +159,44 @@ export const toISOWithTimezone = (date, forceLocalDate = false) => {
       // Formato DD/MM/YYYY
       const [day, month, year] = date.split('/').map(Number);
       dateObj = new Date(year, month - 1, day);
+      originalDay = day;
     } else {
       // Formato YYYY-MM-DD
       dateObj = parseISO(date);
+      const parts = date.split('-');
+      if (parts.length === 3) {
+        originalDay = parseInt(parts[2], 10);
+      }
     }
   } else if (date instanceof Date) {
     dateObj = date;
+    originalDay = date.getDate();
   } else {
     return '';
   }
   
   // Se forceLocalDate for verdadeiro, garantimos que o dia seja preservado
   if (forceLocalDate) {
-    const originalDay = dateObj.getDate();
+    // Se não temos o dia original definido, obtemos da data
+    if (originalDay === null) {
+      originalDay = dateObj.getDate();
+    }
+    
     const isoString = dateObj.toISOString();
     const utcDay = new Date(isoString).getUTCDate();
     
     // Se o dia UTC é diferente do dia local, ajustamos
     if (utcDay !== originalDay) {
-      console.log(`⚠️ toISOWithTimezone: Ajustando diferença de dia ${utcDay} para ${originalDay}`);
+      console.log(`⚠️ toISOWithTimezone: Dia alterado por timezone de ${originalDay} para ${utcDay}`);
       
       // Criar uma string ISO com a parte da data modificada para usar o dia local
       const [datePart, timePart] = isoString.split('T');
       const [year, month, _] = datePart.split('-');
       const newDatePart = `${year}-${month}-${originalDay.toString().padStart(2, '0')}`;
-      return `${newDatePart}T${timePart}`;
+      const correctedISO = `${newDatePart}T${timePart}`;
+      
+      console.log(`🛠️ ISO corrigido: ${correctedISO}`);
+      return correctedISO;
     }
   }
   

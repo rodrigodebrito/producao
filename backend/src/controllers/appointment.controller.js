@@ -4,11 +4,11 @@ const { addHours, parseISO } = require('date-fns');
 const appointmentController = {
   async create(req, res) {
     try {
-      const { therapistId, date, fullDate, time } = req.body;
+      const { therapistId, date, fullDate, time, timezone, timezoneOffset } = req.body;
       const clientId = req.user.id;
 
       console.log('Recebendo dados de agendamento:', { 
-        date, fullDate, time, therapistId, clientId 
+        date, fullDate, time, therapistId, clientId, timezone, timezoneOffset 
       });
 
       // Verificar se o terapeuta existe
@@ -35,6 +35,25 @@ const appointmentController = {
         // Usar a data corrigida que já inclui ajustes de fuso horário
         console.log('Usando data com ajuste de fuso horário (fullDate):', fullDate);
         appointmentDate = new Date(fullDate);
+        
+        // Verificar se a string isoDate inclui informações corretas de dia
+        if (date) {
+          // Extrair o dia esperado do formato YYYY-MM-DD
+          const expectedDay = parseInt(date.split('-')[2], 10);
+          const actualDay = appointmentDate.getUTCDate();
+          
+          if (expectedDay !== actualDay) {
+            console.warn(`⚠️ Correção de timezone necessária: esperado dia ${expectedDay}, recebido ${actualDay}`);
+            // Corrigir a data para manter o dia esperado
+            const isoString = appointmentDate.toISOString();
+            const [datePart, timePart] = isoString.split('T');
+            const [year, month, _] = datePart.split('-');
+            const correctedISO = `${year}-${month}-${expectedDay.toString().padStart(2, '0')}T${timePart}`;
+            appointmentDate = new Date(correctedISO);
+            
+            console.log(`🛠️ Data corrigida: ${appointmentDate.toISOString()}`);
+          }
+        }
       } else if (date && time) {
         // Método legado: criar data a partir de strings separadas
         console.log('Usando método legado (date + time):', date, time);
@@ -52,6 +71,7 @@ const appointmentController = {
       }
       
       console.log('Data de agendamento calculada:', appointmentDate.toISOString());
+      console.log('Dia do agendamento (UTC):', appointmentDate.getUTCDate());
       
       // Verificar disponibilidade
       const dayOfWeek = appointmentDate.getDay();
@@ -100,7 +120,9 @@ const appointmentController = {
           date: appointmentDate,
           duration: therapist.sessionDuration,
           price: therapist.baseSessionPrice,
-          status: 'PENDING'
+          status: 'PENDING',
+          timezone: timezone || null,
+          timezoneOffset: timezoneOffset || null
         },
         include: {
           therapist: {

@@ -198,6 +198,8 @@ export const createAppointment = async (appointmentData) => {
     
     // Se temos data e hora separadamente, criar um objeto Date que preserva o dia local
     if (formattedData.date && formattedData.time) {
+      console.log(`⚠️ DEBUG TIMEZONE: Data original antes do processamento: ${formattedData.date}, ${formattedData.time}`);
+      
       // Criar data com flag forceLocalDate=true para garantir que o dia seja preservado
       const appointmentDate = createTimezoneSafeDate(
         formattedData.date, 
@@ -206,10 +208,26 @@ export const createAppointment = async (appointmentData) => {
         true  // forceLocalDate - IMPORTANTE para preservar o dia quando enviado ao servidor
       );
       
+      console.log(`⚠️ DEBUG TIMEZONE: Objeto Date criado: ${appointmentDate.toString()}`);
+      console.log(`⚠️ DEBUG TIMEZONE: Data local: ${appointmentDate.getDate()}/${appointmentDate.getMonth() + 1}/${appointmentDate.getFullYear()}`);
+      console.log(`⚠️ DEBUG TIMEZONE: Data UTC: ${appointmentDate.getUTCDate()}/${appointmentDate.getUTCMonth() + 1}/${appointmentDate.getUTCFullYear()}`);
+      
+      // Verificar se o dia foi preservado
+      const [year, month, day] = formattedData.date.split('-').map(Number);
+      if (appointmentDate.getUTCDate() !== day) {
+        console.error(`⚠️ ERRO DE TIMEZONE: O dia ${day} foi convertido para ${appointmentDate.getUTCDate()} em UTC`);
+      }
+      
       // Converter para ISO String, garantindo que o dia local seja preservado
       formattedData.fullDate = appointmentDate.toISOString();
       console.log(`🌐 Data formatada para envio: ${formattedData.fullDate} (original: ${formattedData.date} ${formattedData.time})`);
     }
+    
+    // Adicione informações sobre timezone do usuário
+    formattedData.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    formattedData.timezoneOffset = new Date().getTimezoneOffset();
+    
+    console.log(`🌐 Enviando agendamento com informações de timezone: ${formattedData.timezone}, offset: ${formattedData.timezoneOffset}`);
     
     const response = await api.post('/appointments', formattedData, {
       headers: {
@@ -449,6 +467,8 @@ export const createAppointmentDirect = async (appointmentData) => {
     
     // Se temos data e hora separadamente, criar um objeto Date que preserva o dia local
     if (formattedData.date && formattedData.time) {
+      console.log(`⚠️ DEBUG TIMEZONE: Data original antes do processamento: ${formattedData.date}, ${formattedData.time}`);
+      
       // Criar data com flag forceLocalDate=true para garantir que o dia seja preservado
       const appointmentDate = createTimezoneSafeDate(
         formattedData.date, 
@@ -457,10 +477,34 @@ export const createAppointmentDirect = async (appointmentData) => {
         true  // forceLocalDate - preserva o dia quando enviado ao servidor
       );
       
-      // Converter para ISO String, garantindo que o dia local seja preservado
-      formattedData.fullDate = appointmentDate.toISOString();
+      console.log(`⚠️ DEBUG TIMEZONE: Objeto Date criado: ${appointmentDate.toString()}`);
+      console.log(`⚠️ DEBUG TIMEZONE: Data local: ${appointmentDate.getDate()}/${appointmentDate.getMonth() + 1}/${appointmentDate.getFullYear()}`);
+      console.log(`⚠️ DEBUG TIMEZONE: Data UTC: ${appointmentDate.getUTCDate()}/${appointmentDate.getUTCMonth() + 1}/${appointmentDate.getUTCFullYear()}`);
+      
+      // Verificar se o dia foi preservado
+      const [year, month, day] = formattedData.date.split('-').map(Number);
+      if (appointmentDate.getUTCDate() !== day) {
+        console.error(`⚠️ ERRO DE TIMEZONE: O dia ${day} foi convertido para ${appointmentDate.getUTCDate()} em UTC`);
+        
+        // Correção forçada se o dia não for preservado
+        const [datePart, timePart] = appointmentDate.toISOString().split('T');
+        const [yearPart, monthPart, _] = datePart.split('-');
+        const correctedDateStr = `${yearPart}-${monthPart}-${day.toString().padStart(2, '0')}T${timePart}`;
+        console.log(`🔧 Correção forçada de data: ${correctedDateStr}`);
+        formattedData.fullDate = correctedDateStr;
+      } else {
+        // Converter para ISO String se o dia foi preservado corretamente
+        formattedData.fullDate = appointmentDate.toISOString();
+      }
+      
       console.log(`🌐 Data formatada para envio: ${formattedData.fullDate} (original: ${formattedData.date} ${formattedData.time})`);
     }
+    
+    // Adicione informações sobre timezone do usuário
+    formattedData.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    formattedData.timezoneOffset = new Date().getTimezoneOffset();
+    
+    console.log(`🌐 Enviando agendamento com informações de timezone: ${formattedData.timezone}, offset: ${formattedData.timezoneOffset}`);
     
     console.log(`📤 Enviando requisição POST via api...`);
     const result = await api.post('/appointments', formattedData);
