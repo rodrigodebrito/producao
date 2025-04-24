@@ -2,6 +2,7 @@ import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { format, parseISO, isValid } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { createTimezoneSafeDate } from '../../utils/dateUtils';
 
 const AppointmentCard = ({ appointment, currentUser, onStatusUpdate }) => {
   const navigate = useNavigate();
@@ -59,8 +60,12 @@ const AppointmentCard = ({ appointment, currentUser, onStatusUpdate }) => {
   const isActiveSession = () => {
     try {
       const now = new Date();
-      const appointmentDate = parseISO(appointment.date);
-      const appointmentTime = new Date(appointmentDate);
+      // Extrair a data e hora do agendamento
+      const appointmentDateStr = appointment.date.split('T')[0];
+      const appointmentTimeStr = format(parseISO(appointment.date), 'HH:mm');
+      
+      // Criar data considerando o fuso horário
+      const appointmentTime = createTimezoneSafeDate(appointmentDateStr, appointmentTimeStr);
       
       // Definir limite de 15 minutos antes e 30 minutos depois
       const earlyLimit = new Date(appointmentTime);
@@ -71,6 +76,7 @@ const AppointmentCard = ({ appointment, currentUser, onStatusUpdate }) => {
       
       return now >= earlyLimit && now <= lateLimit && appointment.status === 'scheduled';
     } catch (e) {
+      console.error('Erro ao verificar se sessão está ativa:', e);
       return false;
     }
   };

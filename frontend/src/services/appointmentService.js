@@ -1,6 +1,7 @@
 import api from './api';
 import axios from 'axios';
 import { BASE_API_URL } from '../config';
+import { toISOWithTimezone, formatDateToIso } from '../utils/dateUtils';
 
 console.log(`[AppointmentService] BASE_API_URL: ${BASE_API_URL}`);
 
@@ -47,27 +48,18 @@ export const getAvailableTimeSlots = async (therapistId, date) => {
     
     let year, month, day;
     
-    // Normalizar o formato da data
-    if (date instanceof Date) {
-      year = date.getFullYear();
-      month = date.getMonth() + 1; // Mês é base 0 em JS
-      day = date.getDate();
-    } else if (typeof date === 'string') {
-      if (date.includes('-')) {
-        // Formato ISO (YYYY-MM-DD)
-        [year, month, day] = date.split('-').map(Number);
-      } else if (date.includes('/')) {
-        // Formato brasileiro (DD/MM/YYYY)
-        [day, month, year] = date.split('/').map(Number);
-      } else {
-        throw new Error(`Formato de data não reconhecido: ${date}`);
-      }
+    // Normalizar o formato da data usando a função utilitária
+    const normalizedDate = formatDateToIso(date);
+    
+    // Extrair componentes da data normalizada
+    if (normalizedDate) {
+      [year, month, day] = normalizedDate.split('-').map(Number);
     } else {
-      throw new Error(`Tipo de data não suportado: ${typeof date}`);
+      throw new Error(`Formato de data não reconhecido: ${date}`);
     }
     
     // Formatar para uso na API
-    const formattedDate = `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
+    const formattedDate = normalizedDate;
     console.log(`[API] Data formatada para request: ${formattedDate}`);
     
     // Fazer a requisição
@@ -111,35 +103,170 @@ export const getClientByUserId = async (userId) => {
   }
 };
 
+// Obter todos os agendamentos do usuário
+export const getAppointments = async () => {
+  console.log('Buscando agendamentos no appointmentService...');
+  const token = localStorage.getItem('token');
+  
+  if (!token) {
+    console.error('Token não encontrado ao buscar agendamentos');
+    throw new Error('Não autorizado. Faça login novamente.');
+  }
+  
+  try {
+    // Usar o endpoint correto /appointments
+    console.log('Tentando buscar agendamentos do endpoint: /appointments');
+    const response = await api.get('/appointments', {
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    });
+    
+    console.log(`Resposta recebida com ${response.data?.length || 0} agendamentos`);
+    return response.data;
+  } catch (error) {
+    console.error('Erro ao buscar agendamentos do endpoint primário:', error);
+    
+    // Tentar endpoint alternativo como fallback
+    try {
+      console.log('Tentando endpoint alternativo: /api/appointments');
+      const alternativeResponse = await api.get('/api/appointments', {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      
+      console.log(`Resposta do endpoint alternativo recebida com ${alternativeResponse.data?.length || 0} agendamentos`);
+      return alternativeResponse.data;
+    } catch (fallbackError) {
+      console.error('Erro também no endpoint alternativo:', fallbackError);
+      
+      // Construir mensagem de erro informativa
+      let errorMessage = 'Erro ao buscar agendamentos';
+      
+      if (error.response) {
+        // Erro do servidor com resposta
+        errorMessage += `: ${error.response.status} - ${error.response.data?.message || error.response.statusText}`;
+      } else if (error.request) {
+        // Sem resposta do servidor
+        errorMessage += ': Sem resposta do servidor. Verifique sua conexão.';
+      } else {
+        // Erro na configuração da requisição
+        errorMessage += `: ${error.message}`;
+      }
+      
+      throw new Error(errorMessage);
+    }
+  }
+};
+
+// Obter um agendamento específico
+export const getAppointmentById = async (id) => {
+  const token = localStorage.getItem('token');
+  
+  if (!token) {
+    throw new Error('Não autorizado. Faça login novamente.');
+  }
+  
+  try {
+    const response = await api.get(`/appointments/${id}`, {
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    });
+    
+    return response.data;
+  } catch (error) {
+    console.error('Erro ao buscar agendamento específico:', error);
+    throw new Error(error.response?.data?.message || 'Erro ao buscar detalhes do agendamento');
+  }
+};
+
 // Criar um novo agendamento
 export const createAppointment = async (appointmentData) => {
+  const token = localStorage.getItem('token');
+  
+  if (!token) {
+    throw new Error('Não autorizado. Faça login novamente.');
+  }
+  
   try {
-    // Garantir que temos o token antes de fazer a requisição
-    const token = localStorage.getItem('token');
-    if (!token) {
-      throw new Error('Usuário não autenticado. Por favor, faça login novamente.');
-    }
+    const response = await api.post('/appointments', appointmentData, {
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    });
     
-    // Validar dados mínimos necessários
-    if (!appointmentData.therapistId || 
-        !appointmentData.date || !appointmentData.time || !appointmentData.toolId) {
-      throw new Error('Dados incompletos para agendamento. Verifique todos os campos.');
-    }
-    
-    console.log('Criando agendamento (método padrão) com dados:', appointmentData);
-    
-    // Usar o objeto api configurado
-    try {
-      const response = await api.post('/appointments', appointmentData);
-      console.log('Resposta bem-sucedida:', response.data);
-      return response.data;
-    } catch (apiError) {
-      console.error('Erro na tentativa com API:', apiError);
-      throw apiError;
-    }
+    return response.data;
   } catch (error) {
     console.error('Erro ao criar agendamento:', error);
-    throw error;
+    throw new Error(error.response?.data?.message || 'Erro ao criar agendamento');
+  }
+};
+
+// Atualizar um agendamento existente
+export const updateAppointment = async (id, appointmentData) => {
+  const token = localStorage.getItem('token');
+  
+  if (!token) {
+    throw new Error('Não autorizado. Faça login novamente.');
+  }
+  
+  try {
+    const response = await api.put(`/appointments/${id}`, appointmentData, {
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    });
+    
+    return response.data;
+  } catch (error) {
+    console.error('Erro ao atualizar agendamento:', error);
+    throw new Error(error.response?.data?.message || 'Erro ao atualizar agendamento');
+  }
+};
+
+// Atualizar o status de um agendamento
+export const updateAppointmentStatus = async (id, status) => {
+  const token = localStorage.getItem('token');
+  
+  if (!token) {
+    throw new Error('Não autorizado. Faça login novamente.');
+  }
+  
+  try {
+    const response = await api.patch(`/appointments/${id}/status`, { status }, {
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    });
+    
+    return response.data;
+  } catch (error) {
+    console.error('Erro ao atualizar status do agendamento:', error);
+    throw new Error(error.response?.data?.message || 'Erro ao atualizar status do agendamento');
+  }
+};
+
+// Excluir um agendamento
+export const deleteAppointment = async (id) => {
+  const token = localStorage.getItem('token');
+  
+  if (!token) {
+    throw new Error('Não autorizado. Faça login novamente.');
+  }
+  
+  try {
+    const response = await api.delete(`/appointments/${id}`, {
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    });
+    
+    return response.data;
+  } catch (error) {
+    console.error('Erro ao excluir agendamento:', error);
+    throw new Error(error.response?.data?.message || 'Erro ao excluir agendamento');
   }
 };
 
@@ -181,39 +308,6 @@ export const getTherapistDetails = async (therapistId) => {
   }
 };
 
-// Obter todos os agendamentos do usuário atual (cliente ou terapeuta)
-export const getAppointments = async () => {
-  try {
-    console.log('Buscando todos os agendamentos do usuário');
-    const response = await api.get('/appointments');
-    console.log('Agendamentos obtidos:', response.data);
-    return response.data;
-  } catch (error) {
-    console.error('Erro ao buscar agendamentos:', error);
-    throw error;
-  }
-};
-
-export const getAppointmentById = async (id) => {
-  try {
-    const response = await api.get(`/appointments/${id}`);
-    return response.data;
-  } catch (error) {
-    console.error('Erro ao buscar agendamento:', error);
-    throw error;
-  }
-};
-
-export const updateAppointment = async (id, data) => {
-  try {
-    const response = await api.put(`/appointments/${id}`, data);
-    return response.data;
-  } catch (error) {
-    console.error('Erro ao atualizar agendamento:', error);
-    throw error;
-  }
-};
-
 export const cancelAppointment = async (id) => {
   try {
     console.log(`🚀 Iniciando cancelamento do agendamento ID: ${id}`);
@@ -239,7 +333,7 @@ export const cancelAppointment = async (id) => {
       status: 'CANCELLED',
       cancelledBy: user.id,
       cancelledByName: user.name,
-      cancelledAt: new Date().toISOString(),
+      cancelledAt: toISOWithTimezone(new Date()),
       cancellationReason: 'Cancelado pelo usuário via interface'
     };
     

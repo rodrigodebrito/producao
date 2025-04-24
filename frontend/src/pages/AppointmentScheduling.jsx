@@ -11,6 +11,7 @@ import {
   getClientByUserId 
 } from '../services/appointmentService';
 import { createRobustSession } from '../services/sessionService';
+import { isValidFutureDate, formatDateToIso } from '../utils/dateUtils';
 import './AppointmentScheduling.css';
 import { format, parseISO, addDays, addWeeks, addMonths, subWeeks, startOfWeek, endOfWeek, isWithinInterval, isBefore, isAfter, isSameDay, formatISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -18,37 +19,6 @@ import { toast } from 'react-toastify';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faArrowLeft, faArrowRight, faCalendarAlt, faCircleCheck, faClock, faInfoCircle, faMapMarkerAlt, faSpinner, faExclamationTriangle, faTimes } from '@fortawesome/free-solid-svg-icons';
 import api from '../services/api';
-
-// Função auxiliar para validar se uma data é futura
-const isValidFutureDate = (date, time) => {
-  const now = new Date();
-  const [year, month, day] = date.split('-').map(Number);
-  const [hours, minutes] = time.split(':').map(Number);
-  const appointmentDate = new Date(year, month - 1, day, hours, minutes);
-  
-  // Retorna true se a data/hora é futura
-  return appointmentDate > now;
-};
-
-const formatDateToIso = (date) => {
-  if (!date) return '';
-  
-  // Se a data já estiver em formato ISO (yyyy-MM-dd), retorna como está
-  if (date.match(/^\d{4}-\d{2}-\d{2}$/)) return date;
-  
-  // Se estiver no formato brasileiro (dd/MM/yyyy), converte para ISO
-  if (date.match(/^\d{2}\/\d{2}\/\d{4}$/)) {
-    const [day, month, year] = date.split('/').map(Number);
-    return `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
-  }
-  
-  // Se for um objeto Date, formata para ISO
-  if (date instanceof Date) {
-    return format(date, 'yyyy-MM-dd');
-  }
-  
-  return '';
-};
 
 const AppointmentScheduling = () => {
   const { id: therapistId } = useParams();

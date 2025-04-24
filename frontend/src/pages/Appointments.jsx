@@ -2,22 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { getAppointments, cancelAppointment, syncPendingCancellations } from '../services/appointmentService';
+import { isValidFutureDate, createTimezoneSafeDate } from '../utils/dateUtils';
 import './ClientAppointments.css';
 import toast from 'react-hot-toast';
 import api from '../services/api';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { createRobustSession } from '../services/sessionService';
-
-// Função auxiliar para validar se uma data é futura
-const isValidFutureDate = (date, time) => {
-  const now = new Date();
-  const [year, month, day] = date.split('-').map(Number);
-  const [hours, minutes] = time.split(':').map(Number);
-  const appointmentDate = new Date(year, month - 1, day, hours, minutes);
-  
-  // Retorna true se a data/hora é futura
-  return appointmentDate > now;
-};
 
 function Appointments() {
   const navigate = useNavigate();
@@ -25,129 +15,151 @@ function Appointments() {
   const [appointments, setAppointments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('upcoming');
-  const [filter, setFilter] = useState('all'); // 'all', 'asClient', 'asTherapist'
-  const [historyFilter, setHistoryFilter] = useState('all'); // 'all', 'cancelled', 'completed'
+  const [filter, setFilter] = useState('all');
+  const [historyFilter, setHistoryFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const location = useLocation();
   const [error, setError] = useState(null);
+  const [filterType, setFilterType] = useState('all');
+  const [filterName, setFilterName] = useState('');
+  const [filterStatus, setFilterStatus] = useState('all');
 
   useEffect(() => {
+    console.log('useEffect em Appointments.jsx acionado');
+    console.log('Estado de localização:', location);
+    
     const fetchAppointments = async () => {
       try {
         setLoading(true);
+        console.log('Buscando agendamentos...');
         
-        // Tentar sincronizar cancelamentos pendentes
+        const fetchedAppointments = await getAppointments();
+        console.log(`Total de agendamentos recebidos: ${fetchedAppointments.length}`);
+        
+        // Processar cancelamentos pendentes do localStorage
         try {
-          console.log('Tentando sincronizar cancelamentos pendentes...');
-          const syncResult = await syncPendingCancellations();
+          const pendingCancellations = JSON.parse(localStorage.getItem('pendingCancellations')) || [];
+          console.log('Cancelamentos pendentes:', pendingCancellations);
           
-          // Notificar apenas se houver sucesso real ou limpeza
-          if (syncResult.synced > 0) {
-            toast.success(`${syncResult.synced} agendamento(s) cancelado(s) foram sincronizados com sucesso!`);
-          }
-          
-          // Notificar sobre limpeza apenas se não houve sucessos
-          if (syncResult.synced === 0 && syncResult.cleaned > 0) {
-            toast.info(`${syncResult.cleaned} agendamento(s) antigo(s) foram removidos da fila por não poderem ser sincronizados.`);
-          }
-          
-        } catch (syncError) {
-          console.error('Erro ao sincronizar cancelamentos pendentes:', syncError);
-        }
-        
-        // Buscar todos os agendamentos do usuário atual
-        const data = await getAppointments();
-        console.log('Agendamentos recebidos:', data);
-        
-        // Verificar se há cancelamentos pendentes no localStorage
-        try {
-          const pendingCancellations = JSON.parse(localStorage.getItem('pendingCancellations') || '[]');
-          
-          // Marcar agendamentos com cancelamento pendente
           if (pendingCancellations.length > 0) {
-            const updatedData = data.map(appointment => {
-              const pendingCancel = pendingCancellations.find(pc => pc.id === appointment.id);
-              if (pendingCancel) {
-                return {
-                  ...appointment,
-                  status: 'CANCELLED',
-                  _localCancellation: true,
-                  cancellationSynced: false
-                };
+            const updatedAppointments = fetchedAppointments.map(appointment => {
+              const isPendingCancellation = pendingCancellations.includes(appointment.id);
+              if (isPendingCancellation) {
+                console.log(`Marcando agendamento ${appointment.id} como pendente de cancelamento`);
+                return { ...appointment, pendingCancellation: true };
               }
               return appointment;
             });
             
-            setAppointments(updatedData);
+            setAppointments(updatedAppointments);
           } else {
-            setAppointments(data);
+            setAppointments(fetchedAppointments);
           }
-        } catch (localStorageError) {
-          console.error('Erro ao processar cancelamentos pendentes do localStorage:', localStorageError);
-          setAppointments(data);
+        } catch (error) {
+          console.error('Erro ao processar cancelamentos pendentes:', error);
+          setAppointments(fetchedAppointments);
         }
         
-        setError(null);
-      } catch (err) {
-        console.error('Erro ao buscar agendamentos:', err);
-        setError('Erro ao carregar agendamentos. Por favor, tente novamente.');
-      } finally {
         setLoading(false);
+        console.log('Agendamentos carregados com sucesso');
+      } catch (error) {
+        console.error('Erro ao buscar agendamentos:', error);
+        toast.error(error.message || 'Erro ao carregar agendamentos');
+        setLoading(false);
+        setError(error.message || 'Erro ao carregar agendamentos');
       }
     };
 
     fetchAppointments();
-  }, [user, location.state?.newAppointment]);
+  }, [location.key]); // Usar location.key para atualizar quando a navegação mudar
 
-  const filterAppointments = (appointments) => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    // Primeiro, filtrar por tipo de agendamento
-    let filtered = appointments;
-    if (filter !== 'all') {
-      filtered = appointments.filter(app => 
-        filter === 'asClient' ? app.appointmentType === 'client' : app.appointmentType === 'therapist'
-      );
+  // Função para filtrar agendamentos com base nos critérios
+  const filterAppointments = () => {
+    console.log('Filtrando agendamentos...');
+    console.log('Critérios:', { activeTab, historyFilter, filterType, filterName, filterStatus, searchTerm });
+    console.log('Total de agendamentos antes do filtro:', appointments.length);
+    
+    if (!appointments || !Array.isArray(appointments)) {
+      console.warn('Nenhum agendamento disponível para filtrar');
+      return [];
     }
 
-    // Depois, filtrar por nome se houver busca
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase();
-      filtered = filtered.filter(app => {
-        const name = app.appointmentType === 'client' 
-          ? app.therapistName?.toLowerCase() 
-          : app.clientName?.toLowerCase();
-        return name?.includes(term);
-      });
-    }
+    return appointments.filter(appointment => {
+      // Log inicial para cada agendamento
+      console.log(`Verificando agendamento ID: ${appointment.id}, Tipo: ${appointment.appointmentType}, Status: ${appointment.status}`);
+      
+      // Garantir que temos uma data válida para comparar
+      let appointmentDate;
+      try {
+        appointmentDate = new Date(appointment.date);
+        if (isNaN(appointmentDate.getTime())) {
+          console.warn(`Agendamento ${appointment.id} possui data inválida:`, appointment.date);
+          appointmentDate = new Date(); // Usar data atual como fallback
+        }
+        appointmentDate.setHours(0, 0, 0, 0);
+      } catch (error) {
+        console.error(`Erro ao processar data do agendamento ${appointment.id}:`, error);
+        appointmentDate = new Date(); // Usar data atual como fallback
+        appointmentDate.setHours(0, 0, 0, 0);
+      }
 
-    // Por fim, filtrar por status/data
-    return filtered.filter(appointment => {
-      const appointmentDate = new Date(appointment.date);
-      appointmentDate.setHours(0, 0, 0, 0);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
 
+      // Filtro por abas (upcoming/history)
       if (activeTab === 'upcoming') {
-        return appointmentDate >= today && appointment.status === 'SCHEDULED';
-      } else {
-        // Filtros do histórico
+        // Para aba de próximos, mostrar agendamentos futuros com status SCHEDULED ou CONFIRMED
+        if (!(appointmentDate >= today && 
+            (appointment.status === 'SCHEDULED' || appointment.status === 'CONFIRMED'))) {
+          return false;
+        }
+      } else if (activeTab === 'history') {
+        // Para histórico, mostrar agendamentos passados OU cancelados/completados
         const isHistory = appointmentDate < today || 
-                         appointment.status === 'CANCELLED' || 
-                         appointment.status === 'COMPLETED';
+                        appointment.status === 'CANCELLED' || 
+                        appointment.status === 'COMPLETED';
 
         if (!isHistory) return false;
 
-        switch (historyFilter) {
-          case 'cancelled':
-            return appointment.status === 'CANCELLED';
-          case 'completed':
-            return appointment.status === 'COMPLETED';
-          default:
-            return true;
+        // Filtro adicional por status específico no histórico
+        if (historyFilter !== 'all') {
+          if (historyFilter === 'cancelled' && appointment.status !== 'CANCELLED') return false;
+          if (historyFilter === 'completed' && appointment.status !== 'COMPLETED') return false;
         }
       }
+      
+      // Filtro por tipo de agendamento
+      if (filter !== 'all') {
+        const isAsClient = filter === 'asClient';
+        const typeMatches = isAsClient ? 
+          appointment.appointmentType === 'client' : 
+          appointment.appointmentType === 'therapist';
+        
+        if (!typeMatches) {
+          return false;
+        }
+      }
+
+      // Filtro por nome do terapeuta/cliente (usando searchTerm)
+      if (searchTerm && searchTerm.trim() !== '') {
+        const term = searchTerm.toLowerCase();
+        const nameToCheck = appointment.appointmentType === 'client' 
+          ? (appointment.therapist?.name || appointment.therapistName)
+          : (appointment.client?.name || appointment.clientName);
+          
+        const nameMatches = nameToCheck && nameToCheck.toLowerCase().includes(term);
+        if (!nameMatches) {
+          return false;
+        }
+      }
+      
+      return true;
     });
   };
+
+  // Aplicar filtros
+  const filteredAppointments = filterAppointments();
+  console.log(`Total de agendamentos após filtro: ${filteredAppointments.length}`);
 
   const handleCancelAppointment = async (appointmentId) => {
     try {
@@ -170,8 +182,14 @@ function Appointments() {
     try {
       // Verificar se o horário atual é compatível com o horário agendado
       const now = new Date();
-      const appointmentDate = new Date(appointment.date);
-      const appointmentTime = new Date(appointment.date);
+      
+      // Extrair a data e hora do agendamento
+      const appointmentDateStr = appointment.date.split('T')[0];
+      const appointmentTimeStr = format(parseISO(appointment.date), 'HH:mm');
+      
+      // Criar data considerando o fuso horário
+      const appointmentTime = createTimezoneSafeDate(appointmentDateStr, appointmentTimeStr);
+      
       const appointmentEndTime = new Date(appointmentTime.getTime() + (appointment.duration * 60000));
       
       // Permitir acesso 5 minutos antes do horário agendado
@@ -237,8 +255,6 @@ function Appointments() {
   if (loading) {
     return <div className="loading">Carregando suas sessões...</div>;
   }
-
-  const filteredAppointments = filterAppointments(appointments);
 
   return (
     <div className="client-appointments-container">
