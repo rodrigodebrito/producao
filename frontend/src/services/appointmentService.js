@@ -1,7 +1,7 @@
 import api from './api';
 import axios from 'axios';
 import { BASE_API_URL } from '../config';
-import { toISOWithTimezone, formatDateToIso } from '../utils/dateUtils';
+import { toISOWithTimezone, formatDateToIso, createTimezoneSafeDate } from '../utils/dateUtils';
 
 console.log(`[AppointmentService] BASE_API_URL: ${BASE_API_URL}`);
 
@@ -191,7 +191,27 @@ export const createAppointment = async (appointmentData) => {
   }
   
   try {
-    const response = await api.post('/appointments', appointmentData, {
+    console.log(`📅 Criando agendamento para data: ${appointmentData.date}, hora: ${appointmentData.time}`);
+    
+    // Se necessário, formatar os dados do agendamento para o backend
+    const formattedData = {...appointmentData};
+    
+    // Se temos data e hora separadamente, criar um objeto Date que preserva o dia local
+    if (formattedData.date && formattedData.time) {
+      // Criar data com flag forceLocalDate=true para garantir que o dia seja preservado
+      const appointmentDate = createTimezoneSafeDate(
+        formattedData.date, 
+        formattedData.time,
+        true, // useUTC
+        true  // forceLocalDate - IMPORTANTE para preservar o dia quando enviado ao servidor
+      );
+      
+      // Converter para ISO String, garantindo que o dia local seja preservado
+      formattedData.fullDate = appointmentDate.toISOString();
+      console.log(`🌐 Data formatada para envio: ${formattedData.fullDate} (original: ${formattedData.date} ${formattedData.time})`);
+    }
+    
+    const response = await api.post('/appointments', formattedData, {
       headers: {
         Authorization: `Bearer ${token}`
       }
@@ -424,8 +444,26 @@ export const createAppointmentDirect = async (appointmentData) => {
       🔄 Auto-agendamento: ${appointmentData.selfBooking ? 'Sim' : 'Não'}
     `);
     
+    // Formatar os dados para o backend (adicionando fullDate)
+    const formattedData = {...appointmentData};
+    
+    // Se temos data e hora separadamente, criar um objeto Date que preserva o dia local
+    if (formattedData.date && formattedData.time) {
+      // Criar data com flag forceLocalDate=true para garantir que o dia seja preservado
+      const appointmentDate = createTimezoneSafeDate(
+        formattedData.date, 
+        formattedData.time,
+        true, // useUTC
+        true  // forceLocalDate - preserva o dia quando enviado ao servidor
+      );
+      
+      // Converter para ISO String, garantindo que o dia local seja preservado
+      formattedData.fullDate = appointmentDate.toISOString();
+      console.log(`🌐 Data formatada para envio: ${formattedData.fullDate} (original: ${formattedData.date} ${formattedData.time})`);
+    }
+    
     console.log(`📤 Enviando requisição POST via api...`);
-    const result = await api.post('/appointments', appointmentData);
+    const result = await api.post('/appointments', formattedData);
     
     console.log(`✅ Resposta recebida com sucesso:`, result.data);
     return result.data;

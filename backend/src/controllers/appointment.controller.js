@@ -4,8 +4,12 @@ const { addHours, parseISO } = require('date-fns');
 const appointmentController = {
   async create(req, res) {
     try {
-      const { therapistId, date } = req.body;
+      const { therapistId, date, fullDate, time } = req.body;
       const clientId = req.user.id;
+
+      console.log('Recebendo dados de agendamento:', { 
+        date, fullDate, time, therapistId, clientId 
+      });
 
       // Verificar se o terapeuta existe
       const therapist = await prisma.therapist.findUnique({
@@ -23,8 +27,33 @@ const appointmentController = {
         });
       }
 
+      // Determinar a data do agendamento, dando preferência para fullDate quando disponível
+      // Isso garante que o dia escolhido pelo usuário seja respeitado, independente do fuso horário
+      let appointmentDate;
+      
+      if (fullDate) {
+        // Usar a data corrigida que já inclui ajustes de fuso horário
+        console.log('Usando data com ajuste de fuso horário (fullDate):', fullDate);
+        appointmentDate = new Date(fullDate);
+      } else if (date && time) {
+        // Método legado: criar data a partir de strings separadas
+        console.log('Usando método legado (date + time):', date, time);
+        // Converter para objeto Date
+        const dateObj = parseISO(date);
+        const [hours, minutes] = time.split(':').map(Number);
+        
+        // Construir o objeto Date com as horas e minutos
+        dateObj.setHours(hours, minutes, 0, 0);
+        appointmentDate = dateObj;
+      } else {
+        // Apenas date sem time
+        console.log('Usando apenas date sem time:', date);
+        appointmentDate = parseISO(date);
+      }
+      
+      console.log('Data de agendamento calculada:', appointmentDate.toISOString());
+      
       // Verificar disponibilidade
-      const appointmentDate = parseISO(date);
       const dayOfWeek = appointmentDate.getDay();
       const timeStr = appointmentDate.toLocaleTimeString('pt-BR', { 
         hour: '2-digit', 
