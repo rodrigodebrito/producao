@@ -66,15 +66,47 @@ const Appointments = () => {
           
           if (appointment.date) {
             try {
+              console.log(`⚠️ DEBUG processamento: Data original do agendamento ${appointment.id}: ${appointment.date}`);
+              
               // Verifica se é uma string de data válida
-              const parsedDate = typeof appointment.date === 'string' 
-                ? parseISO(appointment.date) 
-                : new Date(appointment.date);
+              let parsedDate;
+              
+              if (typeof appointment.date === 'string') {
+                if (appointment.date.includes('T')) {
+                  // Data em formato ISO
+                  console.log(`⚠️ DEBUG processamento: Data em formato ISO - ${appointment.date}`);
+                  parsedDate = parseISO(appointment.date);
+                  
+                  // Extrair partes da data ISO original para comparação
+                  const isoMatch = appointment.date.match(/(\d{4})-(\d{2})-(\d{2})T/);
+                  if (isoMatch) {
+                    const originalDay = parseInt(isoMatch[3], 10);
+                    const parsedDay = parsedDate.getDate();
+                    console.log(`⚠️ DEBUG processamento: Dia original na ISO string: ${originalDay}, Dia após parse: ${parsedDay}`);
+                    
+                    if (originalDay !== parsedDay) {
+                      console.warn(`⚠️ ALERTA: Dia alterado após parse de ${originalDay} para ${parsedDay}`);
+                      // Forçar o dia correto originalmente enviado (correção de timezone)
+                      const dateWithCorrectDay = new Date(parsedDate);
+                      dateWithCorrectDay.setDate(originalDay);
+                      parsedDate = dateWithCorrectDay;
+                      console.log(`⚠️ DEBUG processamento: Data corrigida: ${parsedDate.toISOString()}`);
+                    }
+                  }
+                } else {
+                  console.log(`⚠️ DEBUG processamento: Data em outro formato - ${appointment.date}`);
+                  parsedDate = new Date(appointment.date);
+                }
+              } else {
+                console.log(`⚠️ DEBUG processamento: Data não é string - ${appointment.date}`);
+                parsedDate = new Date(appointment.date);
+              }
               
               if (isValid(parsedDate)) {
                 formattedDate = format(parsedDate, 'dd/MM/yyyy', { locale: ptBR });
                 // Adiciona a data formatada ao objeto
                 appointment.formattedDate = formattedDate;
+                console.log(`⚠️ DEBUG processamento: Data formatada final: ${formattedDate}`);
               } else {
                 console.warn('Data inválida no agendamento:', appointment.id, appointment.date);
                 appointment.formattedDate = 'Data inválida';

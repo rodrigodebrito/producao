@@ -10,17 +10,67 @@ const AppointmentCard = ({ appointment, currentUser, onStatusUpdate }) => {
   // Verificar se a data é válida e formatá-la
   const formatDateTime = (dateString, timeFormat = false) => {
     try {
-      const date = typeof dateString === 'string' ? parseISO(dateString) : new Date(dateString);
+      console.log(`⚠️ DEBUG: Formatando data ${dateString} (tipo: ${typeof dateString})`);
+      
+      // Realizar parse da data com correções de timezone
+      let date;
+      if (typeof dateString === 'string') {
+        if (dateString.includes('T')) {
+          // Data em formato ISO
+          console.log(`⚠️ DEBUG: Data em formato ISO - ${dateString}`);
+          date = parseISO(dateString);
+          
+          // Extrair partes da data ISO original para comparação
+          const isoMatch = dateString.match(/(\d{4})-(\d{2})-(\d{2})T/);
+          if (isoMatch) {
+            const originalDay = parseInt(isoMatch[3], 10);
+            const parsedDay = date.getDate();
+            console.log(`⚠️ DEBUG: Dia original na ISO string: ${originalDay}, Dia após parse: ${parsedDay}`);
+            
+            if (originalDay !== parsedDay) {
+              console.warn(`⚠️ ALERTA: Dia alterado após parse de ${originalDay} para ${parsedDay}`);
+              // Forçar o dia correto originalmente enviado (correção de timezone)
+              const dateWithCorrectDay = new Date(date);
+              dateWithCorrectDay.setDate(originalDay);
+              date = dateWithCorrectDay;
+              console.log(`⚠️ DEBUG: Data corrigida: ${date.toISOString()}`);
+            }
+          }
+        } else if (dateString.includes('/')) {
+          // Formato DD/MM/YYYY
+          console.log(`⚠️ DEBUG: Data em formato brasileiro - ${dateString}`);
+          const [day, month, year] = dateString.split('/').map(Number);
+          date = new Date(year, month - 1, day);
+        } else if (dateString.includes('-')) {
+          // Formato YYYY-MM-DD
+          console.log(`⚠️ DEBUG: Data em formato ISO sem hora - ${dateString}`);
+          date = parseISO(dateString);
+        } else {
+          // Outro formato
+          console.log(`⚠️ DEBUG: Formato desconhecido - ${dateString}`);
+          date = new Date(dateString);
+        }
+      } else {
+        // Se não for string, assumir Date ou timestamp
+        console.log(`⚠️ DEBUG: Não é string - ${dateString}`);
+        date = new Date(dateString);
+      }
       
       if (!isValid(date)) {
+        console.error(`⚠️ DEBUG: Data inválida após processamento - ${dateString}`);
         return 'Data inválida';
       }
       
-      return timeFormat 
+      console.log(`⚠️ DEBUG: Data finalizada - ${date.toISOString()}, dia: ${date.getDate()}`);
+      
+      const formattedDate = timeFormat 
         ? format(date, 'HH:mm', { locale: ptBR })
         : format(date, 'dd/MM/yyyy', { locale: ptBR });
+      
+      console.log(`⚠️ DEBUG: Data formatada - ${formattedDate}`);
+      return formattedDate;
     } catch (error) {
-      console.error('Erro ao formatar data:', error);
+      console.error('Erro ao formatar data:', error, dateString);
       return 'Erro na data';
     }
   };
@@ -60,12 +110,27 @@ const AppointmentCard = ({ appointment, currentUser, onStatusUpdate }) => {
   const isActiveSession = () => {
     try {
       const now = new Date();
+      console.log(`⚠️ DEBUG isActiveSession: Data atual: ${now.toISOString()}`);
+
       // Extrair a data e hora do agendamento
-      const appointmentDateStr = appointment.date.split('T')[0];
-      const appointmentTimeStr = format(parseISO(appointment.date), 'HH:mm');
+      const appointmentDate = appointment.date;
+      console.log(`⚠️ DEBUG isActiveSession: Data do agendamento (original): ${appointmentDate}`);
+      
+      const appointmentDateStr = typeof appointmentDate === 'string' ? 
+        appointmentDate.split('T')[0] : 
+        format(new Date(appointmentDate), 'yyyy-MM-dd');
+        
+      console.log(`⚠️ DEBUG isActiveSession: Data extraída: ${appointmentDateStr}`);
+      
+      const appointmentTimeStr = typeof appointmentDate === 'string' ?
+        appointmentDate.includes('T') ? format(parseISO(appointmentDate), 'HH:mm') : '00:00' :
+        format(new Date(appointmentDate), 'HH:mm');
+        
+      console.log(`⚠️ DEBUG isActiveSession: Hora extraída: ${appointmentTimeStr}`);
       
       // Criar data considerando o fuso horário
       const appointmentTime = createTimezoneSafeDate(appointmentDateStr, appointmentTimeStr);
+      console.log(`⚠️ DEBUG isActiveSession: Data criada com createTimezoneSafeDate: ${appointmentTime.toISOString()}`);
       
       // Definir limite de 15 minutos antes e 30 minutos depois
       const earlyLimit = new Date(appointmentTime);
@@ -73,6 +138,10 @@ const AppointmentCard = ({ appointment, currentUser, onStatusUpdate }) => {
       
       const lateLimit = new Date(appointmentTime);
       lateLimit.setMinutes(lateLimit.getMinutes() + appointment.duration || 60);
+      
+      console.log(`⚠️ DEBUG isActiveSession: Janela de tempo - início: ${earlyLimit.toISOString()}, fim: ${lateLimit.toISOString()}`);
+      console.log(`⚠️ DEBUG isActiveSession: Agora está entre limites? ${now >= earlyLimit && now <= lateLimit}`);
+      console.log(`⚠️ DEBUG isActiveSession: Status do agendamento: ${appointment.status}`);
       
       return now >= earlyLimit && now <= lateLimit && appointment.status === 'scheduled';
     } catch (e) {
