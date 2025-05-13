@@ -88,15 +88,47 @@ function Appointments() {
       // Log inicial para cada agendamento
       console.log(`Verificando agendamento ID: ${appointment.id}, Tipo: ${appointment.appointmentType}, Status: ${appointment.status}`);
       
-      // Garantir que temos uma data válida para comparar
+      // Garantir que temos uma data válida para comparar - NOVO MÉTODO CORRIGIDO
       let appointmentDate;
       try {
+        // Verificar se temos originalDay ou originalDate no agendamento
+        let selectedDay = null;
+        if (appointment.originalDay) {
+          selectedDay = parseInt(appointment.originalDay, 10);
+          console.log(`🔄 Usando dia original do agendamento: ${selectedDay}`);
+        } else if (appointment.notes && appointment.notes.includes('TZ_INFO:')) {
+          // Tentar extrair informações de timezone das notas
+          try {
+            const tzInfoMatch = appointment.notes.match(/TZ_INFO:({.*})/) || [];
+            if (tzInfoMatch.length > 1) {
+              const tzInfo = JSON.parse(tzInfoMatch[1]);
+              if (tzInfo.originalDay) {
+                selectedDay = parseInt(tzInfo.originalDay, 10);
+                console.log(`🔄 Dia original extraído das notas: ${selectedDay}`);
+              }
+            }
+          } catch (e) {
+            console.warn('Erro ao extrair info de timezone das notas:', e);
+          }
+        }
+        
+        // Criar a data do agendamento
         appointmentDate = new Date(appointment.date);
+        
+        // Se temos o dia original e ele é diferente, corrigir
+        if (selectedDay !== null && appointmentDate.getDate() !== selectedDay) {
+          console.log(`🔄 Corrigindo dia de ${appointmentDate.getDate()} para ${selectedDay}`);
+          const correctedDate = new Date(appointmentDate);
+          correctedDate.setDate(selectedDay);
+          appointmentDate = correctedDate;
+        }
+        
         if (isNaN(appointmentDate.getTime())) {
           console.warn(`Agendamento ${appointment.id} possui data inválida:`, appointment.date);
           appointmentDate = new Date(); // Usar data atual como fallback
         }
         appointmentDate.setHours(0, 0, 0, 0);
+        console.log(`Data final do agendamento para comparação: ${appointmentDate.toISOString()}`);
       } catch (error) {
         console.error(`Erro ao processar data do agendamento ${appointment.id}:`, error);
         appointmentDate = new Date(); // Usar data atual como fallback
@@ -111,6 +143,7 @@ function Appointments() {
         // Para aba de próximos, mostrar agendamentos futuros com status SCHEDULED ou CONFIRMED
         if (!(appointmentDate >= today && 
             (appointment.status === 'SCHEDULED' || appointment.status === 'CONFIRMED'))) {
+          console.log(`🚫 Filtrado (não é próximo): ${appointment.id}`);
           return false;
         }
       } else if (activeTab === 'history') {
@@ -119,12 +152,21 @@ function Appointments() {
                         appointment.status === 'CANCELLED' || 
                         appointment.status === 'COMPLETED';
 
-        if (!isHistory) return false;
+        if (!isHistory) {
+          console.log(`🚫 Filtrado (não é histórico): ${appointment.id}`);
+          return false;
+        }
 
         // Filtro adicional por status específico no histórico
         if (historyFilter !== 'all') {
-          if (historyFilter === 'cancelled' && appointment.status !== 'CANCELLED') return false;
-          if (historyFilter === 'completed' && appointment.status !== 'COMPLETED') return false;
+          if (historyFilter === 'cancelled' && appointment.status !== 'CANCELLED') {
+            console.log(`🚫 Filtrado (não cancelado): ${appointment.id}`);
+            return false;
+          }
+          if (historyFilter === 'completed' && appointment.status !== 'COMPLETED') {
+            console.log(`🚫 Filtrado (não completado): ${appointment.id}`);
+            return false;
+          }
         }
       }
       
@@ -136,6 +178,7 @@ function Appointments() {
           appointment.appointmentType === 'therapist';
         
         if (!typeMatches) {
+          console.log(`🚫 Filtrado (tipo não corresponde): ${appointment.id}`);
           return false;
         }
       }
@@ -149,10 +192,12 @@ function Appointments() {
           
         const nameMatches = nameToCheck && nameToCheck.toLowerCase().includes(term);
         if (!nameMatches) {
+          console.log(`🚫 Filtrado (nome não corresponde): ${appointment.id}`);
           return false;
         }
       }
       
+      console.log(`✅ Passou por todos os filtros: ${appointment.id}`);
       return true;
     });
   };

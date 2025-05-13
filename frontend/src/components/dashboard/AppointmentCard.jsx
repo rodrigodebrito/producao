@@ -14,60 +14,95 @@ const AppointmentCard = ({ appointment, currentUser, onStatusUpdate }) => {
       
       // Realizar parse da data com correções de timezone
       let date;
+      let selectedDay = null;
+      
+      // Primeiro, tentar extrair o dia original da data
+      if (typeof dateString === 'string') {
+        // Se temos uma data ISO, extrair o dia diretamente da string
+        if (dateString.includes('T')) {
+          const isoMatch = dateString.match(/(\d{4})-(\d{2})-(\d{2})T/);
+          if (isoMatch) {
+            selectedDay = parseInt(isoMatch[3], 10);
+            console.log(`⚠️ DEBUG: Dia extraído diretamente da ISO: ${selectedDay}`);
+          }
+        } 
+        // Se temos data no formato YYYY-MM-DD
+        else if (dateString.includes('-')) {
+          const dateParts = dateString.split('-');
+          if (dateParts.length === 3) {
+            selectedDay = parseInt(dateParts[2], 10);
+            console.log(`⚠️ DEBUG: Dia extraído de YYYY-MM-DD: ${selectedDay}`);
+          }
+        }
+        // Se temos data no formato DD/MM/YYYY
+        else if (dateString.includes('/')) {
+          const dateParts = dateString.split('/');
+          if (dateParts.length === 3) {
+            selectedDay = parseInt(dateParts[0], 10);
+            console.log(`⚠️ DEBUG: Dia extraído de DD/MM/YYYY: ${selectedDay}`);
+          }
+        }
+      }
+      
+      // Verificar se o agendamento tem informações de originalDay
+      if (appointment.originalDay) {
+        selectedDay = parseInt(appointment.originalDay, 10);
+        console.log(`⚠️ DEBUG: Usando originalDay do agendamento: ${selectedDay}`);
+      }
+      
+      // Agora fazemos o parse normal da data
       if (typeof dateString === 'string') {
         if (dateString.includes('T')) {
           // Data em formato ISO
-          console.log(`⚠️ DEBUG: Data em formato ISO - ${dateString}`);
+          console.log(`⚠️ DEBUG: Parseando data ISO - ${dateString}`);
           date = parseISO(dateString);
-          
-          // Extrair partes da data ISO original para comparação
-          const isoMatch = dateString.match(/(\d{4})-(\d{2})-(\d{2})T/);
-          if (isoMatch) {
-            const originalDay = parseInt(isoMatch[3], 10);
-            const parsedDay = date.getDate();
-            console.log(`⚠️ DEBUG: Dia original na ISO string: ${originalDay}, Dia após parse: ${parsedDay}`);
-            
-            if (originalDay !== parsedDay) {
-              console.warn(`⚠️ ALERTA: Dia alterado após parse de ${originalDay} para ${parsedDay}`);
-              // Forçar o dia correto originalmente enviado (correção de timezone)
-              const dateWithCorrectDay = new Date(date);
-              dateWithCorrectDay.setDate(originalDay);
-              date = dateWithCorrectDay;
-              console.log(`⚠️ DEBUG: Data corrigida: ${date.toISOString()}`);
-            }
-          }
         } else if (dateString.includes('/')) {
           // Formato DD/MM/YYYY
-          console.log(`⚠️ DEBUG: Data em formato brasileiro - ${dateString}`);
+          console.log(`⚠️ DEBUG: Parseando data formato brasileiro - ${dateString}`);
           const [day, month, year] = dateString.split('/').map(Number);
           date = new Date(year, month - 1, day);
         } else if (dateString.includes('-')) {
           // Formato YYYY-MM-DD
-          console.log(`⚠️ DEBUG: Data em formato ISO sem hora - ${dateString}`);
+          console.log(`⚠️ DEBUG: Parseando data formato ISO sem hora - ${dateString}`);
           date = parseISO(dateString);
         } else {
           // Outro formato
-          console.log(`⚠️ DEBUG: Formato desconhecido - ${dateString}`);
+          console.log(`⚠️ DEBUG: Tentando parse para formato desconhecido - ${dateString}`);
           date = new Date(dateString);
         }
       } else {
         // Se não for string, assumir Date ou timestamp
-        console.log(`⚠️ DEBUG: Não é string - ${dateString}`);
+        console.log(`⚠️ DEBUG: Parseando valor não-string - ${dateString}`);
         date = new Date(dateString);
       }
       
+      // Verificar se a data é válida
       if (!isValid(date)) {
-        console.error(`⚠️ DEBUG: Data inválida após processamento - ${dateString}`);
+        console.error(`⚠️ DEBUG: Data inválida após parse - ${dateString}`);
         return 'Data inválida';
       }
       
-      console.log(`⚠️ DEBUG: Data finalizada - ${date.toISOString()}, dia: ${date.getDate()}`);
+      // Se temos o dia original extraído e ele é diferente do dia parseado, corrigimos
+      if (selectedDay !== null) {
+        const parsedDay = date.getDate();
+        if (selectedDay !== parsedDay) {
+          console.warn(`⚠️ CORREÇÃO: Ajustando dia de ${parsedDay} para ${selectedDay}`);
+          
+          // Método 1: Ajuste direto na data
+          const correctedDate = new Date(date);
+          correctedDate.setDate(selectedDay);
+          date = correctedDate;
+          
+          console.log(`⚠️ DEBUG: Data após correção: ${date.toISOString()}`);
+        }
+      }
       
+      // Formatar a data corrigida
       const formattedDate = timeFormat 
         ? format(date, 'HH:mm', { locale: ptBR })
         : format(date, 'dd/MM/yyyy', { locale: ptBR });
       
-      console.log(`⚠️ DEBUG: Data formatada - ${formattedDate}`);
+      console.log(`⚠️ DEBUG: Data final formatada: ${formattedDate}`);
       return formattedDate;
     } catch (error) {
       console.error('Erro ao formatar data:', error, dateString);
