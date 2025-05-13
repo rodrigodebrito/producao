@@ -261,8 +261,8 @@ function Appointments() {
       console.log(`⏰ Horário final da sessão: ${appointmentTime.toLocaleString()}`);
       const appointmentEndTime = new Date(appointmentTime.getTime() + (appointment.duration * 60000));
       
-      // Permitir acesso 15 minutos antes do horário agendado (em vez de 5)
-      const earlyAccessTime = new Date(appointmentTime.getTime() - 15 * 60000);
+      // Permitir acesso 24 horas (1440 minutos) antes do horário agendado (para teste)
+      const earlyAccessTime = new Date(appointmentTime.getTime() - 1440 * 60000);
       
       console.log(`🔄 Verificando acesso:
         - Horário atual: ${now.toLocaleString()}
@@ -288,9 +288,10 @@ function Appointments() {
         
         // Formatar a hora de acesso liberado de forma amigável
         const earlyAccessHour = earlyAccessTime.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        const earlyAccessDate = earlyAccessTime.toLocaleDateString('pt-BR');
         
         toast(`Sua sessão está agendada para ${appointment.formattedTime}.
-        O acesso será liberado às ${earlyAccessHour} (15 minutos antes).
+        O acesso será liberado a partir de ${earlyAccessDate} às ${earlyAccessHour} (24 horas antes).
         Faltam ${displayMinutes} minutos para você poder acessar a sala.`, {
           duration: 5000,
         });
