@@ -218,10 +218,12 @@ const meetingController = {
         return res.status(403).json({ message: 'Não autorizado a participar desta reunião' });
       }
       
-      // Verificar se o agendamento está confirmado
-      if (session.appointment && session.appointment.status !== 'CONFIRMED') {
+      // Verificar se o agendamento está confirmado ou agendado (permitir ambos para testes)
+      if (session.appointment && 
+          session.appointment.status !== 'CONFIRMED' && 
+          session.appointment.status !== 'SCHEDULED') {
         return res.status(403).json({ 
-          message: 'Não é possível acessar a sala: o agendamento não está confirmado' 
+          message: 'Não é possível acessar a sala: o agendamento não está confirmado ou agendado' 
         });
       }
       
@@ -241,13 +243,13 @@ const meetingController = {
         const appointmentTime = new Date(session.appointment.dateTime);
         const sessionEndTime = new Date(appointmentTime.getTime() + (session.scheduledDuration * 60000));
         
-        // Permitir acesso 5 minutos antes do horário agendado
-        const earlyAccess = new Date(appointmentTime.getTime() - 5 * 60000);
+        // Permitir acesso 24 horas (1440 minutos) antes do horário agendado (para testes)
+        const earlyAccess = new Date(appointmentTime.getTime() - 1440 * 60000);
         
         // Se o cliente estiver tentando acessar fora do horário permitido
         if (now < earlyAccess || now > sessionEndTime) {
           return res.status(403).json({ 
-            message: 'Acesso negado: você só pode entrar na sala a partir de 5 minutos antes do horário agendado' 
+            message: 'Acesso negado: você só pode entrar na sala a partir de 24 horas antes do horário agendado' 
           });
         }
       }
