@@ -26,6 +26,7 @@ import SessionRoom from './pages/SessionRoom';
 import './App.css';
 import { Toaster } from 'react-hot-toast';
 import AdminLogin from './pages/AdminLogin';
+import FallbackMeeting from './components/FallbackMeeting';
 
 // Importar o componente de Constelação
 import ConstellationField from './components/ConstellationField/index';
@@ -175,6 +176,12 @@ function App() {
                 <Route 
                   path="/appointment-success" 
                   element={<ProtectedRoute element={<AppointmentSuccess />} allowedRoles={['CLIENT']} />} 
+                />
+                
+                {/* Rota para o componente FallbackMeeting */}
+                <Route 
+                  path="/meeting" 
+                  element={<ProtectedRoute element={<FallbackMeeting />} allowedRoles={['CLIENT', 'THERAPIST']} />} 
                 />
                 
                 {/* Fallback para página não encontrada */}

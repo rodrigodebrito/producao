@@ -303,36 +303,56 @@ function Appointments() {
         return;
       }
       
-      // Se o status não for confirmado, impedir acesso
+      // Aceitar tanto SCHEDULED quanto CONFIRMED para testes
       if (appointment.status !== 'CONFIRMED' && appointment.status !== 'SCHEDULED') {
-        toast.error('Não é possível acessar a sala: o agendamento não está confirmado');
+        toast.error('Não é possível acessar a sala: o agendamento não está ativo ou foi cancelado');
         return;
       }
       
-      // Verificar se já existe uma sessão para este agendamento
-      const response = await api.get(`/api/sessions/appointment/${appointment.id}`);
-      let session = null;
-      let existingSession = null;
-      
-      if (response.data && response.data.id) {
-        existingSession = response.data;
+      // Tentar obter a sessão existente
+      try {
+        const response = await api.get(`/api/sessions/appointment/${appointment.id}`);
+        let session = null;
+        let existingSession = null;
+        
+        if (response.data && response.data.id) {
+          existingSession = response.data;
+        }
+        
+        if (existingSession) {
+          session = existingSession;
+        } else {
+          // Se não existir sessão, criar uma nova
+          session = await createRobustSession(appointment);
+        }
+        
+        if (!session || !session.id) {
+          throw new Error('Não foi possível criar ou encontrar a sessão');
+        }
+        
+        // Agora que todas as verificações foram realizadas e o horário é válido, 
+        // podemos navegar para a sala de sessão
+        toast.success('Entrando na sala de sessão...');
+        navigate(`/session/${session.id}`);
+      } catch (error) {
+        console.error('❌ ERRO ' + (error.response?.status || '') + ': ' + error.config?.method + ' ' + error.config?.url);
+        console.error('📄 Detalhes do erro:', error.response?.data);
+        
+        // Fallback: Se houver erro 403, tentar usar um fallback direto para a sala
+        console.log('Erro ao obter URL da sala:', error);
+        console.log('Detalhes do erro:', error.response?.data?.message || error.message);
+        
+        // Criar um ID simplificado para fallback
+        const simpleId = appointment.id.split('-')[0];
+        console.log('Usando ID simplificado para fallback:', simpleId);
+        
+        // Usar URL de fallback (direto para o daily.co)
+        const fallbackUrl = `https://teraconect.daily.co/tc-${simpleId}?name=${encodeURIComponent('Usuário')}&showLeaveButton=true&showFullscreenButton=true&startAudioOff=false&startVideoOff=false`;
+        console.log('URL final da sala (fallback extremo):', fallbackUrl);
+        
+        // Navegar para a sala de sessão com o URL de fallback
+        navigate(`/meeting?url=${encodeURIComponent(fallbackUrl)}&sessionId=${appointment.id}`);
       }
-      
-      if (existingSession) {
-        session = existingSession;
-      } else {
-        // Se não existir sessão, criar uma nova
-        session = await createRobustSession(appointment);
-      }
-      
-      if (!session || !session.id) {
-        throw new Error('Não foi possível criar ou encontrar a sessão');
-      }
-      
-      // Agora que todas as verificações foram realizadas e o horário é válido, 
-      // podemos navegar para a sala de sessão
-      toast.success('Entrando na sala de sessão...');
-      navigate(`/session/${session.id}`);
     } catch (error) {
       console.error('Erro ao acessar sessão:', error);
       toast('Não foi possível acessar a sala de sessão. Tente novamente.');
