@@ -61,50 +61,57 @@ export const createTimezoneSafeDate = (dateStr, timeStr, useUTC = false, forceLo
   const [year, month, day] = normalizedDate.split('-').map(Number);
   const [hours, minutes] = timeStr.split(':').map(Number);
   
-  let date;
+  console.log(`🔍 Criando data segura para: ${normalizedDate} ${timeStr}`);
+  console.log(`🔧 Parâmetros: useUTC=${useUTC}, forceLocalDate=${forceLocalDate}`);
+  console.log(`📊 Componentes extraídos: ano=${year}, mês=${month}, dia=${day}, hora=${hours}, minuto=${minutes}`);
   
-  if (useUTC) {
-    // Criar data em UTC
-    date = new Date(Date.UTC(year, month - 1, day, hours, minutes));
-    console.log(`🌐 Data UTC criada: ${date.toISOString()} para entrada ${dateStr} ${timeStr}`);
+  // SOLUÇÃO MAIS DIRETA E CONFIÁVEL:
+  // Em vez de tentar calcular o objeto Date e depois verificar,
+  // vamos criar a string ISO diretamente com o dia correto
+  
+  // Primeiro, criamos a data no formato local para ter uma base
+  const localDate = new Date(year, month - 1, day, hours, minutes);
+  console.log(`🌐 Data local (sem ajustes): ${localDate.toISOString()}`);
+  
+  if (useUTC || forceLocalDate) {
+    // Para preservar o dia original, criamos uma string ISO à mão
+    // Isso é mais confiável que confiar na aritmética de data
+    const userTimezone = getTimezoneName();
+    console.log(`🌍 Fuso horário do usuário: ${userTimezone}`);
     
-    // Se forceLocalDate é verdadeiro, verifica se o dia corresponde ao esperado
-    if (forceLocalDate) {
-      const localDate = new Date(date);
-      const utcDay = date.getUTCDate();
+    // Cria a parte da data que queremos preservar exatamente como foi fornecida
+    const datePart = `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
+    
+    // Cria a parte do tempo como uma string padronizada
+    const timePart = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:00.000Z`;
+    
+    // Combine as partes para criar uma string ISO com o dia original
+    const isoString = `${datePart}T${timePart}`;
+    console.log(`📝 String ISO gerada manualmente: ${isoString}`);
+    
+    // Cria um objeto Date a partir da string ISO
+    const finalDate = new Date(isoString);
+    
+    // Verificação final para garantir que o dia foi preservado
+    if (finalDate.getUTCDate() !== day) {
+      console.warn(`⚠️ CORREÇÃO FINAL: O dia ainda está errado (${finalDate.getUTCDate()} != ${day})`);
       
-      // Se a conversão de fuso horário alterou o dia, ajusta para manter o dia original
-      if (utcDay !== day) {
-        console.log(`⚠️ Diferença de dia detectada: UTC=${utcDay}, Local=${day}`);
-        console.log(`⚠️ Aplicando correção para preservar o dia escolhido pelo usuário`);
-        
-        // Abordagem 1: Corrigir o dia na data UTC
-        const correctedDate = new Date(Date.UTC(year, month - 1, day, hours, minutes));
-        
-        // Se ainda houver problema, tentar ajuste mais direto
-        if (correctedDate.getUTCDate() !== day) {
-          console.log(`⚠️ Correção básica não funcionou, aplicando método direto`);
-          
-          // Abordagem 2: Criar string ISO com dia forçado
-          const isoString = date.toISOString();
-          const [datePart, timePart] = isoString.split('T');
-          const [yearPart, monthPart, _] = datePart.split('-');
-          const correctedISO = `${yearPart}-${monthPart}-${day.toString().padStart(2, '0')}T${timePart}`;
-          
-          console.log(`🛠️ ISO corrigido: ${correctedISO}`);
-          return new Date(correctedISO);
-        }
-        
-        return correctedDate;
-      }
+      // Correção forçada através de manipulação direta da string ISO
+      const [isoDatePart, isoTimePart] = finalDate.toISOString().split('T');
+      const correctedIsoString = `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}T${isoTimePart}`;
+      
+      console.log(`🛠️ ISO corrigido forçadamente: ${correctedIsoString}`);
+      return new Date(correctedIsoString);
     }
-  } else {
-    // Criar data no fuso horário local do usuário
-    date = new Date(year, month - 1, day, hours, minutes);
-    console.log(`🌐 Data local criada: ${date.toISOString()} para entrada ${dateStr} ${timeStr}`);
+    
+    console.log(`✅ Data final gerada: ${finalDate.toISOString()}`);
+    console.log(`✅ Dia UTC: ${finalDate.getUTCDate()} (deve ser ${day})`);
+    
+    return finalDate;
   }
   
-  return date;
+  console.log(`✅ Usando data local sem conversões: ${localDate.toISOString()}`);
+  return localDate;
 };
 
 /**

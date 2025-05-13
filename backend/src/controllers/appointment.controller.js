@@ -27,104 +27,95 @@ const appointmentController = {
         });
       }
 
-      // Determinar a data do agendamento, dando preferência para fullDate quando disponível
-      // Isso garante que o dia escolhido pelo usuário seja respeitado, independente do fuso horário
-      let appointmentDate;
-      let originalDay = null;
-      
+      // EXTRAÇÃO DIRETA DO DIA SELECIONADO - Sempre confiável
+      let selectedDay = null;
       if (date) {
-        // Extrair o dia esperado do formato YYYY-MM-DD, vai servir como referência
+        // Extrai o dia da string YYYY-MM-DD
         const dateParts = date.split('-');
         if (dateParts.length === 3) {
-          originalDay = parseInt(dateParts[2], 10);
-          console.log(`🕒 Dia original selecionado pelo usuário: ${originalDay}`);
+          selectedDay = parseInt(dateParts[2], 10);
+          console.log(`📆 Dia selecionado pelo usuário: ${selectedDay}`);
         }
       }
       
-      if (fullDate) {
-        // Usar a data corrigida que já inclui ajustes de fuso horário
-        console.log('Usando data com ajuste de fuso horário (fullDate):', fullDate);
+      // NOVA ABORDAGEM: Sempre ancorar na data e hora informadas pelo usuário
+      // Se temos date e time, temos toda a informação necessária
+      let baseYear, baseMonth, appointmentDate;
+      
+      if (date && time) {
+        // Extrair ano e mês do date
+        const [yearStr, monthStr, dayStr] = date.split('-');
+        baseYear = parseInt(yearStr, 10);
+        baseMonth = parseInt(monthStr, 10);
+        const day = parseInt(dayStr, 10);
+        
+        // Extrair hora e minuto do time
+        const [hourStr, minuteStr] = time.split(':');
+        const hour = parseInt(hourStr, 10);
+        const minute = parseInt(minuteStr, 10);
+        
+        console.log(`🕒 Criando data de agendamento: ${baseYear}-${baseMonth}-${day} ${hour}:${minute}`);
+        
+        // Construir a data em formato ISO, forçando o dia selecionado
+        const isoDateString = `${baseYear}-${baseMonth.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}T${hourStr}:${minuteStr}:00.000Z`;
+        appointmentDate = new Date(isoDateString);
+        
+        // VERIFICAÇÃO CRÍTICA: se o dia foi alterado pela conversão de timezone, corrigimos
+        if (appointmentDate.getUTCDate() !== day) {
+          console.warn(`⚠️ CORREÇÃO CRUCIAL: O dia foi alterado de ${day} para ${appointmentDate.getUTCDate()} na conversão`);
+          
+          // Correção forçada: manter o dia informado pelo usuário
+          const [_, timePart] = appointmentDate.toISOString().split('T');
+          const correctedIsoString = `${baseYear}-${baseMonth.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}T${timePart}`;
+          
+          console.log(`🛠️ Data ISO corrigida: ${correctedIsoString}`);
+          appointmentDate = new Date(correctedIsoString);
+        }
+      } else if (fullDate) {
+        // Usar fullDate como base, mas ainda verificar o dia
+        console.log(`📅 Usando fullDate fornecido: ${fullDate}`);
         appointmentDate = new Date(fullDate);
         
-        // Verificar se a string isoDate inclui informações corretas de dia
-        if (originalDay !== null) {
-          const actualDay = appointmentDate.getUTCDate();
+        // Se temos o dia selecionado, verificar se foi preservado
+        if (selectedDay !== null && appointmentDate.getUTCDate() !== selectedDay) {
+          console.warn(`⚠️ CORREÇÃO: Dia em fullDate (${appointmentDate.getUTCDate()}) não corresponde ao dia selecionado (${selectedDay})`);
           
-          if (originalDay !== actualDay) {
-            console.warn(`⚠️ Correção de timezone necessária: esperado dia ${originalDay}, recebido ${actualDay}`);
-            // Corrigir a data para manter o dia esperado
-            const isoString = appointmentDate.toISOString();
-            const [datePart, timePart] = isoString.split('T');
-            const [year, month, _] = datePart.split('-');
-            const correctedISO = `${year}-${month}-${originalDay.toString().padStart(2, '0')}T${timePart}`;
-            appointmentDate = new Date(correctedISO);
-            
-            console.log(`🛠️ Data corrigida: ${appointmentDate.toISOString()}`);
-          }
-        }
-      } else if (date && time) {
-        // Método legado: criar data a partir de strings separadas
-        console.log('Usando método legado (date + time):', date, time);
-        // Converter para objeto Date
-        const dateObj = parseISO(date);
-        const [hours, minutes] = time.split(':').map(Number);
-        
-        // Construir o objeto Date com as horas e minutos
-        dateObj.setHours(hours, minutes, 0, 0);
-        appointmentDate = dateObj;
-        
-        // Verificar se o dia foi preservado
-        if (originalDay !== null && appointmentDate.getUTCDate() !== originalDay) {
-          console.warn(`⚠️ Correção de timezone necessária: esperado dia ${originalDay}, calculado ${appointmentDate.getUTCDate()}`);
+          // Extrair ano e mês da data atual
+          const year = appointmentDate.getUTCFullYear();
+          const month = appointmentDate.getUTCMonth() + 1;
           
-          // Forçar o dia original
-          const correctedDate = new Date(appointmentDate);
-          correctedDate.setUTCDate(originalDay);
-          appointmentDate = correctedDate;
+          // Corrigir usando o dia selecionado
+          const [_, timePart] = appointmentDate.toISOString().split('T');
+          const correctedIsoString = `${year}-${month.toString().padStart(2, '0')}-${selectedDay.toString().padStart(2, '0')}T${timePart}`;
           
-          console.log(`🛠️ Data corrigida: ${appointmentDate.toISOString()}`);
+          console.log(`🛠️ Data ISO corrigida: ${correctedIsoString}`);
+          appointmentDate = new Date(correctedIsoString);
         }
       } else {
-        // Apenas date sem time
-        console.log('Usando apenas date sem time:', date);
-        appointmentDate = parseISO(date);
-        
-        // Verificar se o dia foi preservado
-        if (originalDay !== null && appointmentDate.getUTCDate() !== originalDay) {
-          console.warn(`⚠️ Correção de timezone necessária para date sem time: esperado dia ${originalDay}, calculado ${appointmentDate.getUTCDate()}`);
-          
-          // Forçar o dia original
-          const correctedDate = new Date(appointmentDate);
-          correctedDate.setUTCDate(originalDay);
-          appointmentDate = correctedDate;
-          
-          console.log(`🛠️ Data corrigida: ${appointmentDate.toISOString()}`);
-        }
+        // Fallback para data atual (não deveria acontecer)
+        console.error('⚠️ ALERTA CRÍTICO: Nem date+time nem fullDate fornecidos');
+        appointmentDate = new Date();
       }
       
-      console.log('Data de agendamento calculada:', appointmentDate.toISOString());
-      console.log('Dia do agendamento (UTC):', appointmentDate.getUTCDate());
-      console.log('Dia do agendamento (Local):', appointmentDate.getDate());
-      console.log('Data formatada para exibição:', format(appointmentDate, 'dd/MM/yyyy HH:mm'));
-      
-      // Guardar a data original em formato ISO para referenciar o dia correto
-      const originalISO = appointmentDate.toISOString();
+      console.log(`✅ Data final do agendamento: ${appointmentDate.toISOString()}`);
+      console.log(`✅ Dia UTC do agendamento: ${appointmentDate.getUTCDate()}`);
+      console.log(`✅ Dia local do agendamento: ${appointmentDate.getDate()}`);
       
       // Extrair informações para o formato esperado pelo prisma
       const formattedDate = format(appointmentDate, 'yyyy-MM-dd');
       const formattedTime = format(appointmentDate, 'HH:mm');
       
-      // Adicionar informações de timezone em notas
+      // Armazenar informações originais para referência e diagnóstico
       let notes = req.body.notes || '';
-      if (timezone || timezoneOffset || originalDay) {
-        const tzInfo = {
-          timezone,
-          timezoneOffset,
-          originalDay,
-          originalDate: date
-        };
-        notes += `\n\nTZ_INFO:${JSON.stringify(tzInfo)}`;
-      }
+      const tzInfo = {
+        timezone,
+        timezoneOffset,
+        originalDay: selectedDay,
+        originalDate: date,
+        originalTime: time,
+        calculatedDate: formattedDate
+      };
+      notes += `\n\nTZ_INFO:${JSON.stringify(tzInfo)}`;
       
       // Verificar disponibilidade
       const dayOfWeek = appointmentDate.getDay();
@@ -166,7 +157,7 @@ const appointmentController = {
         });
       }
 
-      // Criar o agendamento
+      // Criar o agendamento com data original e dia preservado
       const appointment = await prisma.appointment.create({
         data: {
           therapistId,
@@ -175,10 +166,14 @@ const appointmentController = {
           time: formattedTime,
           duration: therapist.sessionDuration,
           price: therapist.baseSessionPrice,
-          status: 'PENDING',
+          status: 'SCHEDULED', // Alterado de PENDING para SCHEDULED para consistência
           notes: notes,
           toolId: req.body.toolId || 'consultation',
-          mode: req.body.mode || 'ONLINE'
+          mode: req.body.mode || 'ONLINE',
+          timezone: timezone || null,
+          timezoneOffset: timezoneOffset || null,
+          originalDay: selectedDay,
+          originalDate: date
         },
         include: {
           therapist: {
@@ -195,7 +190,13 @@ const appointmentController = {
         ...appointment,
         formattedDate: format(appointmentDate, 'dd/MM/yyyy'),
         formattedTime: format(appointmentDate, 'HH:mm'),
-        fullDate: originalISO
+        fullDate: appointmentDate.toISOString(),
+        // Adicionar metadados úteis para debug
+        _debug: {
+          originalDay: selectedDay,
+          calculatedDay: appointmentDate.getUTCDate(),
+          preservedDay: selectedDay === appointmentDate.getUTCDate(),
+        }
       };
 
       res.json(responseAppointment);
