@@ -273,9 +273,27 @@ function Appointments() {
       
       // Se o usuário estiver tentando acessar fora do horário permitido
       if (now < earlyAccessTime) {
-        const minutesUntilSession = Math.ceil((earlyAccessTime - now) / 60000);
-        toast(`Sua sessão está agendada para ${appointment.formattedTime}. 
-        Você poderá acessar a sala ${minutesUntilSession} minutos antes do horário.`);
+        // Calcular minutos até poder acessar a sala
+        const minutesUntilEarlyAccess = Math.ceil((earlyAccessTime - now) / 60000);
+        
+        console.log(`⏱️ Cálculo de tempo: 
+          - Tempo atual: ${now.getTime()}
+          - Tempo de acesso liberado: ${earlyAccessTime.getTime()}
+          - Diferença em ms: ${earlyAccessTime - now}
+          - Diferença em minutos: ${minutesUntilEarlyAccess}
+        `);
+        
+        // Limitar a exibição a um valor razoável (máximo 24 horas = 1440 minutos)
+        const displayMinutes = Math.min(minutesUntilEarlyAccess, 1440);
+        
+        // Formatar a hora de acesso liberado de forma amigável
+        const earlyAccessHour = earlyAccessTime.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        
+        toast.info(`Sua sessão está agendada para ${appointment.formattedTime}.
+        O acesso será liberado às ${earlyAccessHour} (15 minutos antes).
+        Faltam ${displayMinutes} minutos para você poder acessar a sala.`, {
+          duration: 5000,
+        });
         return;
       }
       
