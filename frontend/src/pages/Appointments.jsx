@@ -289,7 +289,7 @@ function Appointments() {
         // Formatar a hora de acesso liberado de forma amigável
         const earlyAccessHour = earlyAccessTime.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
         
-        toast.info(`Sua sessão está agendada para ${appointment.formattedTime}.
+        toast(`Sua sessão está agendada para ${appointment.formattedTime}.
         O acesso será liberado às ${earlyAccessHour} (15 minutos antes).
         Faltam ${displayMinutes} minutos para você poder acessar a sala.`, {
           duration: 5000,
