@@ -103,60 +103,139 @@ export const getClientByUserId = async (userId) => {
   }
 };
 
-// Obter todos os agendamentos do usuário
+// Obter todos os agendamentos do usuário (como cliente e como terapeuta)
 export const getAppointments = async () => {
-  console.log('Buscando agendamentos no appointmentService...');
-  const token = localStorage.getItem('token');
-  
-  if (!token) {
-    console.error('Token não encontrado ao buscar agendamentos');
-    throw new Error('Não autorizado. Faça login novamente.');
-  }
-  
   try {
-    // Usar o endpoint correto /appointments
+    console.log('Buscando agendamentos no appointmentService...');
+    
     console.log('Tentando buscar agendamentos do endpoint: /appointments');
-    const response = await api.get('/appointments', {
-      headers: {
-        Authorization: `Bearer ${token}`
-      }
-    });
+    const response = await api.get('/appointments');
+    console.log(`Resposta recebida com ${response.data.length} agendamentos`);
     
-    console.log(`Resposta recebida com ${response.data?.length || 0} agendamentos`);
-    return response.data;
-  } catch (error) {
-    console.error('Erro ao buscar agendamentos do endpoint primário:', error);
-    
-    // Tentar endpoint alternativo como fallback
-    try {
-      console.log('Tentando endpoint alternativo: /api/appointments');
-      const alternativeResponse = await api.get('/api/appointments', {
-        headers: {
-          Authorization: `Bearer ${token}`
+    // Processar as datas e adicionar propriedades formatadas
+    return response.data.map(appointment => {
+      // Tentar extrair informações de timezone/dia original
+      let originalDay = null;
+      
+      // CORREÇÃO: Primeiro verificar se temos originalDay no próprio objeto
+      if (appointment.originalDay) {
+        originalDay = parseInt(appointment.originalDay, 10);
+        console.log(`📅 Usando originalDay do agendamento para ID ${appointment.id}: ${originalDay}`);
+      } 
+      // Depois verificar nas notas (TZ_INFO)
+      else if (appointment.notes && appointment.notes.includes('TZ_INFO:')) {
+        try {
+          const tzInfoMatch = appointment.notes.match(/TZ_INFO:({.*})/) || [];
+          if (tzInfoMatch.length > 1) {
+            const tzInfo = JSON.parse(tzInfoMatch[1]);
+            if (tzInfo.originalDay) {
+              originalDay = parseInt(tzInfo.originalDay, 10);
+              console.log(`📅 Usando originalDay extraído das notas para ID ${appointment.id}: ${originalDay}`);
+            }
+          }
+        } catch (e) {
+          console.warn(`❌ Erro ao extrair info de timezone das notas: ${e.message}`);
         }
-      });
-      
-      console.log(`Resposta do endpoint alternativo recebida com ${alternativeResponse.data?.length || 0} agendamentos`);
-      return alternativeResponse.data;
-    } catch (fallbackError) {
-      console.error('Erro também no endpoint alternativo:', fallbackError);
-      
-      // Construir mensagem de erro informativa
-      let errorMessage = 'Erro ao buscar agendamentos';
-      
-      if (error.response) {
-        // Erro do servidor com resposta
-        errorMessage += `: ${error.response.status} - ${error.response.data?.message || error.response.statusText}`;
-      } else if (error.request) {
-        // Sem resposta do servidor
-        errorMessage += ': Sem resposta do servidor. Verifique sua conexão.';
-      } else {
-        // Erro na configuração da requisição
-        errorMessage += `: ${error.message}`;
       }
       
-      throw new Error(errorMessage);
-    }
+      // NOVA LÓGICA: Se tivermos originalDate, extrair o dia diretamente
+      if (originalDay === null && appointment.originalDate) {
+        try {
+          const dateParts = appointment.originalDate.split('-');
+          if (dateParts.length === 3) {
+            originalDay = parseInt(dateParts[2], 10);
+            console.log(`📅 Extraído dia da originalDate para ID ${appointment.id}: ${originalDay}`);
+          }
+        } catch (e) {
+          console.warn(`❌ Erro ao extrair dia da originalDate: ${e.message}`);
+        }
+      }
+      
+      // NOVA LÓGICA: Se ainda não temos dia original, extrair do date
+      if (originalDay === null && appointment.date && typeof appointment.date === 'string' && appointment.date.includes('-')) {
+        try {
+          const dateParts = appointment.date.split('-');
+          if (dateParts.length === 3) {
+            originalDay = parseInt(dateParts[2], 10);
+            console.log(`📅 Extraído dia da date para ID ${appointment.id}: ${originalDay}`);
+          }
+        } catch (e) {
+          console.warn(`❌ Erro ao extrair dia do date: ${e.message}`);
+        }
+      }
+      
+      console.log(`📊 Processando agendamento ID ${appointment.id}: dia original = ${originalDay}`);
+      
+      // Criar objeto Date e formatar para exibição
+      let formattedDate = '';
+      let formattedTime = '';
+      
+      try {
+        // NOVO FLUXO UNIFICADO: Tratar todos os formatos de data possíveis
+        let dateObj;
+        let timeStr;
+        
+        // Processamento da data
+        if (appointment.date && appointment.time) {
+          // Formato separado: YYYY-MM-DD + HH:MM
+          const [year, month, day] = appointment.date.split('-').map(Number);
+          const [hours, minutes] = appointment.time.split(':').map(Number);
+          
+          // Criar data usando dia original se disponível
+          const dayToUse = originalDay !== null ? originalDay : day;
+          dateObj = new Date(year, month - 1, dayToUse, hours, minutes);
+          console.log(`⏰ Data criada a partir de date+time: ${dateObj.toISOString()}`);
+        } 
+        else if (appointment.date && typeof appointment.date === 'string') {
+          // Formato ISO ou data simples
+          dateObj = new Date(appointment.date);
+          
+          // Corrigir o dia se necessário
+          if (originalDay !== null && dateObj.getDate() !== originalDay) {
+            console.log(`⚠️ Corrigindo dia de ${dateObj.getDate()} para ${originalDay}`);
+            const correctedDate = new Date(dateObj);
+            correctedDate.setDate(originalDay);
+            dateObj = correctedDate;
+          }
+          
+          console.log(`⏰ Data após correção: ${dateObj.toISOString()}`);
+        } 
+        else {
+          // Fallback
+          console.warn(`⚠️ Formato de data não reconhecido para ID ${appointment.id}`);
+          dateObj = new Date();
+        }
+        
+        // Extrair componentes para formatação
+        const day = dateObj.getDate();
+        const month = dateObj.getMonth() + 1;
+        const year = dateObj.getFullYear();
+        const hours = dateObj.getHours();
+        const minutes = dateObj.getMinutes();
+        
+        // Formatar para exibição
+        formattedDate = `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}/${year}`;
+        formattedTime = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+        
+        console.log(`✅ Formatação final para ID ${appointment.id}: ${formattedDate} ${formattedTime}`);
+      } catch (error) {
+        console.error(`❌ Erro ao processar data para ID ${appointment.id}:`, error);
+        // Valores padrão em caso de erro
+        formattedDate = 'Data indisponível';
+        formattedTime = '--:--';
+      }
+      
+      // Retornar objeto com informações processadas
+      return {
+        ...appointment,
+        formattedDate,
+        formattedTime,
+        originalDay: originalDay
+      };
+    });
+  } catch (error) {
+    console.error('❌ Erro ao buscar agendamentos:', error);
+    throw error;
   }
 };
 

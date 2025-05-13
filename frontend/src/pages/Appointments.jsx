@@ -420,10 +420,10 @@ function Appointments() {
                 
                 <div className="appointment-details">
                   <p>
-                    <strong>Data:</strong> {new Date(appointment.date).toLocaleDateString('pt-BR')}
+                    <strong>Data:</strong> {appointment.formattedDate || new Date(appointment.date).toLocaleDateString('pt-BR')}
                   </p>
                   <p>
-                    <strong>Horário:</strong> {new Date(appointment.date).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                    <strong>Horário:</strong> {appointment.formattedTime || new Date(appointment.date).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                   </p>
                   <p>
                     <strong>Duração:</strong> {appointment.duration} minutos
