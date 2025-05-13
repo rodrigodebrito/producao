@@ -228,22 +228,53 @@ function Appointments() {
       // Verificar se o horário atual é compatível com o horário agendado
       const now = new Date();
       
-      // Extrair a data e hora do agendamento
-      const appointmentDateStr = appointment.date.split('T')[0];
-      const appointmentTimeStr = format(parseISO(appointment.date), 'HH:mm');
+      console.log('🔄 Preparando para entrar na sessão do agendamento:', appointment);
       
-      // Criar data considerando o fuso horário
-      const appointmentTime = createTimezoneSafeDate(appointmentDateStr, appointmentTimeStr);
+      // NOVA LÓGICA: Usar formattedDate e formattedTime com prioridade se disponíveis
+      let appointmentTime;
       
+      if (appointment.formattedDate && appointment.formattedTime) {
+        // Usar formattedDate e formattedTime que estão com o dia correto
+        console.log(`🕒 Usando formattedDate (${appointment.formattedDate}) e formattedTime (${appointment.formattedTime})`);
+        
+        // Converter formato DD/MM/YYYY para YYYY-MM-DD
+        const [day, month, year] = appointment.formattedDate.split('/').map(Number);
+        const [hours, minutes] = appointment.formattedTime.split(':').map(Number);
+        
+        console.log(`📊 Componentes extraídos: dia=${day}, mês=${month}, ano=${year}, hora=${hours}, minuto=${minutes}`);
+        
+        // Criar objeto Date usando componentes
+        appointmentTime = new Date(year, month - 1, day, hours, minutes);
+        console.log(`📅 Data criada: ${appointmentTime.toString()}`);
+      } else {
+        // Fallback para o método antigo
+        console.log('⚠️ Usando método antigo para extrair data e hora');
+        
+        // Extrair a data e hora do agendamento
+        const appointmentDateStr = appointment.date.split('T')[0];
+        const appointmentTimeStr = format(parseISO(appointment.date), 'HH:mm');
+        
+        // Criar data considerando o fuso horário
+        appointmentTime = createTimezoneSafeDate(appointmentDateStr, appointmentTimeStr);
+      }
+      
+      console.log(`⏰ Horário final da sessão: ${appointmentTime.toLocaleString()}`);
       const appointmentEndTime = new Date(appointmentTime.getTime() + (appointment.duration * 60000));
       
-      // Permitir acesso 5 minutos antes do horário agendado
-      const earlyAccessTime = new Date(appointmentTime.getTime() - 5 * 60000);
+      // Permitir acesso 15 minutos antes do horário agendado (em vez de 5)
+      const earlyAccessTime = new Date(appointmentTime.getTime() - 15 * 60000);
+      
+      console.log(`🔄 Verificando acesso:
+        - Horário atual: ${now.toLocaleString()}
+        - Horário do agendamento: ${appointmentTime.toLocaleString()}
+        - Acesso liberado a partir de: ${earlyAccessTime.toLocaleString()}
+        - Sessão termina às: ${appointmentEndTime.toLocaleString()}
+      `);
       
       // Se o usuário estiver tentando acessar fora do horário permitido
       if (now < earlyAccessTime) {
         const minutesUntilSession = Math.ceil((earlyAccessTime - now) / 60000);
-        toast(`Sua sessão está agendada para ${appointmentTime.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}. 
+        toast(`Sua sessão está agendada para ${appointment.formattedTime}. 
         Você poderá acessar a sala ${minutesUntilSession} minutos antes do horário.`);
         return;
       }
