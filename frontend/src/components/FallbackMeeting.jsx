@@ -62,24 +62,47 @@ class VideoErrorBoundary extends React.Component {
 const DailyFrame = ({ roomUrl, onLoad }) => {
   const containerRef = useRef(null);
   const callFrameRef = useRef(null);
+  const [isInitialized, setIsInitialized] = useState(false);
   
   useEffect(() => {
-    console.log('Daily.co iframe carregando:', roomUrl);
+    let mounted = true;
+    console.log('Daily.co iframe iniciando setup:', roomUrl);
     
     const initDaily = async () => {
       try {
-        // Destruir instância anterior se existir
+        // Evitar inicialização dupla
+        if (isInitialized) {
+          console.log('Daily.co já está inicializado, ignorando nova inicialização');
+          return;
+        }
+
+        // Limpar instâncias anteriores
         if (callFrameRef.current) {
           console.log('Destruindo instância anterior do Daily.co');
           callFrameRef.current.destroy();
           callFrameRef.current = null;
         }
 
-        // Verificar se já existe uma instância global
         if (window._dailyCallFrame) {
           console.log('Destruindo instância global do Daily.co');
-          window._dailyCallFrame.destroy();
+          try {
+            window._dailyCallFrame.destroy();
+          } catch (e) {
+            console.log('Erro ao destruir instância global:', e);
+          }
           window._dailyCallFrame = null;
+        }
+
+        // Verificar se o componente ainda está montado
+        if (!mounted) {
+          console.log('Componente desmontado, cancelando inicialização');
+          return;
+        }
+
+        // Verificar se o container existe
+        if (!containerRef.current) {
+          console.error('Container não encontrado para Daily.co');
+          return;
         }
 
         const dailyConfig = {
@@ -99,37 +122,55 @@ const DailyFrame = ({ roomUrl, onLoad }) => {
         };
 
         console.log('Criando nova instância do Daily.co');
-        callFrameRef.current = DailyIframe.createFrame(
+        const callFrame = DailyIframe.createFrame(
           containerRef.current,
           dailyConfig
         );
 
-        // Armazenar referência global
-        window._dailyCallFrame = callFrameRef.current;
+        // Verificar se o componente ainda está montado após criar o frame
+        if (!mounted) {
+          console.log('Componente desmontado após criar frame, limpando');
+          callFrame.destroy();
+          return;
+        }
 
-        await callFrameRef.current.join();
+        callFrameRef.current = callFrame;
+        window._dailyCallFrame = callFrame;
+
+        await callFrame.join();
         console.log('Daily.co conectado com sucesso');
         
-        onLoad && onLoad(callFrameRef.current);
+        if (mounted) {
+          setIsInitialized(true);
+          onLoad && onLoad(callFrame);
+        }
       } catch (error) {
         console.error('Erro ao inicializar Daily.co:', error);
-        toast.error('Erro ao iniciar videoconferência. Tente recarregar a página.');
+        if (mounted) {
+          toast.error('Erro ao iniciar videoconferência. Tente recarregar a página.');
+        }
       }
     };
 
-    if (roomUrl) {
+    if (roomUrl && !isInitialized) {
       initDaily();
     }
 
     return () => {
+      mounted = false;
       if (callFrameRef.current) {
         console.log('Limpando instância do Daily.co no unmount');
-        callFrameRef.current.destroy();
+        try {
+          callFrameRef.current.destroy();
+        } catch (e) {
+          console.log('Erro ao destruir callFrame:', e);
+        }
         callFrameRef.current = null;
         window._dailyCallFrame = null;
       }
+      setIsInitialized(false);
     };
-  }, [roomUrl, onLoad]);
+  }, [roomUrl, onLoad, isInitialized]);
   
   return (
     <div
