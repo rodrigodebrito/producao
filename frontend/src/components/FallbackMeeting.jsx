@@ -1,6 +1,7 @@
 ﻿import React, { useEffect, useRef, useState, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { toast } from 'react-toastify';
+import DailyIframe from '@daily-co/daily-js';
 import './FallbackMeeting.css';
 import config from '../environments';
 import api from '../services/api';
@@ -59,34 +60,68 @@ class VideoErrorBoundary extends React.Component {
 
 // Componente para iframe do Daily
 const DailyFrame = ({ roomUrl, onLoad }) => {
-  const iframeRef = useRef(null);
+  const containerRef = useRef(null);
+  const callFrameRef = useRef(null);
   
   useEffect(() => {
-    console.log('Daily.co iframe carregando: ' + roomUrl);
-    if (iframeRef.current) {
-      iframeRef.current.setAttribute('allow', 'camera; microphone; fullscreen; speaker; display-capture');
-      onLoad && onLoad(iframeRef.current);
+    console.log('Daily.co iframe carregando:', roomUrl);
+    
+    const initDaily = async () => {
+      try {
+        if (callFrameRef.current) {
+          callFrameRef.current.destroy();
+        }
+
+        const dailyConfig = {
+          url: roomUrl,
+          showLeaveButton: true,
+          iframeStyle: {
+            width: '100%',
+            height: '100%',
+            border: 'none',
+            backgroundColor: '#1a1a1a'
+          }
+        };
+
+        callFrameRef.current = DailyIframe.createFrame(
+          containerRef.current,
+          dailyConfig
+        );
+
+        await callFrameRef.current.join();
+        console.log('Daily.co conectado com sucesso');
+        
+        onLoad && onLoad(callFrameRef.current);
+      } catch (error) {
+        console.error('Erro ao inicializar Daily.co:', error);
+        toast.error('Erro ao iniciar videoconferência. Tente recarregar a página.');
+      }
+    };
+
+    if (roomUrl) {
+      initDaily();
     }
+
+    return () => {
+      if (callFrameRef.current) {
+        callFrameRef.current.destroy();
+      }
+    };
   }, [roomUrl, onLoad]);
   
   return (
-    <iframe
-      title="Daily.co Meeting"
-      ref={iframeRef}
-      id="daily-iframe"
-      className="daily-iframe"
-      src={roomUrl}
-      allow="camera; microphone; fullscreen; speaker; display-capture"
+    <div
+      ref={containerRef}
+      className="daily-frame-container"
       style={{
         width: '100%',
         height: '100%',
-        border: 'none',
-        backgroundColor: '#1a1a1a',
         position: 'absolute',
         top: 0,
         left: 0,
         right: 0,
-        bottom: 0
+        bottom: 0,
+        backgroundColor: '#1a1a1a'
       }}
     />
   );
