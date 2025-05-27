@@ -68,8 +68,18 @@ const DailyFrame = ({ roomUrl, onLoad }) => {
     
     const initDaily = async () => {
       try {
+        // Destruir instância anterior se existir
         if (callFrameRef.current) {
+          console.log('Destruindo instância anterior do Daily.co');
           callFrameRef.current.destroy();
+          callFrameRef.current = null;
+        }
+
+        // Verificar se já existe uma instância global
+        if (window._dailyCallFrame) {
+          console.log('Destruindo instância global do Daily.co');
+          window._dailyCallFrame.destroy();
+          window._dailyCallFrame = null;
         }
 
         const dailyConfig = {
@@ -79,14 +89,23 @@ const DailyFrame = ({ roomUrl, onLoad }) => {
             width: '100%',
             height: '100%',
             border: 'none',
-            backgroundColor: '#1a1a1a'
+            backgroundColor: '#1a1a1a',
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0
           }
         };
 
+        console.log('Criando nova instância do Daily.co');
         callFrameRef.current = DailyIframe.createFrame(
           containerRef.current,
           dailyConfig
         );
+
+        // Armazenar referência global
+        window._dailyCallFrame = callFrameRef.current;
 
         await callFrameRef.current.join();
         console.log('Daily.co conectado com sucesso');
@@ -104,7 +123,10 @@ const DailyFrame = ({ roomUrl, onLoad }) => {
 
     return () => {
       if (callFrameRef.current) {
+        console.log('Limpando instância do Daily.co no unmount');
         callFrameRef.current.destroy();
+        callFrameRef.current = null;
+        window._dailyCallFrame = null;
       }
     };
   }, [roomUrl, onLoad]);
@@ -115,13 +137,14 @@ const DailyFrame = ({ roomUrl, onLoad }) => {
       className="daily-frame-container"
       style={{
         width: '100%',
-        height: '100%',
+        height: '100vh',
         position: 'absolute',
         top: 0,
         left: 0,
         right: 0,
         bottom: 0,
-        backgroundColor: '#1a1a1a'
+        backgroundColor: '#1a1a1a',
+        overflow: 'hidden'
       }}
     />
   );
@@ -562,8 +585,24 @@ const FallbackMeeting = ({
 
   // Renderizar a reunião
   return (
-    <div className={`video-call-container ${floating ? 'floating' : 'fullscreen'} ${isPipMode ? 'pip-mode' : ''}`}>
-      <div className="video-wrapper" ref={videoContainerRef}>
+    <div 
+      className={`video-call-container ${floating ? 'floating' : 'fullscreen'} ${isPipMode ? 'pip-mode' : ''}`}
+      style={{
+        width: '100%',
+        height: '100vh',
+        position: 'relative',
+        overflow: 'hidden'
+      }}
+    >
+      <div 
+        className="video-wrapper" 
+        ref={videoContainerRef}
+        style={{
+          width: '100%',
+          height: '100%',
+          position: 'relative'
+        }}
+      >
         {isLoading && (
           <div className="loading-container">
             <div className="loading-spinner"></div>
@@ -598,11 +637,7 @@ const FallbackMeeting = ({
           <VideoErrorBoundary onReset={() => window.location.reload()}>
             <DailyFrame 
               roomUrl={sessionDetails.url} 
-              onLoad={(iframe) => {
-                if (dailyFrameRef.current !== iframe) {
-                  dailyFrameRef.current = iframe;
-                }
-              }} 
+              onLoad={handleIframeLoad}
             />
           </VideoErrorBoundary>
         )}
