@@ -269,11 +269,56 @@ body {
 }
 
 .video-area {
+  position: relative;
   width: 100%;
   height: 100%;
+  min-height: 400px;
   background-color: #1a1a1a;
   border-radius: 8px;
   overflow: hidden;
+}
+
+.video-container {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+.video-floating {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 300px;
+  height: 200px;
+  z-index: 1000;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  cursor: move;
+}
+
+.restore-video {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1001;
+  padding: 4px;
+  background-color: rgba(0, 0, 0, 0.5);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+/* Estilos específicos para o iframe do Daily.co */
+.daily-video-container {
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 400px !important;
+}
+
+.daily-video-container iframe {
+  width: 100% !important;
+  height: 100% !important;
+  border: none !important;
+  border-radius: 8px !important;
 }
 
 .constellation-wrapper {
